@@ -1,0 +1,233 @@
+import React, { useState, useEffect } from 'react'
+import { Search, Phone, Mail, MapPin, Plus, X } from 'lucide-react'
+import { supabase } from '../lib/supabase'
+import toast from 'react-hot-toast'
+
+interface Customer {
+  id: string
+  name: string
+  phone: string
+  email: string
+  address: string
+  created_at: string
+  last_visit: string
+}
+
+export function Customers() {
+  const [customers, setCustomers] = useState<Customer[]>([])
+  const [loading, setLoading] = useState(true)
+  const [searchTerm, setSearchTerm] = useState('')
+  const [showAddModal, setShowAddModal] = useState(false)
+  const [newCustomer, setNewCustomer] = useState({
+    name: '',
+    phone: '',
+    email: '',
+    address: ''
+  })
+
+  useEffect(() => {
+    fetchCustomers()
+  }, [])
+
+  async function fetchCustomers() {
+    try {
+      const { data, error } = await supabase
+        .from('customers')
+        .select('*')
+        .order('name')
+
+      if (error) throw error
+      setCustomers(data || [])
+    } catch (error) {
+      console.error('Error fetching customers:', error)
+      toast.error('Failed to load customers')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const handleSearch = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('customers')
+        .select('*')
+        .or(`name.ilike.%${searchTerm}%,phone.ilike.%${searchTerm}%,email.ilike.%${searchTerm}%`)
+        .order('name')
+
+      if (error) throw error
+      setCustomers(data || [])
+    } catch (error) {
+      console.error('Error searching customers:', error)
+      toast.error('Failed to search customers')
+    }
+  }
+
+  const handleAddCustomer = async (e: React.FormEvent) => {
+    e.preventDefault()
+    try {
+      const { error } = await supabase
+        .from('customers')
+        .insert([newCustomer])
+
+      if (error) throw error
+
+      toast.success('Customer added successfully')
+      setShowAddModal(false)
+      setNewCustomer({
+        name: '',
+        phone: '',
+        email: '',
+        address: ''
+      })
+      fetchCustomers()
+    } catch (error) {
+      console.error('Error adding customer:', error)
+      toast.error('Failed to add customer')
+    }
+  }
+
+  return (
+    <div className="space-y-6">
+      <div className="flex items-center justify-between">
+        <h1 className="text-2xl font-semibold text-gray-900">Customers</h1>
+        <button
+          onClick={() => setShowAddModal(true)}
+          className="inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700"
+        >
+          <Plus className="h-5 w-5 mr-2" />
+          Add Customer
+        </button>
+      </div>
+
+      <div className="bg-white shadow rounded-lg p-6">
+        <div className="flex gap-4 mb-6">
+          <div className="flex-1">
+            <div className="relative">
+              <input
+                type="text"
+                placeholder="Search by name, phone, or email..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                onKeyPress={(e) => e.key === 'Enter' && handleSearch()}
+                className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500"
+              />
+              <Search className="absolute left-3 top-2.5 h-5 w-5 text-gray-400" />
+            </div>
+          </div>
+          <button
+            onClick={handleSearch}
+            className="px-4 py-2 bg-gray-100 text-gray-700 rounded-md hover:bg-gray-200"
+          >
+            Search
+          </button>
+        </div>
+
+        {loading ? (
+          <div className="text-center py-12">
+            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto"></div>
+            <p className="mt-4 text-gray-500">Loading customers...</p>
+          </div>
+        ) : customers.length === 0 ? (
+          <div className="text-center py-12">
+            <p className="text-gray-500">No customers found</p>
+          </div>
+        ) : (
+          <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
+            {customers.map((customer) => (
+              <div
+                key={customer.id}
+                className="bg-gray-50 rounded-lg p-4 hover:bg-gray-100 transition-colors"
+              >
+                <h3 className="text-lg font-medium text-gray-900 mb-2">{customer.name}</h3>
+                <div className="space-y-2 text-sm text-gray-600">
+                  <div className="flex items-center gap-2">
+                    <Phone className="h-4 w-4" />
+                    <span>{customer.phone}</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Mail className="h-4 w-4" />
+                    <span>{customer.email}</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <MapPin className="h-4 w-4" />
+                    <span>{customer.address}</span>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {showAddModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white p-6 rounded-lg w-full max-w-md">
+            <div className="flex justify-between items-center mb-4">
+              <h3 className="text-lg font-medium">Add New Customer</h3>
+              <button onClick={() => setShowAddModal(false)}>
+                <X className="h-5 w-5 text-gray-500" />
+              </button>
+            </div>
+            <form onSubmit={handleAddCustomer} className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700">Name</label>
+                <input
+                  type="text"
+                  value={newCustomer.name}
+                  onChange={(e) => setNewCustomer({ ...newCustomer, name: e.target.value })}
+                  className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
+                  required
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700">Phone</label>
+                <input
+                  type="tel"
+                  value={newCustomer.phone}
+                  onChange={(e) => setNewCustomer({ ...newCustomer, phone: e.target.value })}
+                  className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
+                  required
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700">Email</label>
+                <input
+                  type="email"
+                  value={newCustomer.email}
+                  onChange={(e) => setNewCustomer({ ...newCustomer, email: e.target.value })}
+                  className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
+                  required
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700">Address</label>
+                <textarea
+                  value={newCustomer.address}
+                  onChange={(e) => setNewCustomer({ ...newCustomer, address: e.target.value })}
+                  className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
+                  rows={3}
+                  required
+                />
+              </div>
+              <div className="flex justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => setShowAddModal(false)}
+                  className="px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 rounded-md"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-md hover:bg-blue-700"
+                >
+                  Add Customer
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
