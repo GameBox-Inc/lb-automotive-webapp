@@ -1,0 +1,280 @@
+"""
+Security middleware and utilities for the application.
+Implements protections against XSS, SQL injection, CSRF, and other attacks.
+"""
+import re
+import html
+from typing import Any, Dict
+from fastapi import Request, HTTPException, status
+from fastapi.responses import JSONResponse
+import time
+from collections import defaultdict
+from datetime import datetime, timedelta
+
+# Rate limiting storage (in-memory for now, use Redis in production)
+rate_limit_storage = defaultdict(list)
+
+# Allowed characters for different input types
+ALPHANUMERIC_PATTERN = re.compile(r'^[a-zA-Z0-9\s\-_.]+$')
+EMAIL_PATTERN = re.compile(r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$')
+PHONE_PATTERN = re.compile(r'^\+?[1-9]\d{1,14}$')
+UUID_PATTERN = re.compile(r'^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$')
+
+import json
+import os
+
+# Load security patterns from external config
+# This prevents specific detection logic from being exposed in source control
+def load_security_config():
+    config_path = os.path.join(os.path.dirname(__file__), 'security_config.json')
+    try:
+        with open(config_path, 'r') as f:
+            return json.load(f)
+    except FileNotFoundError:
+        # Fallback to defaults or empty if config is missing
+        # In production, this ensures we don't crash, but ideally config should exist
+        return {
+            "sql_injection_patterns": [],
+            "xss_patterns": []
+        }
+
+_config = load_security_config()
+
+# SQL injection keywords
+SQL_INJECTION_PATTERNS = _config.get("sql_injection_patterns", [])
+
+# XSS patterns
+XSS_PATTERNS = _config.get("xss_patterns", [])
+
+
+def sanitize_input(value: str, input_type: str = "text") -> str:
+    """
+    Sanitize user input to prevent injection attacks.
+    
+    Args:
+        value: The input string to sanitize
+        input_type: Type of input (text, email, phone, uuid, alphanumeric)
+    
+    Returns:
+        Sanitized string
+    
+    Raises:
+        HTTPException if input is potentially malicious
+    """
+    if not isinstance(value, str):
+        return value
+    
+    # Check for SQL injection attempts
+    for pattern in SQL_INJECTION_PATTERNS:
+        if re.search(pattern, value, re.IGNORECASE):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid input detected: SQL injection attempt"
+            )
+    
+    # Check for XSS attempts
+    for pattern in XSS_PATTERNS:
+        if re.search(pattern, value, re.IGNORECASE):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid input detected: XSS attempt"
+            )
+    
+    # Type-specific validation
+    if input_type == "email":
+        if not EMAIL_PATTERN.match(value):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid email format"
+            )
+    elif input_type == "phone":
+        # Remove common phone formatting characters
+        cleaned = re.sub(r'[\s\-\(\)]', '', value)
+        if not PHONE_PATTERN.match(cleaned):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid phone number format"
+            )
+        return cleaned
+    elif input_type == "uuid":
+        if not UUID_PATTERN.match(value.lower()):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid UUID format"
+            )
+    elif input_type == "alphanumeric":
+        if not ALPHANUMERIC_PATTERN.match(value):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Input contains invalid characters"
+            )
+    
+    # HTML escape for safe output
+    return html.escape(value.strip())
+
+
+def validate_appointment_data(data: Dict[str, Any]) -> Dict[str, Any]:
+    """Validate and sanitize appointment data."""
+    if "customer_name" in data:
+        data["customer_name"] = sanitize_input(data["customer_name"], "alphanumeric")
+    
+    if "phone_number" in data:
+        data["phone_number"] = sanitize_input(data["phone_number"], "phone")
+    
+    if "service_type" in data:
+        data["service_type"] = sanitize_input(data["service_type"], "text")
+    
+    if "notes" in data and data["notes"]:
+        data["notes"] = sanitize_input(data["notes"], "text")
+        # Limit notes length
+        if len(data["notes"]) > 1000:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Notes too long (max 1000 characters)"
+            )
+    
+    return data
+
+
+async def rate_limit_middleware(request: Request, call_next):
+    """
+    Rate limiting middleware to prevent abuse.
+    Limits requests per IP address.
+    """
+    client_ip = request.client.host
+    current_time = time.time()
+    
+    # Configure rate limits
+    SHORT_WINDOW = 60  # 1 minute
+    SHORT_LIMIT = 100  # 100 requests per minute
+    LONG_WINDOW = 3600  # 1 hour
+    LONG_LIMIT = 1000  # 1000 requests per hour
+    
+    # Clean old entries
+    rate_limit_storage[client_ip] = [
+        timestamp for timestamp in rate_limit_storage[client_ip]
+        if current_time - timestamp < LONG_WINDOW
+    ]
+    
+    # Check rate limits
+    recent_requests = [
+        timestamp for timestamp in rate_limit_storage[client_ip]
+        if current_time - timestamp < SHORT_WINDOW
+    ]
+    
+    if len(recent_requests) >= SHORT_LIMIT:
+        return JSONResponse(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            content={"detail": "Too many requests. Please try again later."}
+        )
+    
+    if len(rate_limit_storage[client_ip]) >= LONG_LIMIT:
+        return JSONResponse(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            content={"detail": "Hourly rate limit exceeded. Please try again later."}
+        )
+    
+    # Add current request
+    rate_limit_storage[client_ip].append(current_time)
+    
+    response = await call_next(request)
+    
+    # Add rate limit headers
+    response.headers["X-RateLimit-Limit"] = str(SHORT_LIMIT)
+    response.headers["X-RateLimit-Remaining"] = str(SHORT_LIMIT - len(recent_requests) - 1)
+    response.headers["X-RateLimit-Reset"] = str(int(current_time + SHORT_WINDOW))
+    
+    return response
+
+
+async def security_headers_middleware(request: Request, call_next):
+    """Add security headers to all responses."""
+    response = await call_next(request)
+    
+    # Prevent clickjacking
+    response.headers["X-Frame-Options"] = "DENY"
+    
+    # Prevent MIME type sniffing
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    
+    # XSS Protection
+    response.headers["X-XSS-Protection"] = "1; mode=block"
+    
+    # Strict Transport Security (HSTS)
+    response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
+    
+    # Content Security Policy
+    response.headers["Content-Security-Policy"] = (
+        "default-src 'self'; "
+        "script-src 'self' 'unsafe-inline' 'unsafe-eval'; "
+        "style-src 'self' 'unsafe-inline'; "
+        "img-src 'self' data: https:; "
+        "font-src 'self' data:; "
+        "connect-src 'self'; "
+        "frame-ancestors 'none';"
+    )
+    
+    # Referrer Policy
+    response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+    
+    # Permissions Policy
+    response.headers["Permissions-Policy"] = (
+        "geolocation=(), "
+        "microphone=(), "
+        "camera=(), "
+        "payment=(), "
+        "usb=(), "
+        "magnetometer=(), "
+        "gyroscope=(), "
+        "accelerometer=()"
+    )
+    
+    return response
+
+
+def validate_sql_params(params: tuple) -> tuple:
+    """
+    Validate SQL parameters before execution.
+    This is a defense-in-depth measure alongside parameterized queries.
+    """
+    validated = []
+    for param in params:
+        if isinstance(param, str):
+            # Check for SQL injection patterns
+            for pattern in SQL_INJECTION_PATTERNS:
+                if re.search(pattern, param, re.IGNORECASE):
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail="Invalid parameter detected"
+                    )
+        validated.append(param)
+    return tuple(validated)
+
+
+# CSRF Token management (for session-based auth if needed)
+csrf_tokens = {}
+
+def generate_csrf_token(session_id: str) -> str:
+    """Generate CSRF token for a session."""
+    import secrets
+    token = secrets.token_urlsafe(32)
+    csrf_tokens[session_id] = {
+        "token": token,
+        "created_at": datetime.now()
+    }
+    return token
+
+
+def validate_csrf_token(session_id: str, token: str) -> bool:
+    """Validate CSRF token."""
+    if session_id not in csrf_tokens:
+        return False
+    
+    stored = csrf_tokens[session_id]
+    
+    # Check if token is expired (1 hour)
+    if datetime.now() - stored["created_at"] > timedelta(hours=1):
+        del csrf_tokens[session_id]
+        return False
+    
+    return stored["token"] == token
