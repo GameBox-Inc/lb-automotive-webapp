@@ -4,6 +4,8 @@ Implements protections against XSS, SQL injection, CSRF, and other attacks.
 """
 import re
 import html
+import os
+import json
 from typing import Any, Dict
 from fastapi import Request, HTTPException, status
 from fastapi.responses import JSONResponse
@@ -11,7 +13,20 @@ import time
 from collections import defaultdict
 from datetime import datetime, timedelta
 
-# Rate limiting storage (in-memory for now, use Redis in production)
+import redis
+from redis.exceptions import ConnectionError as RedisConnectionError
+
+# Rate limiting storage (distributed via Redis if available)
+REDIS_URL = os.getenv("REDIS_URL")
+redis_client = None
+
+if REDIS_URL:
+    try:
+        redis_client = redis.from_url(REDIS_URL, decode_responses=True)
+        print(f"Connected to Redis for rate limiting at {REDIS_URL}")
+    except Exception as e:
+        print(f"Failed to connect to Redis: {e}. Falling back to in-memory.")
+
 rate_limit_storage = defaultdict(list)
 
 # Allowed characters for different input types
@@ -20,8 +35,6 @@ EMAIL_PATTERN = re.compile(r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$')
 PHONE_PATTERN = re.compile(r'^\+?[1-9]\d{1,14}$')
 UUID_PATTERN = re.compile(r'^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$')
 
-import json
-import os
 
 # Load security patterns from external config
 # This prevents specific detection logic from being exposed in source control
@@ -50,16 +63,6 @@ XSS_PATTERNS = _config.get("xss_patterns", [])
 def sanitize_input(value: str, input_type: str = "text") -> str:
     """
     Sanitize user input to prevent injection attacks.
-    
-    Args:
-        value: The input string to sanitize
-        input_type: Type of input (text, email, phone, uuid, alphanumeric)
-    
-    Returns:
-        Sanitized string
-    
-    Raises:
-        HTTPException if input is potentially malicious
     """
     if not isinstance(value, str):
         return value
@@ -139,51 +142,69 @@ def validate_appointment_data(data: Dict[str, Any]) -> Dict[str, Any]:
 async def rate_limit_middleware(request: Request, call_next):
     """
     Rate limiting middleware to prevent abuse.
-    Limits requests per IP address.
+    Limits requests per IP address using Redis if available.
     """
-    client_ip = request.client.host
+    # Trust X-Forwarded-For if available (behind Traefik/Ngrok)
+    forwarded = request.headers.get("X-Forwarded-For")
+    if forwarded:
+        client_ip = forwarded.split(",")[0].strip()
+    else:
+        client_ip = request.client.host
+        
     current_time = time.time()
     
     # Configure rate limits
     SHORT_WINDOW = 60  # 1 minute
-    SHORT_LIMIT = 100  # 100 requests per minute
-    LONG_WINDOW = 3600  # 1 hour
-    LONG_LIMIT = 1000  # 1000 requests per hour
+    SHORT_LIMIT = 300  # Increased from 100 to accommodate multiple concurrent requests
     
+    if redis_client:
+        try:
+            # Redis-based distributed rate limiting
+            key = f"rate_limit:{client_ip}"
+            pipeline = redis_client.pipeline()
+            # Remove old entries
+            pipeline.zremrangebyscore(key, 0, current_time - SHORT_WINDOW)
+            # Add current request
+            pipeline.zadd(key, {str(current_time): current_time})
+            # Count entries
+            pipeline.zcard(key)
+            # Set expiry on the whole set
+            pipeline.expire(key, SHORT_WINDOW + 10)
+            
+            results = pipeline.execute()
+            request_count = results[2]
+            
+            if request_count > SHORT_LIMIT:
+                return JSONResponse(
+                    status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                    content={"detail": "Too many requests. Please try again later."}
+                )
+            
+            response = await call_next(request)
+            response.headers["X-RateLimit-Limit"] = str(SHORT_LIMIT)
+            response.headers["X-RateLimit-Remaining"] = str(max(0, SHORT_LIMIT - request_count))
+            response.headers["X-RateLimit-Reset"] = str(int(current_time + SHORT_WINDOW))
+            return response
+            
+        except (RedisConnectionError, Exception) as e:
+            print(f"Redis rate limit error: {e}. Falling back to in-memory.")
+            # Fallback to logic below
+            
+    # In-memory Fallback
     # Clean old entries
     rate_limit_storage[client_ip] = [
-        timestamp for timestamp in rate_limit_storage[client_ip]
-        if current_time - timestamp < LONG_WINDOW
-    ]
-    
-    # Check rate limits
-    recent_requests = [
         timestamp for timestamp in rate_limit_storage[client_ip]
         if current_time - timestamp < SHORT_WINDOW
     ]
     
-    if len(recent_requests) >= SHORT_LIMIT:
+    if len(rate_limit_storage[client_ip]) >= SHORT_LIMIT:
         return JSONResponse(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
             content={"detail": "Too many requests. Please try again later."}
         )
     
-    if len(rate_limit_storage[client_ip]) >= LONG_LIMIT:
-        return JSONResponse(
-            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-            content={"detail": "Hourly rate limit exceeded. Please try again later."}
-        )
-    
-    # Add current request
     rate_limit_storage[client_ip].append(current_time)
-    
     response = await call_next(request)
-    
-    # Add rate limit headers
-    response.headers["X-RateLimit-Limit"] = str(SHORT_LIMIT)
-    response.headers["X-RateLimit-Remaining"] = str(SHORT_LIMIT - len(recent_requests) - 1)
-    response.headers["X-RateLimit-Reset"] = str(int(current_time + SHORT_WINDOW))
-    
     return response
 
 

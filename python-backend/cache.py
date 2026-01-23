@@ -32,17 +32,15 @@ async def get_redis() -> Optional[redis.Redis]:
 
     if redis_client is None:
         try:
-            host = os.getenv("REDIS_HOST", "localhost")
-            redis_client = redis.Redis(
-                host=host,
-                port=6379,
-                db=0,
+            redis_url = os.getenv("REDIS_URL", "redis://localhost:6379/0")
+            redis_client = redis.from_url(
+                redis_url,
                 decode_responses=True,
                 socket_connect_timeout=2,
                 socket_timeout=2
             )
             await redis_client.ping()
-            logger.info(f"Redis connection established at {host}")
+            logger.info(f"Redis connection established at {redis_url}")
         except Exception as e:
             logger.error(f"Redis connection failed: {e}")
             logger.warning("Disabling Redis cache for this session")

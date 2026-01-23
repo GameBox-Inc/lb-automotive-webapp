@@ -68,6 +68,7 @@ class Appointment(BaseModel):
     assigned_staff_id: Optional[str] = None
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
+    started_at: Optional[datetime] = None
 
     class Config:
         from_attributes = True
@@ -185,6 +186,7 @@ class Case(BaseModel):
     customer_signature: Optional[str] = None
     metadata: Dict[str, Any] = Field(default_factory=dict)
     created_at: Optional[datetime] = None
+    started_at: Optional[datetime] = None
     closed_at: Optional[datetime] = None
     notes: List[CaseNote] = []
     parts: List[CasePart] = []

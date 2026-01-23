@@ -8,8 +8,19 @@ from contextvars import ContextVar
 # Context variable to store current user for RLS
 current_user_context: ContextVar[Optional[Dict[str, Any]]] = ContextVar('current_user', default=None)
 
-DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./lb_automotive.db")
-DB_PATH = DATABASE_URL.replace("sqlite:///", "").replace("sqlite://", "")
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+DATABASE_URL = os.getenv("DATABASE_URL")
+
+if DATABASE_URL:
+    DB_PATH = DATABASE_URL.replace("sqlite:///", "").replace("sqlite://", "")
+else:
+    # Try data folder first (Docker/Production)
+    DB_PATH = os.path.join(BASE_DIR, "data", "lb_automotive.db")
+    if not os.path.exists(os.path.dirname(DB_PATH)):
+        # Fallback to current dir (Local Dev)
+        DB_PATH = os.path.join(BASE_DIR, "lb_automotive.db")
+
+print(f"DATABASE PATH: {os.path.abspath(DB_PATH)}")
 
 
 def get_db_connection():
@@ -117,6 +128,7 @@ def init_db():
             customer_signature TEXT,
             metadata TEXT DEFAULT '{}',
             created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+            started_at TEXT,
             closed_at TEXT,
             FOREIGN KEY (appointment_id) REFERENCES appointments (id)
         )
@@ -276,27 +288,7 @@ def seed_data():
     print("Database seeded successfully!")
 
 
-def apply_rls_filter(query: str, table: str, user: Optional[Dict[str, Any]]) -> str:
-    """
-    Apply Row-Level Security filter to SQL query.
-    This is a simplified RLS implementation for SQLite.
-    """
-    if not user:
-        # No user context, allow only public data
-        return query
-    
-    if user.get("is_admin"):
-        # Admins can see everything
-        return query
-    
-    # For appointments table, filter by user_id or phone_number
-    if "appointments" in table.lower():
-        if "WHERE" in query.upper():
-            query += f" AND (user_id = '{user['id']}' OR phone_number = '{user.get('phone_number', '')}')"
-        else:
-            query += f" WHERE (user_id = '{user['id']}' OR phone_number = '{user.get('phone_number', '')}')"
-    
-    return query
+
 
 
 def get_call_state(call_sid: str) -> Optional[dict]:
@@ -363,7 +355,71 @@ def update_appointment_status(appointment_id: str, status: str):
     conn.close()
 
 
+
+
+def migrate_schema():
+    """Apply schema migrations for new IVR features."""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    
+    # Migration 1: Add decision_path to call_states
+    try:
+        cursor.execute("ALTER TABLE call_states ADD COLUMN decision_path TEXT DEFAULT '[]'")
+        print("✓ Added decision_path column to call_states")
+    except sqlite3.OperationalError as e:
+        if "duplicate column" not in str(e).lower():
+            print(f"  Note: decision_path column may already exist: {e}")
+    
+    # Migration 2: Add time slot columns to appointments
+    try:
+        cursor.execute("ALTER TABLE appointments ADD COLUMN time_slot_start TEXT")
+        print("✓ Added time_slot_start column to appointments")
+    except sqlite3.OperationalError as e:
+        if "duplicate column" not in str(e).lower():
+            print(f"  Note: time_slot_start column may already exist: {e}")
+    
+    try:
+        cursor.execute("ALTER TABLE appointments ADD COLUMN time_slot_end TEXT")
+        print("✓ Added time_slot_end column to appointments")
+    except sqlite3.OperationalError as e:
+        if "duplicate column" not in str(e).lower():
+            print(f"  Note: time_slot_end column may already exist: {e}")
+    
+    try:
+        cursor.execute("ALTER TABLE appointments ADD COLUMN slot_duration_minutes INTEGER DEFAULT 30")
+        print("✓ Added slot_duration_minutes column to appointments")
+    except sqlite3.OperationalError as e:
+        if "duplicate column" not in str(e).lower():
+            print(f"  Note: slot_duration_minutes column may already exist: {e}")
+    
+    # Migration 3: Create ivr_analytics table
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS ivr_analytics (
+            id TEXT PRIMARY KEY,
+            call_sid TEXT NOT NULL,
+            node_name TEXT NOT NULL,
+            decision_taken TEXT,
+            timestamp TEXT DEFAULT CURRENT_TIMESTAMP,
+            duration_seconds INTEGER,
+            FOREIGN KEY (call_sid) REFERENCES call_states (call_sid)
+        )
+    """)
+    print("✓ Created ivr_analytics table")
+    
+    # Create indexes for IVR analytics
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_ivr_analytics_call_sid ON ivr_analytics(call_sid)")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_ivr_analytics_node ON ivr_analytics(node_name)")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_ivr_analytics_timestamp ON ivr_analytics(timestamp)")
+    print("✓ Created indexes for ivr_analytics")
+    
+    conn.commit()
+    conn.close()
+    print("Schema migrations completed successfully!")
+
+
 if __name__ == "__main__":
     print("Initializing database...")
     init_db()
+    print("Running schema migrations...")
+    migrate_schema()
     seed_data()

@@ -9,8 +9,67 @@ from auth import (
     ACCESS_TOKEN_EXPIRE_MINUTES
 )
 from models import Token, UserCreate, User
+from fastapi.responses import JSONResponse
+import uuid
+import random
+import os
+from security import redis_client
 
 router = APIRouter(prefix="/api/auth", tags=["authentication"])
+
+@router.get("/captcha")
+async def get_captcha():
+    """Generate a captcha token for checkbox verification."""
+    import time
+    captcha_id = str(uuid.uuid4())
+    
+    # Store token with creation timestamp in Redis (5 minute expiry)
+    if redis_client:
+        redis_client.setex(f"captcha:{captcha_id}", 300, str(time.time()))
+    
+    return {
+        "captcha_id": captcha_id
+    }
+
+
+@router.post("/verify-captcha")
+async def verify_captcha(captcha_id: str = Form(...)):
+    """Verify checkbox captcha with bot detection."""
+    import time
+    import logging
+    logger = logging.getLogger(__name__)
+    
+    if not redis_client:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Captcha service unavailable"
+        )
+    
+    # Check if captcha exists
+    created_at = redis_client.get(f"captcha:{captcha_id}")
+    if not created_at:
+        logger.warning(f"Invalid or expired captcha: {captcha_id}")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid or expired captcha"
+        )
+    
+    # Bot detection: check if checkbox was clicked too quickly (< 1 second)
+    time_elapsed = time.time() - float(created_at)
+    if time_elapsed < 1.0:
+        logger.warning(f"Captcha clicked too quickly ({time_elapsed:.2f}s): likely bot")
+        redis_client.delete(f"captcha:{captcha_id}")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Verification failed"
+        )
+    
+    # Mark as verified by updating the value
+    redis_client.setex(f"captcha:{captcha_id}", 300, "verified")
+    logger.info(f"Captcha verified successfully: {captcha_id}")
+    
+    return {"verified": True}
+
 
 
 @router.post("/register", response_model=User)
@@ -40,10 +99,25 @@ def register(user: UserCreate):
 
 
 @router.post("/login", response_model=Token)
-def login(form_data: OAuth2PasswordRequestForm = Depends()):
-    """Login and get access token."""
+def login(
+    form_data: OAuth2PasswordRequestForm = Depends(),
+    captcha_id: str = Form(None)
+):
+    """Login and get access token with optional CAPTCHA."""
     import logging
     logger = logging.getLogger(__name__)
+
+    # Enforce CAPTCHA verification
+    if captcha_id and redis_client:
+        verification_status = redis_client.get(f"captcha:{captcha_id}")
+        if verification_status != "verified":
+            logger.warning(f"CAPTCHA not verified for user: {form_data.username}")
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Please verify you are human"
+            )
+        # Delete after use
+        redis_client.delete(f"captcha:{captcha_id}")
 
     user = authenticate_user(form_data.username, form_data.password)
     if not user:

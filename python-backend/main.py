@@ -1,9 +1,10 @@
 import os
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from database import init_db, seed_data
-from routes import appointments, services, auth_routes, twilio_webhook
+from database import init_db, seed_data, get_db_connection, DB_PATH
+from routes import appointments, services, auth_routes, twilio_webhook, cases, staff, customers, settings
 from security import rate_limit_middleware, security_headers_middleware
+import traceback
 
 # Initialize FastAPI app
 app = FastAPI(
@@ -66,6 +67,34 @@ async def startup_event():
     init_db()
     seed_data()
     print("Application started successfully!")
+
+
+@app.get("/api/debug/db")
+async def debug_db():
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        # Get schema for cases table
+        cursor.execute("PRAGMA table_info(cases)")
+        columns = [dict(row) for row in cursor.fetchall()]
+        
+        # Get count of tables
+        cursor.execute("SELECT name FROM sqlite_master WHERE type='table'")
+        tables = [row["name"] for row in cursor.fetchall()]
+        
+        conn.close()
+        
+        return {
+            "db_path": os.path.abspath(DB_PATH),
+            "db_exists": os.path.exists(DB_PATH),
+            "tables": tables,
+            "cases_schema": columns,
+            "cwd": os.getcwd(),
+            "env_database_url": os.getenv("DATABASE_URL")
+        }
+    except Exception as e:
+        return {"error": str(e), "traceback": traceback.format_exc()}
 
 
 @app.get("/")

@@ -7,6 +7,7 @@ Thumbs.db
 .env.local
 .env.*.local
 *.env
+!.env.example
 
 # Python
 __pycache__/
@@ -22,12 +23,16 @@ node_modules/
 dist/
 build/
 .output/
+.next/
 
 # Database
 *.db
 *.sqlite
 *.sqlite3
 data/
+*.db-journal
+*.db-wal
+*.db-shm
 
 # Logs
 *.log
@@ -38,6 +43,73 @@ yarn-error.log*
 # IDEs
 .vscode/
 .idea/
+*.swp
+*.swo
+*~
 
-# Security Configuration
+# Security & Secrets
 security_config.json
+*.pem
+*.key
+*.crt
+*.p12
+*.pfx
+id_rsa*
+id_ed25519*
+id_ecdsa*
+known_hosts
+.ssh/
+
+# Deployment (contains server IPs and credentials)
+run_deploy.ps1
+deploy.ps1
+deployment/scripts/*_credentials.sh
+deployment/config/*.conf
+!deployment/config/*.example.conf
+
+# Cloudflare Tunnel
+cloudflared/
+*.json
+!*example.json
+!package.json
+!tsconfig.json
+
+# WireGuard VPN
+*.conf
+!*.example.conf
+
+# Temporary files
+*.tmp
+*.temp
+*.bak
+*.backup
+
+# OS-specific
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Test scripts with real credentials
+verify_remote.py
+test_llm.py
+enable_staff.py
+fix_dates.py
+debug_scheduler.py
+check_data.py
+
+# Deployment artifacts
+*.tar.gz
+*.zip
+deploy.tar.gz
+
+# Audit & Security Scan Outputs
+.bandit
+bandit-report.json
+bandit-report.html
+audit-results/
+audit-summary.md
+security-scan-*.json
+
+# AI Assistant
+.antigravity/
+.context/

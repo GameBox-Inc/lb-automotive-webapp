@@ -36,7 +36,8 @@ def get_report_summary(
         SELECT 
             COUNT(c.id) as total_repairs,
             SUM(s.price) as total_revenue,
-            AVG(s.duration) as avg_duration
+            AVG(s.duration) as avg_duration,
+            AVG((julianday(c.closed_at) - julianday(COALESCE(c.started_at, c.created_at))) * 1440) as avg_session_time
         FROM cases c
         JOIN appointments a ON c.appointment_id = a.id
         JOIN services s ON a.service_type = s.name -- Linking by name as service_type is stored as name
@@ -51,7 +52,8 @@ def get_report_summary(
     return {
         "total_repairs": row["total_repairs"] or 0,
         "total_revenue": row["total_revenue"] or 0,
-        "avg_duration": round(row["avg_duration"] or 0)
+        "avg_duration": round(row["avg_duration"] or 0),
+        "avg_session_time": round(row["avg_session_time"] or 0)
     }
 
 @router.get("/history")
@@ -72,7 +74,8 @@ def get_report_history(
             a.customer_name,
             s.name as service_name,
             s.price,
-            s.duration
+            s.duration,
+            CAST((julianday(c.closed_at) - julianday(COALESCE(c.started_at, c.created_at))) * 1440 AS INTEGER) as actual_duration
         FROM cases c
         JOIN appointments a ON c.appointment_id = a.id
         LEFT JOIN services s ON a.service_type = s.name
@@ -93,7 +96,8 @@ def get_report_history(
             "customer": row["customer_name"],
             "service": row["service_name"] or "Unknown Service",
             "price": row["price"] or 0,
-            "duration": row["duration"] or 0
+            "duration": row["duration"] or 0,
+            "actual_duration": row["actual_duration"] or 0
         })
         
     return history

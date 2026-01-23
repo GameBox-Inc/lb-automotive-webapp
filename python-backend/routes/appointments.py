@@ -19,11 +19,12 @@ def list_appointments(
     conn = get_db_connection()
     cursor = conn.cursor()
     
-    # Update query to join services to get service name if service_type is an ID
+    # Update query to join services and cases
     query = """
-        SELECT a.*, s.name as service_name_joined 
+        SELECT a.*, s.name as service_name_joined, c.started_at
         FROM appointments a 
         LEFT JOIN services s ON a.service_type = s.id
+        LEFT JOIN cases c ON a.id = c.appointment_id
     """
     
     params = []
@@ -74,7 +75,8 @@ def list_appointments(
             emergency_request=bool(row["emergency_request"]),
             assigned_staff_id=row["assigned_staff_id"] if "assigned_staff_id" in row.keys() else None,
             created_at=row["created_at"],
-            updated_at=row["updated_at"]
+            updated_at=row["updated_at"],
+            started_at=row["started_at"] if "started_at" in row.keys() else None
         ))
     
     return appointments
@@ -376,6 +378,14 @@ def update_appointment(
     if appointment_update.status is not None:
         update_fields.append("status = ?")
         params.append(appointment_update.status)
+        
+        # New Requirement: Track actual repair start time in cases table
+        if appointment_update.status == 'in_progress':
+            cursor.execute("""
+                UPDATE cases 
+                SET started_at = CURRENT_TIMESTAMP 
+                WHERE appointment_id = ? AND started_at IS NULL
+            """, (appointment_id,))
     
     if appointment_update.emergency_request is not None:
         update_fields.append("emergency_request = ?")

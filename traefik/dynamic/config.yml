@@ -9,6 +9,12 @@ http:
       middlewares:
         - cors-headers
 
+    frontend-router:
+      rule: "PathPrefix(`/`)"
+      service: frontend-service
+      entryPoints:
+        - web
+
   middlewares:
     cors-headers:
       headers:
@@ -31,3 +37,8 @@ http:
       loadBalancer:
         servers:
           - url: "http://python-backend:8000"
+    
+    frontend-service:
+      loadBalancer:
+        servers:
+          - url: "http://lb-automotive-frontend:5173"

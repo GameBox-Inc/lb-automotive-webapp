@@ -225,6 +225,44 @@ def add_case_note(
         note=row["note"], is_internal=bool(row["is_internal"]), created_at=row["created_at"]
     )
 
+@router.put("/{case_id}", response_model=Case)
+def update_case(
+    case_id: str,
+    case_update: CaseUpdate,
+    current_user: Dict[str, Any] = Depends(get_current_active_user)
+):
+    """Update general case info (status, metadata)."""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    updates = []
+    params = []
+
+    if case_update.status is not None:
+        updates.append("status = ?")
+        params.append(case_update.status)
+        
+        # If closing the case, set closed_at
+        if case_update.status == 'completed':
+            updates.append("closed_at = CURRENT_TIMESTAMP")
+    
+    if case_update.metadata is not None:
+        updates.append("metadata = ?")
+        params.append(json.dumps(case_update.metadata))
+
+    if not updates:
+        conn.close()
+        return get_case(case_id, current_user)
+
+    query = f"UPDATE cases SET {', '.join(updates)} WHERE id = ?"
+    params.append(case_id)
+    
+    cursor.execute(query, params)
+    conn.commit()
+    
+    conn.close()
+    return get_case(case_id, current_user)
+
 @router.post("/{case_id}/parts", response_model=CasePart)
 def add_case_part(
     case_id: str,
@@ -300,3 +338,27 @@ def sign_and_close_case(
         created_at=row["created_at"],
         closed_at=row["closed_at"]
     )
+
+from pydantic import BaseModel
+
+class NoteGenerationRequest(BaseModel):
+    text: str
+
+@router.post("/{case_id}/generate-note")
+def generate_note_api(
+    case_id: str,
+    request: NoteGenerationRequest,
+    current_user: Dict[str, Any] = Depends(get_current_active_user)
+):
+    """Generate a professional repair note from rough text using AI."""
+    from llm_service import generate_repair_note
+    
+    if not request.text or len(request.text.strip()) < 5:
+         raise HTTPException(status_code=400, detail="Input text too short")
+         
+    try:
+        polished_note = generate_repair_note(request.text)
+        return {"note": polished_note}
+    except Exception as e:
+        # Fallback if AI fails
+        return {"note": request.text}

@@ -1,0 +1,80 @@
+services:
+  # Frontend Service (React + Nginx)
+  frontend:
+    build:
+      context: ../../
+      dockerfile: deployment/docker/Dockerfile.frontend
+      args:
+        - VITE_API_URL=/api
+    container_name: lb-auto-frontend
+    restart: unless-stopped
+    ports:
+      - "80:80"   # HTTP
+      - "443:443"  # HTTPS
+    volumes:
+      - ./nginx-selfsigned.crt:/etc/nginx/ssl/nginx-selfsigned.crt:ro
+      - ./nginx-selfsigned.key:/etc/nginx/ssl/nginx-selfsigned.key:ro
+    depends_on:
+      - backend
+    networks:
+      - app-network
+
+  # Backend Service (FastAPI)
+  backend:
+    build:
+      context: ../../
+      dockerfile: deployment/docker/Dockerfile.backend
+    container_name: lb-auto-backend
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    environment:
+      - DATABASE_URL=sqlite:////app/data/lb_automotive.db
+      - SECRET_KEY=${SECRET_KEY}
+      - ALLOWED_ORIGINS=${ALLOWED_ORIGINS:-http://localhost:5173,http://localhost:8080,https://lb-auto.com,http://10.100.0.1:8080,http://178.156.223.196:8080}
+      - REDIS_URL=redis://redis:6379/0
+      - OLLAMA_API_URL=http://ollama:11434
+    volumes:
+      - app-data:/app/data
+    networks:
+      - app-network
+    depends_on:
+      - redis
+      - ollama
+
+  # Redis Service (Caching & Rate Limiting)
+  redis:
+    image: redis:7-alpine
+    container_name: lb-auto-redis
+    command: redis-server --appendonly yes
+    restart: unless-stopped
+    volumes:
+      - redis-data:/data
+    networks:
+      - app-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+
+  # Ollama Service
+  ollama:
+    image: ollama/ollama:latest
+    container_name: lb-auto-ollama
+    restart: unless-stopped
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama-data:/root/.ollama
+    networks:
+      - app-network
+
+networks:
+  app-network:
+    driver: bridge
+
+volumes:
+  app-data:
+  ollama-data:
+  redis-data:

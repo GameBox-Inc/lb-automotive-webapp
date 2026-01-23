@@ -40,10 +40,10 @@ def get_available_slots_logic(date_str: str, service_id: str):
 
     # 3. Get existing appointments
     cursor.execute("""
-        SELECT appointment_time, service_type, duration 
+        SELECT a.appointment_time, a.service_type, a.duration 
         FROM appointments a
-        JOIN services s ON a.service_type = s.id
-        WHERE date(appointment_time) = ? AND status != 'cancelled'
+        LEFT JOIN services s ON a.service_type = s.id OR a.service_type = s.name
+        WHERE date(a.appointment_time) = ? AND a.status != 'cancelled'
     """, (date_str,))
     
     existing_appointments = cursor.fetchall()

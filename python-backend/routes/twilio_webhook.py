@@ -59,20 +59,24 @@ def get_setting(key: str, default: str) -> str:
         logger.error(f"Error fetching setting {key}: {e}")
         return default
 
-def is_business_open():
+def is_within_business_hours() -> bool:
     """Check if currently within business hours based on DB settings."""
     try:
         opening_time_str = get_setting('opening_time', "08:00")
         closing_time_str = get_setting('closing_time', "18:00")
         
-        now = datetime.now().time()
+        # Parse times
         open_time = datetime.strptime(opening_time_str, "%H:%M").time()
         close_time = datetime.strptime(closing_time_str, "%H:%M").time()
+        
+        # Get current time in correct timezone (Assuming server local time for now)
+        # Ideally, we should handle timezone properly
+        now = datetime.now().time()
         
         return open_time <= now <= close_time
     except Exception as e:
         logger.error(f"Error checking business hours: {e}")
-        return True # Default to open on error
+        return True  # Default to open if check fails
 
 def log_ivr_interaction(call_sid: str, step: str, input_data: str = None):
     """Log IVR interaction."""
@@ -90,6 +94,266 @@ def log_ivr_interaction(call_sid: str, step: str, input_data: str = None):
         conn.close()
     except Exception as e:
         logger.error(f"Error logging IVR interaction: {e}")
+
+
+def track_decision(call_sid: str, node_name: str, decision_taken: str = None, duration_seconds: int = None):
+    """Track IVR decision in analytics table."""
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        analytics_id = str(uuid.uuid4())
+        cursor.execute("""
+            INSERT INTO ivr_analytics (id, call_sid, node_name, decision_taken, duration_seconds)
+            VALUES (?, ?, ?, ?, ?)
+        """, (analytics_id, call_sid, node_name, decision_taken, duration_seconds))
+        
+        conn.commit()
+        conn.close()
+    except Exception as e:
+        logger.error(f"Error tracking decision: {e}")
+
+
+def update_decision_path(call_sid: str, node_name: str):
+    """Update the decision path in call_states."""
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        # Get current decision path
+        cursor.execute("SELECT decision_path FROM call_states WHERE call_sid = ?", (call_sid,))
+        row = cursor.fetchone()
+        
+        if row:
+            current_path = json.loads(row["decision_path"]) if row["decision_path"] else []
+            current_path.append(node_name)
+            
+            cursor.execute("""
+                UPDATE call_states 
+                SET decision_path = ?
+                WHERE call_sid = ?
+            """, (json.dumps(current_path), call_sid))
+            
+            conn.commit()
+        
+        conn.close()
+    except Exception as e:
+        logger.error(f"Error updating decision path: {e}")
+
+
+# --- Decision Tree Structure ---
+DECISION_TREE = {
+    "start": {
+        "type": "gather",
+        "prompt_en": "Welcome to LB Automotive. For English, press 1 or say English. Para español, presione 2 o diga Español.",
+        "prompt_es": "Bienvenido a LB Automotive. Para español, presione 2 o diga Español. For English, press 1 or say English.",
+        "gather_config": {
+            "num_digits": 1,
+            "timeout": 5,
+            "bargein": True,
+            "speech_timeout": "auto",
+            "input": "speech dtmf"
+        },
+        "transitions": {
+            "1": "main_menu_en",
+            "english": "main_menu_en",
+            "2": "main_menu_es",
+            "español": "main_menu_es",
+            "spanish": "main_menu_es",
+            "appointment": "smart_jump_service",  # Smart Jump
+        },
+        "default": "start"  # Repeat if no valid input
+    },
+    
+    "main_menu_en": {
+        "type": "gather",
+        "prompt_en": "To schedule an appointment, press 1 or say appointment. For road-side assistance and emergencies, press 2 or say emergency.",
+        "gather_config": {
+            "num_digits": 1,
+            "timeout": 5,
+            "bargein": True,
+            "speech_timeout": "auto",
+            "input": "speech dtmf"
+        },
+        "transitions": {
+            "1": "select_time",
+            "appointment": "select_time",
+            "scheduling": "select_time",
+            "2": "emergency_services",
+            "emergency": "emergency_services",
+        },
+        "default": "main_menu_en"
+    },
+    
+    "main_menu_es": {
+        "type": "gather",
+        "prompt_es": "Para programar una cita, presione 1 o diga cita. Para emergencias, presione 2 o diga emergencia.",
+        "gather_config": {
+            "num_digits": 1,
+            "timeout": 5,
+            "bargein": True,
+            "speech_timeout": "auto",
+            "input": "speech dtmf"
+        },
+        "transitions": {
+            "1": "select_time",
+            "cita": "select_time",
+            "2": "emergency_services",
+            "emergencia": "emergency_services",
+        },
+        "default": "main_menu_es"
+    },
+    
+    "select_service_category": {
+        "type": "dynamic",  # Generated from database
+        "handler": "handle_service_category"
+    },
+    
+    "smart_jump_service": {
+        "type": "function",
+        "handler": "handle_smart_jump"
+    },
+    
+    "select_time": {
+        "type": "dynamic",
+        "handler": "handle_time_selection"
+    },
+    
+    "confirm_details": {
+        "type": "gather",
+        "prompt_en": "To confirm your appointment, press 1. To start over, press 9.",
+        "prompt_es": "Para confirmar su cita, presione 1. Para comenzar de nuevo, presione 9.",
+        "gather_config": {
+            "num_digits": 1,
+            "timeout": 5,
+            "bargein": True,
+            "input": "dtmf"
+        },
+        "transitions": {
+            "1": "collect_contact",
+            "9": "start"
+        },
+        "default": "confirm_details"
+    },
+    
+    "collect_contact": {
+        "type": "function",
+        "handler": "handle_contact_collection"
+    },
+    
+    "book_appointment": {
+        "type": "function",
+        "handler": "handle_booking"
+    },
+    
+    "emergency_services": {
+        "type": "dynamic",
+        "handler": "handle_emergency"
+    }
+}
+
+
+def get_tree_node(node_name: str) -> Optional[Dict[str, Any]]:
+    """Get a node from the decision tree."""
+    return DECISION_TREE.get(node_name)
+
+
+def navigate_tree(node_name: str, user_input: str, language: str = "en") -> Optional[str]:
+    """
+    Navigate the decision tree based on user input.
+    Returns the next node name or None if no match.
+    """
+    node = get_tree_node(node_name)
+    if not node:
+        return None
+    
+    transitions = node.get("transitions", {})
+    
+    # Normalize user input for matching
+    input_lower = user_input.lower() if user_input else ""
+    
+    # Try exact match first
+    if user_input in transitions:
+        return transitions[user_input]
+    
+    # Try lowercase match
+    if input_lower in transitions:
+        return transitions[input_lower]
+    
+    # Return default if no match
+    return node.get("default")
+
+
+def process_smart_jump(intent, llm_result, CallSid, metadata, response, language):
+    """
+    Encapsulates the logic for 'Smart Jump' - detecting intent/service and skipping menu steps.
+    Returns True if a jump occurred (response modified), False otherwise.
+    """
+    # Normalize keys to lowercase for robustness
+    if isinstance(llm_result, dict):
+        llm_result = {k.lower(): v for k, v in llm_result.items()}
+    else:
+        llm_result = {}
+
+    intent = llm_result.get("intent", "").lower()
+
+    if intent == "appointment" or intent == "spanish":
+        # Check for Spanish intent via LLM
+        if intent == "spanish":
+            language = "es"
+            upsert_call_state(CallSid, "menu", language)
+            response.redirect("/api/twilio/webhook?step=menu")
+            return True
+
+        # If entity extraction found a service
+        extracted_service = llm_result.get("service")
+        
+        if extracted_service:
+            logger.info(f"Smart Jump: Detected service '{extracted_service}'")
+            # Try to match service name to DB
+            conn = get_db_connection()
+            cursor = conn.cursor()
+            cursor.execute("SELECT id, name, category, duration FROM services")
+            all_services = cursor.fetchall()
+            conn.close()
+            
+            # Simple fuzzy match (case insensitive substring)
+            matched_service = None
+            for svc in all_services:
+                # Improved Fuzzy Match: Check if meaningful parts of the string match
+                # Split by space and check overlap
+                user_terms = set(extracted_service.lower().split())
+                svc_terms = set(svc["name"].lower().split())
+                
+                # Filter out common stop words if needed, but for now just check intersection
+                common = user_terms.intersection(svc_terms)
+                
+                # If at least 2 words match (or 1 if it's a unique word like 'diagnostic')
+                if len(common) >= 2 or (len(common) >= 1 and len(user_terms) == 1):
+                    matched_service = svc
+                    break
+                
+                # Fallback: simple substring
+                if extracted_service.lower() in svc["name"].lower():
+                        matched_service = svc
+                        break
+            
+            if matched_service:
+                logger.info(f"Smart Jump: Matched DB service '{matched_service['name']}'")
+                metadata["selected_service"] = {
+                    "id": matched_service["id"],
+                    "name": matched_service["name"],
+                    "duration": matched_service["duration"]
+                }
+                metadata["selected_category"] = matched_service["category"]
+                
+                # Go straight to select_time
+                # We also default language to 'en' if not explicitly spanish
+                upsert_call_state(CallSid, "select_time", "en", metadata)
+                response.redirect("/api/twilio/webhook?step=select_time")
+                return True
+
+    return False
 
 # --- Webhook Handler ---
 
@@ -111,9 +375,8 @@ def twilio_webhook(
         voice = get_setting('ivr_voice', 'alice')
         language = get_setting('ivr_language', 'en-US')
         
-        # Check business hours on initial call
         if step == "start":
-            if not is_business_open():
+            if not is_within_business_hours():
                 closed_message = get_setting(
                     'ivr_closed_message', 
                     "We are currently closed. Our hours are 8 AM to 6 PM. Please call back during business hours."
@@ -144,13 +407,17 @@ def twilio_webhook(
         
         # Determine intent if speech was used
         intent = None
+        llm_result = {}  # Initialize to empty dict
         if SpeechResult:
+            logger.error(f"DEBUG: Processing SpeechResult: '{SpeechResult}'")
             # Hybrid Approach: Use Local LLM for intent classification
             try:
                 llm_result = classify_intent(SpeechResult)
+                logger.error(f"DEBUG: LLM Result Raw: {llm_result}")
                 intent = llm_result.get("intent")
                 logger.info(f"LLM Classification: {SpeechResult} -> {intent}")
             except Exception as e:
+                logger.error(f"DEBUG: Classification Error: {e}")
                 logger.error(f"LLM classification failed: {e}")
                 # Fallback to keyword matching if LLM fails
                 speech_lower = SpeechResult.lower()
@@ -162,17 +429,24 @@ def twilio_webhook(
                     intent = "spanish"
                 elif "english" in speech_lower or "inglés" in speech_lower:
                     intent = "english"
+        else:
+            logger.error("DEBUG: No SpeechResult received.")
 
         # --- State Machine ---
 
         if step == "start" or step == "welcome":
             # If user already spoke 'spanish' or pushed 2, switch language immediately
-            if intent == "spanish" or Digits == "2":
+            if Digits == "2":
                 language = "es"
                 upsert_call_state(CallSid, "menu", language)
                 response.redirect("/api/twilio/webhook?step=menu")
                 return Response(content=str(response), media_type="application/xml")
             
+            # --- Smart Jump Logic ---
+            if process_smart_jump(intent, llm_result, CallSid, metadata, response, language):
+                return Response(content=str(response), media_type="application/xml")
+            
+            # Default fallback if no smart jump
             # Check for returning customer
             conn = get_db_connection()
             cursor = conn.cursor()
@@ -184,7 +458,7 @@ def twilio_webhook(
             conn.close()
             
             customer_name = row["name"] if row else None
-            greeting = "Welcome to L B Automotive."
+            greeting = "Welcome to LB Automotive."
             if customer_name:
                  # Extract first name
                  first_name = customer_name.split()[0]
@@ -195,6 +469,7 @@ def twilio_webhook(
             gather = Gather(
                 num_digits=1,
                 timeout=5,
+                bargein=True,  # Enable cut-off
                 speechTimeout="auto", # Reduce latency
                 input="speech dtmf",
                 action="/api/twilio/webhook?step=language",
@@ -207,13 +482,20 @@ def twilio_webhook(
             response.append(gather)
         
         elif step == "language":
-            # ... (unchanged) ...
-            pass
-            # (Note: Step language logic is fine, jumping to menu)
+            # Check for Smart Jump here too (User said "I need brakes" at the first prompt)
+            if process_smart_jump(intent, llm_result, CallSid, metadata, response, language):
+                return Response(content=str(response), media_type="application/xml")
+
+            if Digits == "1" or (SpeechResult and "english" in SpeechResult.lower()):
+                language = "en"
+            elif Digits == "2" or (SpeechResult and "español" in SpeechResult.lower()):
+                language = "es"
+            
+            upsert_call_state(CallSid, "menu", language, metadata)
+            response.redirect("/api/twilio/webhook?step=menu")
+            return Response(content=str(response), media_type="application/xml")
 
         elif step == "menu":
-            # (Code omitted for brevity but I will replace the whole block in actual call)
-            # ...
             # Dynamic Response Generation
             if SpeechResult:
                  # If user said something but we didn't catch a direct intent or it was chatty
@@ -225,20 +507,95 @@ def twilio_webhook(
                 message = (
                     "Para programar una cita, presione 1 o diga cita. Para emergencias, presione 2 o diga emergencia."
                     if language == "es" else
-                    "To schedule an appointment, press 1 or say appointment. For emergencies, press 2 or say emergency."
+                    "To schedule an appointment, press 1 or say appointment. For road-side assistance and emergencies, press 2 or say emergency."
                 )
 
             gather = Gather(
                 num_digits=1,
                 timeout=5,
+                bargein=True,  # Enable cut-off
                 speechTimeout="auto", # Reduce latency
                 input="speech dtmf",
-                action="/api/twilio/webhook?step=route",
+                action="/api/twilio/webhook?step=route_direct",
                 method="POST"
             )
             gather.say(message, voice=voice)
             response.append(gather)
         
+        elif step == "route_direct":
+            # Simplified routing: appointment (1) -> time selection, emergency (2) -> emergency services
+            is_emergency = False
+            if Digits == "2" or intent == "emergency":
+                is_emergency = True
+            elif Digits == "1" or intent == "appointment":
+                is_emergency = False
+            else:
+                # Check for speech numbers if intent wasn't clear
+                if SpeechResult:
+                    lower = SpeechResult.lower()
+                    if "one" in lower or "1" in lower or "appointment" in lower:
+                        is_emergency = False
+                    elif "two" in lower or "2" in lower or "emergency" in lower:
+                        is_emergency = True
+                    else:
+                        response.redirect("/api/twilio/webhook?step=menu")
+                        return Response(content=str(response), media_type="application/xml")
+                else:
+                    response.redirect("/api/twilio/webhook?step=menu")
+                    return Response(content=str(response), media_type="application/xml")
+
+            if is_emergency:
+                # Route to emergency services
+                conn = get_db_connection()
+                cursor = conn.cursor()
+                cursor.execute("""
+                    SELECT id, name, description, duration, price, category
+                    FROM services WHERE is_emergency = 1 ORDER BY name
+                """)
+                services = [dict(row) for row in cursor.fetchall()]
+                conn.close()
+                
+                metadata["services"] = services
+                upsert_call_state(CallSid, "select_emergency", language, metadata)
+                
+                message = (
+                    "Por favor seleccione el servicio de emergencia:"
+                    if language == "es" else
+                    "Please select from our available emergency services:"
+                )
+                
+                response.say(message, voice=voice)
+                
+                for idx, item in enumerate(services, 1):
+                    response.say(f"For {item['name']}, press {idx} or say {idx}", voice=voice)
+                
+                gather = Gather(
+                    num_digits=1,
+                    timeout=5,
+                    bargein=True,
+                    input="speech dtmf",
+                    action="/api/twilio/webhook?step=confirm_emergency",
+                    method="POST"
+                )
+                response.append(gather)
+            else:
+                # Route directly to time selection with default general service
+                # Create a default general service entry
+                default_service = {
+                    "id": "general",
+                    "name": "General Service",
+                    "duration": 60,  # Default 1 hour
+                    "category": "General"
+                }
+                
+                metadata["selected_service"] = default_service
+                metadata["selected_category"] = "General"
+                metadata["services"] = [default_service]
+                
+                upsert_call_state(CallSid, "select_time_direct", language, metadata)
+                response.redirect("/api/twilio/webhook?step=select_time_direct")
+                return Response(content=str(response), media_type="application/xml")
+
         elif step == "route":
             # Determine path based on input
             is_emergency = False
@@ -277,7 +634,7 @@ def twilio_webhook(
                 message = (
                     "Por favor seleccione el servicio de emergencia:"
                     if language == "es" else
-                    "Please select the emergency service:"
+                    "Please select from our available emergency services:"
                 )
             else:
                 # Regular categories
@@ -300,11 +657,14 @@ def twilio_webhook(
             items = metadata.get("services" if is_emergency else "categories", [])
             for idx, item in enumerate(items, 1):
                 name = item["name"] if isinstance(item, dict) else item
-                response.say(f"{name}, press {idx} or say {idx}", voice=voice)
+                # Capitalize categories for better speech synthesis
+                clean_name = name.capitalize() if isinstance(item, str) else name
+                response.say(f"For {clean_name}, press {idx} or say {idx}", voice=voice)
             
             gather = Gather(
                 num_digits=1,
                 timeout=5,
+                bargein=True,  # Enable cut-off
                 input="speech dtmf", # Enable speech
                 action=f"/api/twilio/webhook?step={'confirm_emergency' if is_emergency else 'select_service'}",
                 method="POST"
@@ -357,6 +717,85 @@ def twilio_webhook(
                  response.say("Invalid selection", voice=voice)
                  response.redirect("/api/twilio/webhook?step=route")
 
+        elif step == "select_time_direct":
+            # Simplified time selection - no service selection required
+            # Use the default general service from metadata
+            selected_service = metadata.get("selected_service", {"id": "general", "name": "General Service", "duration": 60})
+            
+            # Fetch availability for tomorrow
+            from utils_scheduler import get_available_slots_logic
+            tomorrow_date = (datetime.now() + timedelta(days=1)).strftime("%Y-%m-%d")
+            
+            # Get available slots using general service duration
+            slots = get_available_slots_logic(tomorrow_date, selected_service.get('id'))
+            
+            # If no slots with ID, try with duration-based logic
+            if not slots:
+                # Fallback: generate slots based on business hours
+                try:
+                    opening_str = get_setting('opening_time', "08:00")
+                    closing_str = get_setting('closing_time', "18:00")
+                    # Simple slot generation for demo
+                    slots = ["09:00", "10:00", "11:00", "13:00", "14:00", "15:00", "16:00"]
+                except Exception as e:
+                    logger.error(f"Error generating slots: {e}")
+                    slots = []
+            
+            # Check for morning and afternoon availability
+            has_morning = any(int(s.split(':')[0]) < 12 for s in slots)
+            has_afternoon = any(int(s.split(':')[0]) >= 12 for s in slots)
+            
+            if not slots:
+                message = (
+                    "Lo sentimos, no hay espacios disponibles mañana. Por favor llame durante horas de oficina para programar."
+                    if language == "es" else
+                    "Sorry, we have no available appointments tomorrow. Please call during business hours to schedule."
+                )
+                response.say(message, voice=voice)
+                response.hangup()
+                return Response(content=str(response), media_type="application/xml")
+            
+            # Present time options
+            message = (
+                f"Tenemos disponibilidad mañana, {tomorrow_date}. "
+                if language == "es" else
+                f"We have availability tomorrow, {tomorrow_date}. "
+            )
+            
+            if has_morning and has_afternoon:
+                message += (
+                    "Para la mañana, presione 1. Para la tarde, presione 2."
+                    if language == "es" else
+                    "For morning, press 1. For afternoon, press 2."
+                )
+            elif has_morning:
+                message += (
+                    "Tenemos espacios en la mañana. Presione 1 para continuar."
+                    if language == "es" else
+                    "We have morning slots available. Press 1 to continue."
+                )
+            else:
+                message += (
+                    "Tenemos espacios en la tarde. Presione 2 para continuar."
+                    if language == "es" else
+                    "We have afternoon slots available. Press 2 to continue."
+                )
+            
+            response.say(message, voice=voice)
+            
+            metadata["available_slots"] = slots
+            metadata["target_date"] = tomorrow_date
+            upsert_call_state(CallSid, "collect_symptoms", language, metadata)
+            
+            gather = Gather(
+                num_digits=1,
+                input="speech dtmf",
+                timeout=5,
+                action="/api/twilio/webhook?step=collect_symptoms",
+                method="POST"
+            )
+            response.append(gather)
+
         elif step == "select_time":
             # Service selected, pick time
             idx = -1
@@ -391,46 +830,96 @@ def twilio_webhook(
                 has_morning = any(int(s.split(':')[0]) < 12 for s in slots)
                 has_afternoon = any(int(s.split(':')[0]) >= 12 for s in slots)
                 
+                # Use LLM to generate natural language summary of availability
+                from llm_service import analyze_schedule
+                
+                # Format slots for the LLM
+                slot_summary = analyze_schedule(slots, tomorrow_date, selected_service.get('name', 'Service'))
+                
+                # Check if the LLM output suggests options (it usually will for valid slots)
+                # We need to construct the speech.
+                # If no slots, the LLM will provide the "Fully booked" message which we can use directly.
+                
+                response.say(slot_summary, voice=voice)
+                
                 if not slots:
-                    response.say("Sorry, we are fully booked for tomorrow. Please call the front desk.", voice=voice)
-                    response.hangup()
-                    return Response(content=str(response), media_type="application/xml")
+                     response.hangup()
+                     return Response(content=str(response), media_type="application/xml")
 
                 metadata["available_slots"] = slots # Store for confirmation logic
                 metadata["target_date"] = tomorrow_date
                 upsert_call_state(CallSid, "select_time_slot_confirm", language, metadata)
                 
-                # Dynamic Menu based on availability
-                options = []
-                if has_morning:
-                    options.append("Press 1 or say morning.")
-                if has_afternoon:
-                    options.append("Press 2 or say afternoon.")
-                
-                response.say(
-                    f"For tomorrow, {tomorrow_date}, we have openings. {' '.join(options)}",
-                    voice=voice
-                )
-                gather = Gather(num_digits=1, input="speech dtmf", action="/api/twilio/webhook?step=confirm_booking")
+                # We still need a Gather for the user's choice
+                # The LLM prompt asks the user to "say their preferred time".
+                gather = Gather(num_digits=1, input="speech dtmf", action="/api/twilio/webhook?step=collect_symptoms")
                 response.append(gather)
             else:
                 response.say("Invalid selection", voice=voice)
                 response.redirect("/api/twilio/webhook?step=select_service")
 
-        elif step == "confirm_booking":
-            chosen_slot = None
+        elif step == "collect_symptoms":
+             # Save selection first if coming from select_time
             if Digits:
                 choice = Digits
+                # Store the choice for later use in confirm_booking
+                metadata["time_slot_choice"] = choice
+                upsert_call_state(CallSid, "collect_symptoms", language, metadata)
             elif SpeechResult:
-                lower = SpeechResult.lower()
-                if "morning" in lower or "one" in lower or "1" in lower:
+                 # Minimal logic if we just came from select_time confirmation loop
+                 lower = SpeechResult.lower()
+                 if "morning" in lower or "one" in lower or "1" in lower:
                     choice = "1"
-                elif "afternoon" in lower or "two" in lower or "2" in lower:
+                 elif "afternoon" in lower or "two" in lower or "2" in lower:
                     choice = "2"
-                else:
+                 else:
                     choice = None
+                 
+                 if choice:
+                    metadata["time_slot_choice"] = choice
+                    upsert_call_state(CallSid, "collect_symptoms", language, metadata)
+                 else:
+                    response.say("Invalid time selection. Please try again.", voice=voice)
+                    response.redirect("/api/twilio/webhook?step=select_time")
+                    return Response(content=str(response), media_type="application/xml")
             else:
-                choice = None
+                # If no Digits or SpeechResult, redirect back to select_time
+                response.say("No selection received for time. Please try again.", voice=voice)
+                response.redirect("/api/twilio/webhook?step=select_time")
+                return Response(content=str(response), media_type="application/xml")
+            
+            message = (
+                "Please briefly describe the issue with your vehicle after the beep. Press any key when finished."
+                if language == "en" else
+                "Por favor describa brevemente el problema con su vehículo después del tono. Presione cualquier tecla al terminar."
+            )
+            
+            response.say(message, voice=voice)
+            response.record(
+                max_length=10,
+                play_beep=True,
+                action="/api/twilio/webhook?step=process_symptoms",
+                transcribe=True # Twilio transcription
+            )
+
+        elif step == "process_symptoms":
+            # Store symptoms
+            symptoms = "User provided audio description" # Default if transcription not immediately available
+            if SpeechResult: # If we used Gather instead of Record, or transcription available
+                 symptoms = SpeechResult
+            
+            metadata["symptoms"] = symptoms
+            upsert_call_state(CallSid, "confirm_booking", language, metadata)
+
+            # Now proceed to confirm booking with the collected symptoms
+            # This step will effectively re-evaluate the time slot choice and book
+            response.redirect("/api/twilio/webhook?step=confirm_booking")
+            return Response(content=str(response), media_type="application/xml")
+
+        elif step == "confirm_booking":
+            chosen_slot = None
+            # Retrieve choice from metadata, set in collect_symptoms
+            choice = metadata.get("time_slot_choice")
 
             if choice:
                 svc = metadata.get("selected_service", {})
@@ -457,6 +946,10 @@ def twilio_webhook(
                     conn = get_db_connection()
                     cursor = conn.cursor()
                     aid = str(uuid.uuid4())
+                    
+                    customer_name = metadata.get("customer_name", "Voice Customer")
+                    symptoms_desc = metadata.get("symptoms", "No symptoms provided.")
+
                     cursor.execute("""
                         INSERT INTO appointments (id, customer_name, phone_number, appointment_time, service_type, status)
                         VALUES (?, ?, ?, ?, ?, ?)
@@ -507,7 +1000,12 @@ def twilio_webhook(
         return Response(content=str(response), media_type="application/xml")
 
     except Exception as e:
+        import traceback
+        error_details = traceback.format_exc()
         logger.error(f"Webhook error: {e}")
+        logger.error(f"Full traceback:\n{error_details}")
+        print(f"WEBHOOK ERROR: {e}")
+        print(f"TRACEBACK:\n{error_details}")
         response.say("An error occurred. Please try again later.", voice="Polly.Matthew")
         response.hangup()
         return Response(content=str(response), media_type="application/xml")

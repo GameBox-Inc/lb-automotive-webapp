@@ -1,13 +1,14 @@
 version: '3.8'
 
 services:
-  # Python Backend Service
+  # Python Backend Service (Scalable)
   python-backend:
     build:
       context: ./python-backend
       dockerfile: Dockerfile
-    container_name: lb-automotive-api
     restart: unless-stopped
+    deploy:
+      replicas: 2
     environment:
       - DATABASE_URL=${DATABASE_URL:-sqlite:////app/data/lb_automotive.db}
       - SECRET_KEY=${SECRET_KEY}
@@ -16,19 +17,21 @@ services:
       - TWILIO_ACCOUNT_SID=${TWILIO_ACCOUNT_SID}
       - TWILIO_AUTH_TOKEN=${TWILIO_AUTH_TOKEN}
       - TWILIO_PHONE_NUMBER=${TWILIO_PHONE_NUMBER}
-      - ALLOWED_ORIGINS=${ALLOWED_ORIGINS}
+      - ALLOWED_ORIGINS=${ALLOWED_ORIGINS:-http://localhost:5173,http://localhost:8000,https://electrolytically-deprived-eldon.ngrok-free.dev}
+      - REDIS_URL=redis://redis:6379/0
     volumes:
       - ./python-backend/data:/app/data
       - ./python-backend:/app
-    ports:
-      - "8000:8000"
+    # No host port mapping here to allow multiple replicas
     labels:
       - "traefik.enable=true"
-      - "traefik.http.routers.api.rule=Host(`localhost`) && PathPrefix(`/api`)"
+      - "traefik.http.routers.api.rule=PathPrefix(`/api`)"
       - "traefik.http.routers.api.entrypoints=web"
       - "traefik.http.services.api.loadbalancer.server.port=8000"
     networks:
       - lb-automotive-network
+    depends_on:
+      - redis
 
   # Traefik Reverse Proxy
   traefik:
@@ -40,20 +43,33 @@ services:
       - "--providers.docker=true"
       - "--providers.docker.exposedbydefault=false"
       - "--entrypoints.web.address=:80"
-      - "--entrypoints.websecure.address=:443"
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
+      - "--providers.file.directory=/etc/traefik/dynamic"
+      - "--providers.file.watch=true"
     ports:
       - "80:80"
-      - "443:443"
-      - "8080:8080"  # Traefik dashboard
+      - "8080:8080" # Dashboard
     volumes:
       - //var/run/docker.sock:/var/run/docker.sock:ro
-      - ./traefik/traefik.yml:/etc/traefik/traefik.yml:ro
       - ./traefik/dynamic:/etc/traefik/dynamic:ro
     networks:
       - lb-automotive-network
 
+  # Redis for Session/Rate-Limit State (Single Instance instance)
+  redis:
+    image: redis:7-alpine
+    container_name: lb-automotive-redis
+    restart: unless-stopped
+    volumes:
+      - redis-data:/data
+    networks:
+      - lb-automotive-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  # Frontend Service
   lb-automotive-frontend:
     build:
       context: ./project-bolt-bolt-vite-react-bpj7xxwp/project
@@ -63,13 +79,17 @@ services:
     volumes:
       - ./project-bolt-bolt-vite-react-bpj7xxwp/project:/app
       - /app/node_modules
-    ports:
-      - "5173:5173"
     environment:
       - VITE_API_URL=https://electrolytically-deprived-eldon.ngrok-free.dev/api
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.frontend.rule=PathPrefix(`/`)"
+      - "traefik.http.routers.frontend.entrypoints=web"
+      - "traefik.http.services.frontend.loadbalancer.server.port=5173"
     networks:
       - lb-automotive-network
 
+  # Ngrok Tunnel
   ngrok:
     image: ngrok/ngrok:latest
     container_name: ngrok
@@ -78,60 +98,16 @@ services:
       - "http"
       - "--domain=electrolytically-deprived-eldon.ngrok-free.dev"
       - "traefik:80"
-      - "--log=stdout"
-    ports:
-      - "4040:4040"  # ngrok web interface
     environment:
-      - NGROK_AUTHTOKEN=${NGROK_AUTHTOKEN:-}
+      - NGROK_AUTHTOKEN=${NGROK_AUTHTOKEN}
     networks:
       - lb-automotive-network
     depends_on:
-      - python-backend
-    labels:
-      - lb-automotive-network
-
-  redis:
-    image: redis:7-alpine
-    container_name: lb-automotive-redis
-    restart: unless-stopped
-    ports:
-      - "6379:6379"
-    volumes:
-      - redis-data:/data
-    command: redis-server --maxmemory 256mb --maxmemory-policy allkeys-lru --appendonly yes
-    networks:
-      - lb-automotive-network
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 10s
-      timeout: 3s
-      retries: 3
-
-  prometheus:
-    image: prom/prometheus:latest
-    container_name: lb-automotive-prometheus
-    restart: unless-stopped
-    ports:
-      - "9090:9090"
-    volumes:
-      - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
-      - prometheus-data:/prometheus
-    command:
-      - '--config.file=/etc/prometheus/prometheus.yml'
-      - '--storage.tsdb.path=/prometheus'
-      - '--web.console.libraries=/etc/prometheus/console_libraries'
-      - '--web.console.templates=/etc/prometheus/consoles'
-    networks:
-      - lb-automotive-network
-    depends_on:
-      - python-backend
+      - traefik
 
 networks:
   lb-automotive-network:
     driver: bridge
 
 volumes:
-  traefik-certs:
-  db-data:
   redis-data:
-  prometheus-data:

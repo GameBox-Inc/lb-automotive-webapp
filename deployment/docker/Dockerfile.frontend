@@ -1,0 +1,37 @@
+# Stage 1: Build the React application
+FROM node:18-alpine AS build
+
+WORKDIR /app
+
+# Copy package.json and lock files
+COPY project-bolt-bolt-vite-react-bpj7xxwp/project/package.json ./
+# Note: Assuming package-lock.json exists, if not it will skip. Copied just in case.
+# COPY project-bolt-bolt-vite-react-bpj7xxwp/project/package-lock.json ./
+
+# Install dependencies
+RUN npm install
+
+# Copy source code
+COPY project-bolt-bolt-vite-react-bpj7xxwp/project/ .
+
+# Accept build argument for API URL
+ARG VITE_API_URL=/api
+ENV VITE_API_URL=$VITE_API_URL
+
+# Build the app
+RUN npm run build
+
+# Stage 2: Serve with Nginx
+FROM nginx:alpine
+
+# Copy built assets from builder stage
+COPY --from=build /app/dist /usr/share/nginx/html
+
+# Copy custom Nginx configuration
+COPY deployment/docker/nginx-https.conf /etc/nginx/conf.d/default.conf
+
+# Expose port
+EXPOSE 80
+
+# Start Nginx
+CMD ["nginx", "-g", "daemon off;"]
