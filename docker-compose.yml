@@ -72,12 +72,12 @@ services:
   # Frontend Service
   lb-automotive-frontend:
     build:
-      context: ./project-bolt-bolt-vite-react-bpj7xxwp/project
+      context: ./frontend
       dockerfile: Dockerfile
     container_name: lb-automotive-frontend
     restart: unless-stopped
     volumes:
-      - ./project-bolt-bolt-vite-react-bpj7xxwp/project:/app
+      - ./frontend:/app
       - /app/node_modules
     environment:
       - VITE_API_URL=https://electrolytically-deprived-eldon.ngrok-free.dev/api

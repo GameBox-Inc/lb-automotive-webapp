@@ -4,15 +4,15 @@ FROM node:18-alpine AS build
 WORKDIR /app
 
 # Copy package.json and lock files
-COPY project-bolt-bolt-vite-react-bpj7xxwp/project/package.json ./
+COPY frontend/package.json ./
 # Note: Assuming package-lock.json exists, if not it will skip. Copied just in case.
-# COPY project-bolt-bolt-vite-react-bpj7xxwp/project/package-lock.json ./
+# COPY frontend/package-lock.json ./
 
 # Install dependencies
 RUN npm install
 
 # Copy source code
-COPY project-bolt-bolt-vite-react-bpj7xxwp/project/ .
+COPY frontend/ .
 
 # Accept build argument for API URL
 ARG VITE_API_URL=/api

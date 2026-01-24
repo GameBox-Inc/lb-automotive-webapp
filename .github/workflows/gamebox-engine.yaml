@@ -1,0 +1,88 @@
+name: CI/CD Pipeline
+
+on:
+  push:
+    branches: [ "main", "master" ]
+  pull_request:
+    branches: [ "main", "master" ]
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      # Backend Tests
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install dependencies
+        run: |
+          cd python-backend
+          pip install -r requirements.txt
+          pip install pytest httpx
+      - name: Run Backend Tests
+        run: |
+          cd python-backend
+          pytest
+
+      # Frontend Tests
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+      - name: Install dependencies
+        run: |
+          cd frontend
+          npm ci
+      - name: Run Frontend Tests
+        run: |
+          cd frontend
+          npm test
+
+  build-and-push:
+    needs: test
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+      
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Log in to the Container registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # Backend Build
+      - name: Build and push Backend
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: deployment/docker/Dockerfile.backend
+          push: true
+          tags: |
+            ${{ env.REGISTRY }}/gamebox-inc/lb-automotive-backend:latest
+            ${{ env.REGISTRY }}/gamebox-inc/lb-automotive-backend:${{ github.sha }}
+
+      # Frontend Build
+      - name: Build and push Frontend
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: deployment/docker/Dockerfile.frontend
+          push: true
+          build-args: |
+             VITE_API_URL=/api
+          tags: |
+            ${{ env.REGISTRY }}/gamebox-inc/lb-automotive-frontend:latest
+            ${{ env.REGISTRY }}/gamebox-inc/lb-automotive-frontend:${{ github.sha }}

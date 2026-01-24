@@ -66,6 +66,7 @@ class Appointment(BaseModel):
     status: str = "pending"
     emergency_request: bool = False
     assigned_staff_id: Optional[str] = None
+    user_id: Optional[str] = None
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
     started_at: Optional[datetime] = None

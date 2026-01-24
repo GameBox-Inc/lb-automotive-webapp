@@ -4,7 +4,12 @@ from fastapi.middleware.cors import CORSMiddleware
 from database import init_db, seed_data, get_db_connection, DB_PATH
 from routes import appointments, services, auth_routes, twilio_webhook, cases, staff, customers, settings
 from security import rate_limit_middleware, security_headers_middleware
+from monitoring import setup_logging
 import traceback
+import json
+
+# Initialize Logging
+setup_logging()
 
 # Initialize FastAPI app
 app = FastAPI(
@@ -44,7 +49,9 @@ from routes import (
     staff,
     customers,
     reports,
-    twilio_stream
+    reports,
+    twilio_stream,
+    ivr_routes
 )
 
 # Include Routers
@@ -57,7 +64,9 @@ app.include_router(cases.router)
 app.include_router(staff.router)
 app.include_router(customers.router)
 app.include_router(reports.router)
+app.include_router(reports.router)
 app.include_router(twilio_stream.router)
+app.include_router(ivr_routes.router)
 
 
 @app.on_event("startup")
@@ -110,8 +119,24 @@ async def root():
 
 @app.get("/health")
 async def health_check():
-    """Health check endpoint."""
-    return {"status": "healthy"}
+    """Deep health check endpoint."""
+    status_data = {"status": "healthy", "components": {"database": "unknown"}}
+    
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute("SELECT 1")
+        conn.close()
+        status_data["components"]["database"] = "healthy"
+    except Exception as e:
+        status_data["status"] = "degraded"
+        status_data["components"]["database"] = f"unhealthy: {str(e)}"
+        
+    if status_data["status"] != "healthy":
+        from fastapi import Response
+        return Response(content=json.dumps(status_data), status_code=503, media_type="application/json")
+        
+    return status_data
 
 
 if __name__ == "__main__":

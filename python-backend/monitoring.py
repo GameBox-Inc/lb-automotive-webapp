@@ -4,7 +4,9 @@ Prometheus monitoring and metrics
 from prometheus_client import Counter, Histogram, Gauge, generate_latest, CONTENT_TYPE_LATEST
 from fastapi import Request, Response
 from time import time
+from datetime import datetime
 import logging
+from pythonjsonlogger import jsonlogger
 
 logger = logging.getLogger(__name__)
 
@@ -114,3 +116,23 @@ async def metrics_endpoint() -> Response:
 
 # Initialize app info
 app_info.labels(version='1.0.0').set(1)
+
+def setup_logging():
+    """Configure structured logging"""
+    class CustomJsonFormatter(jsonlogger.JsonFormatter):
+        def add_fields(self, log_record, record, message_dict):
+            super(CustomJsonFormatter, self).add_fields(log_record, record, message_dict)
+            log_record['timestamp'] = datetime.utcnow().isoformat()
+            log_record['level'] = record.levelname
+            log_record['logger'] = record.name
+
+    handler = logging.StreamHandler()
+    formatter = CustomJsonFormatter('%(timestamp)s %(level)s %(name)s %(message)s')
+    handler.setFormatter(formatter)
+    
+    root_logger = logging.getLogger()
+    root_logger.addHandler(handler)
+    root_logger.setLevel(logging.INFO)
+    
+    # Silence noisy loggers
+    logging.getLogger("uvicorn.access").setLevel(logging.WARNING)
