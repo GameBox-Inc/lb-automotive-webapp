@@ -4,7 +4,12 @@
  */
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || '/api';
-console.log('API Client Initialized:', { API_BASE_URL, env: import.meta.env });
+
+// Debug logging - only in development
+const isDevelopment = import.meta.env.DEV;
+if (isDevelopment) {
+  console.log('API Client Initialized:', { API_BASE_URL });
+}
 
 // Token management
 const TOKEN_KEY = 'auth_token';
@@ -18,7 +23,9 @@ import {
   Staff,
   StaffSchedule,
   StaffScheduleUpdate,
-  Customer
+  Customer,
+  BusinessHours,
+  BusinessHoursUpdate
 } from '../types';
 
 export type {
@@ -29,7 +36,9 @@ export type {
   Staff,
   StaffSchedule,
   StaffScheduleUpdate,
-  Customer
+  Customer,
+  BusinessHours,
+  BusinessHoursUpdate
 };
 
 class APIClient {
@@ -63,11 +72,13 @@ class APIClient {
   ): Promise<T> {
     const url = `${API_BASE_URL}${endpoint}`;
 
-    // Debug logging
-    console.log(`[API] ${options.method || 'GET'} ${url}`, {
-      hasToken: !!this.token,
-      endpoint
-    });
+    // Debug logging - only in development
+    if (isDevelopment) {
+      console.log(`[API] ${options.method || 'GET'} ${url}`, {
+        hasToken: !!this.token,
+        endpoint
+      });
+    }
 
     try {
       const controller = new AbortController();
@@ -90,7 +101,9 @@ class APIClient {
       });
       clearTimeout(id);
 
-      console.log(`[API] Response: ${response.status} ${response.statusText}`);
+      if (isDevelopment) {
+        console.log(`[API] Response: ${response.status} ${response.statusText}`);
+      }
 
       // Handle rate limiting
       if (response.status === 429) {
@@ -100,21 +113,29 @@ class APIClient {
 
       // Handle authentication errors
       if (response.status === 401) {
-        console.error('[API] Authentication failed - logging out');
+        if (isDevelopment) {
+          console.error('[API] Authentication failed - logging out');
+        }
         this.logout();
         throw new Error('Authentication required. Please log in again.');
       }
 
       if (!response.ok) {
         const error = await response.json().catch(() => ({ detail: 'Unknown error' }));
-        console.error('[API] Error response:', error);
+        // Always log errors, but use appropriate level
+        if (isDevelopment) {
+          console.error('[API] Error response:', error);
+        }
         throw new Error(error.detail || `HTTP ${response.status}: ${response.statusText}`);
       }
 
       return response.json();
     } catch (error) {
       if (error instanceof Error) {
-        console.error('API Error:', error.message);
+        // Log errors in development, silent in production
+        if (isDevelopment) {
+          console.error('API Error:', error.message);
+        }
         throw error;
       }
       throw new Error('Network error occurred');
@@ -175,7 +196,9 @@ class APIClient {
       return data;
     } catch (error) {
       if (error instanceof Error) {
-        console.error('Login Error:', error.message);
+        if (isDevelopment) {
+          console.error('Login Error:', error.message);
+        }
         throw error;
       }
       throw new Error('Login failed');
@@ -344,6 +367,20 @@ class APIClient {
   }
 
   /**
+   * Business Hours API
+   */
+  async getBusinessHours(): Promise<BusinessHours[]> {
+    return this.request<BusinessHours[]>('/business-hours');
+  }
+
+  async updateBusinessHours(dayOfWeek: number, hours: BusinessHoursUpdate): Promise<BusinessHours> {
+    return this.request<BusinessHours>(`/business-hours/${dayOfWeek}`, {
+      method: 'PUT',
+      body: JSON.stringify(hours),
+    });
+  }
+
+  /**
    * Staff API
    */
   async getStaff(): Promise<Staff[]> {
@@ -502,7 +539,9 @@ class APIClient {
   }
 
   async logError(error: any, context: string, metadata?: any): Promise<void> {
-    console.error(`[${context}]`, error, metadata);
+    if (isDevelopment) {
+      console.error(`[${context}]`, error, metadata);
+    }
     // Could send to backend logging endpoint if implemented
   }
 }
@@ -546,6 +585,8 @@ export const getAppointmentsByTimeframe = (timeframe: '24h' | '7d' | '30d') =>
 
 // No real-time support with REST API
 export const subscribeToAppointments = (_callback: (payload: any) => void) => {
-  console.warn('Real-time subscriptions not supported with REST API');
+  if (isDevelopment) {
+    console.warn('Real-time subscriptions not supported with REST API');
+  }
   return { unsubscribe: () => { } };
 };

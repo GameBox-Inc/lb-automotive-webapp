@@ -19,6 +19,11 @@ services:
       - TWILIO_PHONE_NUMBER=${TWILIO_PHONE_NUMBER}
       - ALLOWED_ORIGINS=${ALLOWED_ORIGINS:-http://localhost:5173,http://localhost:8000,https://electrolytically-deprived-eldon.ngrok-free.dev}
       - REDIS_URL=redis://redis:6379/0
+      - LLM_PROVIDER=${LLM_PROVIDER:-ollama}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      - ANTHROPIC_MODEL=${ANTHROPIC_MODEL:-claude-3-5-sonnet-20241022}
+      - OLLAMA_HOST=${OLLAMA_HOST:-http://ollama:11434}
+      - OLLAMA_MODEL=${OLLAMA_MODEL:-smollm2:135m}
     volumes:
       - ./python-backend/data:/app/data
       - ./python-backend:/app
@@ -39,7 +44,8 @@ services:
     container_name: lb-automotive-traefik
     restart: unless-stopped
     command:
-      - "--api.insecure=true"
+      - "--api.insecure=false"  # Disable insecure API access
+      - "--api.dashboard=true"
       - "--providers.docker=true"
       - "--providers.docker.exposedbydefault=false"
       - "--entrypoints.web.address=:80"
@@ -47,7 +53,9 @@ services:
       - "--providers.file.watch=true"
     ports:
       - "80:80"
-      - "8080:8080" # Dashboard
+      # Dashboard port removed from public access - access via internal network only if needed
+      # For local development, uncomment and access via localhost only
+      # - "127.0.0.1:8080:8080"  # Bind to localhost only
     volumes:
       - //var/run/docker.sock:/var/run/docker.sock:ro
       - ./traefik/dynamic:/etc/traefik/dynamic:ro

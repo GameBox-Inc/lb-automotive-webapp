@@ -11,9 +11,45 @@ import logging
 logger = logging.getLogger(__name__)
 
 # Business hours configuration
-BUSINESS_HOURS_START = time(8, 0)  # 8:00 AM
-BUSINESS_HOURS_END = time(18, 0)   # 6:00 PM
 SLOT_INCREMENT_MINUTES = 15
+
+
+def get_business_hours_for_day(day_of_week: int) -> tuple[Optional[time], Optional[time], bool]:
+    """
+    Get business hours for a specific day of week from database.
+    
+    Args:
+        day_of_week: 0=Monday, 6=Sunday
+    
+    Returns:
+        Tuple of (opening_time, closing_time, is_closed)
+        Returns (None, None, True) if day is closed or not configured
+    """
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    
+    cursor.execute("""
+        SELECT opening_time, closing_time, is_closed
+        FROM business_hours
+        WHERE day_of_week = ?
+    """, (day_of_week,))
+    
+    row = cursor.fetchone()
+    conn.close()
+    
+    if not row or row["is_closed"]:
+        return (None, None, True)
+    
+    if not row["opening_time"] or not row["closing_time"]:
+        return (None, None, True)
+    
+    try:
+        open_time = datetime.strptime(row["opening_time"], "%H:%M").time()
+        close_time = datetime.strptime(row["closing_time"], "%H:%M").time()
+        return (open_time, close_time, False)
+    except (ValueError, TypeError):
+        logger.warning(f"Invalid business hours for day {day_of_week}")
+        return (None, None, True)
 
 
 def get_available_slots_15min(
@@ -89,7 +125,7 @@ def get_available_slots_15min(
         slot_end = current_dt + timedelta(minutes=service_duration)
         
         # Check if slot end extends beyond business hours
-        if slot_end.time() > BUSINESS_HOURS_END:
+        if slot_end.time() > close_time:
             break
         
         # Check if ANY staff member is available for this slot

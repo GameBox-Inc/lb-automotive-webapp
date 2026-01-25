@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
-import { apiClient, Setting } from '../lib/supabase';
-import { Phone, Clock, MessageSquare, Save, Settings, BarChart2 } from 'lucide-react';
+import { apiClient, Setting, BusinessHours, BusinessHoursUpdate } from '../lib/supabase';
+import { Phone, Clock, MessageSquare, Save, Settings, BarChart2, X } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { LoadingSpinner } from '../components/LoadingSpinner';
 import {
@@ -52,6 +52,47 @@ const AdminIVR = () => {
             setLoading(false);
         }
     }
+
+    async function fetchBusinessHours() {
+        try {
+            const data = await apiClient.getBusinessHours();
+            setBusinessHours(data);
+        } catch (error) {
+            console.error('Error fetching business hours:', error);
+            toast.error('Failed to load business hours');
+        }
+    }
+
+    const handleEditHours = (hours: BusinessHours) => {
+        setEditingDay(hours.day_of_week);
+        setEditHours({
+            is_closed: hours.is_closed,
+            opening_time: hours.opening_time || '',
+            closing_time: hours.closing_time || ''
+        });
+    };
+
+    const handleSaveHours = async (dayOfWeek: number) => {
+        try {
+            const update: BusinessHoursUpdate = {
+                is_closed: editHours.is_closed,
+                opening_time: editHours.is_closed ? null : (editHours.opening_time || null),
+                closing_time: editHours.is_closed ? null : (editHours.closing_time || null)
+            };
+            await apiClient.updateBusinessHours(dayOfWeek, update);
+            toast.success('Business hours updated successfully');
+            setEditingDay(null);
+            fetchBusinessHours();
+        } catch (error) {
+            console.error('Error updating business hours:', error);
+            toast.error('Failed to update business hours');
+        }
+    };
+
+    const handleCancelHours = () => {
+        setEditingDay(null);
+        setEditHours({ is_closed: false, opening_time: null, closing_time: null });
+    };
 
     const handleEdit = (setting: Setting) => {
         setEditingKey(setting.key);
@@ -179,58 +220,108 @@ const AdminIVR = () => {
                         <div>
                             <h3 className="text-lg font-medium leading-6 text-gray-900 dark:text-white flex items-center">
                                 <Clock className="h-5 w-5 mr-2 text-indigo-500" />
-                                Business Hours
+                                Business Hours (24/7 Booking Enabled)
                             </h3>
-                            <div className="mt-4 grid grid-cols-1 gap-y-6 sm:grid-cols-2 sm:gap-x-8">
-                                {Array.isArray(settings) && settings.filter(s => s.key.includes('time')).map(setting => (
-                                    <div key={setting.key} className="bg-gray-50 dark:bg-gray-700/50 p-4 rounded-lg">
-                                        <div className="flex justify-between items-start">
-                                            <div>
-                                                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
-                                                    {setting.description || setting.key}
-                                                </label>
-                                                {editingKey === setting.key ? (
-                                                    <input
-                                                        type="time"
-                                                        value={editValue}
-                                                        onChange={(e) => setEditValue(e.target.value)}
-                                                        className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm dark:bg-gray-700 dark:border-gray-600 dark:text-white"
-                                                    />
-                                                ) : (
-                                                    <p className="mt-1 text-lg font-semibold text-gray-900 dark:text-white">
-                                                        {setting.value}
-                                                    </p>
-                                                )}
-                                            </div>
-                                            <div>
-                                                {editingKey === setting.key ? (
-                                                    <div className="flex space-x-2">
+                            <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
+                                Configure hours for each day of the week. Customers can book appointments 24/7, even when closed.
+                            </p>
+                            <div className="mt-4 overflow-x-auto">
+                                <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
+                                    <thead className="bg-gray-50 dark:bg-gray-700">
+                                        <tr>
+                                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Day</th>
+                                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Status</th>
+                                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Opening Time</th>
+                                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Closing Time</th>
+                                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Actions</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody className="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
+                                        {businessHours.map((hours) => (
+                                            <tr key={hours.day_of_week}>
+                                                <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900 dark:text-white">
+                                                    {hours.day_name}
+                                                </td>
+                                                <td className="px-6 py-4 whitespace-nowrap">
+                                                    {editingDay === hours.day_of_week ? (
+                                                        <label className="flex items-center">
+                                                            <input
+                                                                type="checkbox"
+                                                                checked={!editHours.is_closed}
+                                                                onChange={(e) => setEditHours({ ...editHours, is_closed: !e.target.checked })}
+                                                                className="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
+                                                            />
+                                                            <span className="ml-2 text-sm text-gray-700 dark:text-gray-300">
+                                                                {editHours.is_closed ? 'Closed' : 'Open'}
+                                                            </span>
+                                                        </label>
+                                                    ) : (
+                                                        <span className={`text-sm ${hours.is_closed ? 'text-red-600 dark:text-red-400' : 'text-green-600 dark:text-green-400'}`}>
+                                                            {hours.is_closed ? 'Closed' : 'Open'}
+                                                        </span>
+                                                    )}
+                                                </td>
+                                                <td className="px-6 py-4 whitespace-nowrap">
+                                                    {editingDay === hours.day_of_week ? (
+                                                        <input
+                                                            type="time"
+                                                            value={editHours.opening_time || ''}
+                                                            onChange={(e) => setEditHours({ ...editHours, opening_time: e.target.value })}
+                                                            disabled={editHours.is_closed}
+                                                            className="block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm dark:bg-gray-700 dark:border-gray-600 dark:text-white disabled:opacity-50"
+                                                        />
+                                                    ) : (
+                                                        <span className="text-sm text-gray-900 dark:text-white">
+                                                            {hours.opening_time || '—'}
+                                                        </span>
+                                                    )}
+                                                </td>
+                                                <td className="px-6 py-4 whitespace-nowrap">
+                                                    {editingDay === hours.day_of_week ? (
+                                                        <input
+                                                            type="time"
+                                                            value={editHours.closing_time || ''}
+                                                            onChange={(e) => setEditHours({ ...editHours, closing_time: e.target.value })}
+                                                            disabled={editHours.is_closed}
+                                                            className="block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm dark:bg-gray-700 dark:border-gray-600 dark:text-white disabled:opacity-50"
+                                                        />
+                                                    ) : (
+                                                        <span className="text-sm text-gray-900 dark:text-white">
+                                                            {hours.closing_time || '—'}
+                                                        </span>
+                                                    )}
+                                                </td>
+                                                <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
+                                                    {editingDay === hours.day_of_week ? (
+                                                        <div className="flex space-x-2">
+                                                            <button
+                                                                onClick={() => handleSaveHours(hours.day_of_week)}
+                                                                className="text-green-600 hover:text-green-700"
+                                                                title="Save"
+                                                            >
+                                                                <Save className="h-5 w-5" />
+                                                            </button>
+                                                            <button
+                                                                onClick={handleCancelHours}
+                                                                className="text-gray-400 hover:text-gray-500"
+                                                                title="Cancel"
+                                                            >
+                                                                <X className="h-5 w-5" />
+                                                            </button>
+                                                        </div>
+                                                    ) : (
                                                         <button
-                                                            onClick={() => handleSave(setting.key)}
-                                                            className="text-green-600 hover:text-green-700 p-1"
+                                                            onClick={() => handleEditHours(hours)}
+                                                            className="text-indigo-600 hover:text-indigo-700"
                                                         >
-                                                            <Save className="h-5 w-5" />
+                                                            Edit
                                                         </button>
-                                                        <button
-                                                            onClick={handleCancel}
-                                                            className="text-gray-400 hover:text-gray-500 p-1"
-                                                        >
-                                                            <span className="sr-only">Cancel</span>
-                                                            x
-                                                        </button>
-                                                    </div>
-                                                ) : (
-                                                    <button
-                                                        onClick={() => handleEdit(setting)}
-                                                        className="text-indigo-600 hover:text-indigo-700 text-sm font-medium"
-                                                    >
-                                                        Edit
-                                                    </button>
-                                                )}
-                                            </div>
-                                        </div>
-                                    </div>
-                                ))}
+                                                    )}
+                                                </td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
                             </div>
                         </div>
 

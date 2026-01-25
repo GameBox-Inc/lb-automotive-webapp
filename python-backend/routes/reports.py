@@ -9,7 +9,7 @@ router = APIRouter(prefix="/api/reports", tags=["reports"])
 
 @router.get("/summary")
 def get_report_summary(
-    timeframe: str = Query("30d", regex="^(7d|30d|90d|all)$"),
+    timeframe: str = Query("30d", pattern="^(7d|30d|90d|all)$"),
     current_user: Dict[str, Any] = Depends(get_current_active_user)
 ):
     """

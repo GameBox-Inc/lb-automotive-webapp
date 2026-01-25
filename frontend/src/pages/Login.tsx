@@ -59,10 +59,40 @@ export function Login() {
     setLoading(true)
 
     // Add password validation
-    if (password.length < 6) {
-      toast.error('Password must be at least 6 characters')
-      setLoading(false)
-      return
+    if (isSignUp) {
+      // Stronger password requirements for registration
+      if (password.length < 12) {
+        toast.error('Password must be at least 12 characters long')
+        setLoading(false)
+        return
+      }
+      if (!/[A-Z]/.test(password)) {
+        toast.error('Password must contain at least one uppercase letter')
+        setLoading(false)
+        return
+      }
+      if (!/[a-z]/.test(password)) {
+        toast.error('Password must contain at least one lowercase letter')
+        setLoading(false)
+        return
+      }
+      if (!/\d/.test(password)) {
+        toast.error('Password must contain at least one digit')
+        setLoading(false)
+        return
+      }
+      if (!/[!@#$%^&*(),.?":{}|<>]/.test(password)) {
+        toast.error('Password must contain at least one special character')
+        setLoading(false)
+        return
+      }
+    } else {
+      // Minimum validation for login (password already exists)
+      if (password.length < 6) {
+        toast.error('Password must be at least 6 characters')
+        setLoading(false)
+        return
+      }
     }
 
     try {

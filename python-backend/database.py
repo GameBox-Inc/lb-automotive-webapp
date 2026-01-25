@@ -24,11 +24,42 @@ print(f"DATABASE PATH: {os.path.abspath(DB_PATH)}")
 
 
 def get_db_connection():
-    """Get a database connection."""
+    """
+    Get a database connection.
+    
+    Note: In production with multiple instances, consider using connection pooling
+    or migrating to PostgreSQL. SQLite has limitations with concurrent writes.
+    """
     conn = sqlite3.connect(DB_PATH, timeout=20.0) # Increased timeout
     conn.execute("PRAGMA journal_mode=WAL") # Enable Write-Ahead Logging
+    conn.execute("PRAGMA foreign_keys=ON") # Enable foreign key constraints
     conn.row_factory = sqlite3.Row
     return conn
+
+
+class DatabaseContextManager:
+    """
+    Context manager for database connections to ensure proper cleanup.
+    Usage:
+        with DatabaseContextManager() as conn:
+            cursor = conn.cursor()
+            cursor.execute(...)
+    """
+    def __init__(self):
+        self.conn = None
+    
+    def __enter__(self):
+        self.conn = get_db_connection()
+        return self.conn
+    
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        if self.conn:
+            if exc_type:
+                self.conn.rollback()
+            else:
+                self.conn.commit()
+            self.conn.close()
+        return False
 
 
 def init_db():
@@ -191,6 +222,18 @@ def init_db():
         )
     """)
 
+    # Create business_hours table for per-day hours configuration
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS business_hours (
+            day_of_week INTEGER PRIMARY KEY, -- 0=Monday, 6=Sunday
+            opening_time TEXT, -- HH:MM format, NULL if closed
+            closing_time TEXT, -- HH:MM format, NULL if closed
+            is_closed INTEGER DEFAULT 0, -- 1 if closed all day
+            updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+            updated_by TEXT
+        )
+    """)
+
     conn.commit()
     conn.close()
     print("Database initialized successfully!")
@@ -257,8 +300,17 @@ def seed_data():
     cursor.execute("SELECT COUNT(*) FROM users WHERE username = 'admin'")
     if cursor.fetchone()[0] == 0:
         # Insert default admin user (password: admin123)
+        # WARNING: This is a weak default password. User should change it immediately.
+        # In production, consider generating a random password or requiring setup.
         from passlib.context import CryptContext
         import uuid
+        import warnings
+        
+        warnings.warn(
+            "Default admin user created with weak password 'admin123'. "
+            "Change this password immediately in production!",
+            UserWarning
+        )
         
         pwd_context = CryptContext(schemes=["sha256_crypt"], deprecated="auto")
         admin_id = str(uuid.uuid4())
@@ -282,6 +334,23 @@ def seed_data():
 
     for key, value, desc in default_settings:
         cursor.execute("INSERT OR IGNORE INTO settings (key, value, description) VALUES (?, ?, ?)", (key, value, desc))
+
+    # Seed default business hours (Monday-Friday: 8 AM - 6 PM, Saturday-Sunday: Closed)
+    default_business_hours = [
+        (0, '08:00', '18:00', 0),  # Monday
+        (1, '08:00', '18:00', 0),  # Tuesday
+        (2, '08:00', '18:00', 0),  # Wednesday
+        (3, '08:00', '18:00', 0),  # Thursday
+        (4, '08:00', '18:00', 0),  # Friday
+        (5, None, None, 1),         # Saturday - Closed
+        (6, None, None, 1),         # Sunday - Closed
+    ]
+    
+    for day, open_time, close_time, is_closed in default_business_hours:
+        cursor.execute("""
+            INSERT OR IGNORE INTO business_hours (day_of_week, opening_time, closing_time, is_closed)
+            VALUES (?, ?, ?, ?)
+        """, (day, open_time, close_time, is_closed))
 
     conn.commit()
     conn.close()

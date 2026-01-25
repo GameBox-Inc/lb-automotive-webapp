@@ -8,7 +8,7 @@ router = APIRouter(prefix="/api/ivr/analytics", tags=["ivr_analytics"])
 
 @router.get("/summary")
 def get_analytics_summary(
-    timeframe: str = Query("30d", regex="^(24h|7d|30d|90d|all)$"),
+    timeframe: str = Query("30d", pattern="^(24h|7d|30d|90d|all)$"),
     current_user: Dict[str, Any] = Depends(get_current_active_user)
 ):
     """
@@ -60,7 +60,7 @@ def get_analytics_summary(
 
 @router.get("/nodes")
 def get_node_analytics(
-    timeframe: str = Query("30d", regex="^(24h|7d|30d|90d|all)$"),
+    timeframe: str = Query("30d", pattern="^(24h|7d|30d|90d|all)$"),
     current_user: Dict[str, Any] = Depends(get_current_active_user)
 ):
     """

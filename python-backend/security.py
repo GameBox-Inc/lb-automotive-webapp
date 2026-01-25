@@ -60,12 +60,30 @@ SQL_INJECTION_PATTERNS = _config.get("sql_injection_patterns", [])
 XSS_PATTERNS = _config.get("xss_patterns", [])
 
 
-def sanitize_input(value: str, input_type: str = "text") -> str:
+def sanitize_input(value: str, input_type: str = "text", max_length: int = None) -> str:
     """
     Sanitize user input to prevent injection attacks.
+    
+    Args:
+        value: Input string to sanitize
+        input_type: Type of input (text, email, phone, uuid, alphanumeric)
+        max_length: Maximum allowed length (None for no limit)
+    
+    Returns:
+        Sanitized string
+        
+    Raises:
+        HTTPException: If input is invalid or contains malicious patterns
     """
     if not isinstance(value, str):
         return value
+    
+    # Check length
+    if max_length and len(value) > max_length:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Input exceeds maximum length of {max_length} characters"
+        )
     
     # Check for SQL injection attempts
     for pattern in SQL_INJECTION_PATTERNS:
@@ -225,15 +243,32 @@ async def security_headers_middleware(request: Request, call_next):
     response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
     
     # Content Security Policy
-    response.headers["Content-Security-Policy"] = (
-        "default-src 'self'; "
-        "script-src 'self' 'unsafe-inline' 'unsafe-eval'; "
-        "style-src 'self' 'unsafe-inline'; "
-        "img-src 'self' data: https:; "
-        "font-src 'self' data:; "
-        "connect-src 'self'; "
-        "frame-ancestors 'none';"
-    )
+    # Note: 'unsafe-inline' and 'unsafe-eval' are required for Vite/React development
+    # In production, consider using nonces or hashes for inline scripts
+    csp_policy = os.getenv("CSP_POLICY", "strict")  # 'strict' or 'development'
+    
+    if csp_policy == "strict":
+        # Strict CSP for production (requires nonces for inline scripts)
+        response.headers["Content-Security-Policy"] = (
+            "default-src 'self'; "
+            "script-src 'self'; "
+            "style-src 'self'; "
+            "img-src 'self' data: https:; "
+            "font-src 'self' data:; "
+            "connect-src 'self'; "
+            "frame-ancestors 'none';"
+        )
+    else:
+        # Development CSP (allows inline scripts for Vite HMR)
+        response.headers["Content-Security-Policy"] = (
+            "default-src 'self'; "
+            "script-src 'self' 'unsafe-inline' 'unsafe-eval'; "
+            "style-src 'self' 'unsafe-inline'; "
+            "img-src 'self' data: https:; "
+            "font-src 'self' data:; "
+            "connect-src 'self' ws: wss:; "
+            "frame-ancestors 'none';"
+        )
     
     # Referrer Policy
     response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"

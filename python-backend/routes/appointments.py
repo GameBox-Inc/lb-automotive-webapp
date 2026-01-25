@@ -211,7 +211,7 @@ def create_appointment(
     """Create a new appointment."""
     try:
         # Validate and sanitize input
-        appointment_data = validate_appointment_data(appointment.dict())
+        appointment_data = validate_appointment_data(appointment.model_dump())
         
         # Prepare data for repository
         # Maps Pydantic datetime to string if needed, repository handles converting back?

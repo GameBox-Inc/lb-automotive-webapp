@@ -27,6 +27,15 @@ spec:
         - name: DATABASE_URL
           value: "sqlite:////app/data/lb_automotive.db"
         - name: REDIS_URL
+        - name: LLM_PROVIDER
+          value: "anthropic"  # or "ollama" for local LLM
+        - name: ANTHROPIC_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: anthropic-secrets
+              key: api-key
+        - name: ANTHROPIC_MODEL
+          value: "claude-3-5-sonnet-20241022"
         volumeMounts:
         - name: app-data
           mountPath: /app/data

@@ -76,3 +76,19 @@ export interface Customer {
     email?: string;
     created_at?: string;
 }
+
+export interface BusinessHours {
+    day_of_week: number; // 0=Monday, 6=Sunday
+    day_name: string;
+    opening_time: string | null; // HH:MM format
+    closing_time: string | null; // HH:MM format
+    is_closed: boolean;
+    updated_at?: string;
+    updated_by?: string;
+}
+
+export interface BusinessHoursUpdate {
+    opening_time?: string | null; // HH:MM format, null if closed
+    closing_time?: string | null; // HH:MM format, null if closed
+    is_closed: boolean;
+}

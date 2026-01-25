@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
 from typing import List, Optional
-from pydantic import BaseModel, validator
+from pydantic import BaseModel, field_validator
 from database import get_db_connection
 from auth import get_current_active_user
 from security import sanitize_input
@@ -14,7 +14,8 @@ class CustomerBase(BaseModel):
     phone: str
     email: Optional[str] = None
     
-    @validator('name')
+    @field_validator('name')
+    @classmethod
     def validate_name(cls, v):
         if not v or len(v.strip()) < 2:
             raise ValueError('Name must be at least 2 characters long')
@@ -23,7 +24,8 @@ class CustomerBase(BaseModel):
         # Sanitize input to prevent XSS
         return sanitize_input(v, "text")
     
-    @validator('phone')
+    @field_validator('phone')
+    @classmethod
     def validate_phone(cls, v):
         # Remove formatting
         cleaned = re.sub(r'\D', '', v)
@@ -31,7 +33,8 @@ class CustomerBase(BaseModel):
             raise ValueError('Phone number must be between 10-15 digits')
         return cleaned
     
-    @validator('email')
+    @field_validator('email')
+    @classmethod
     def validate_email(cls, v):
         if v:
             if len(v) > 255:

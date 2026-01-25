@@ -35,7 +35,7 @@ def create_staff(staff: StaffCreate, current_user: Dict[str, Any] = Depends(get_
     )
     conn.commit()
     conn.close()
-    return {"id": staff_id, **staff.dict()}
+    return {"id": staff_id, **staff.model_dump()}
 
 @router.put("/{staff_id}")
 def update_staff(staff_id: str, staff: StaffUpdate, current_user: Dict[str, Any] = Depends(get_current_active_user)):
@@ -46,8 +46,11 @@ def update_staff(staff_id: str, staff: StaffUpdate, current_user: Dict[str, Any]
     conn = get_db_connection()
     cursor = conn.cursor()
     
+    # Build update query safely - only allow known columns
+    allowed_columns = {"name": str, "role": str, "active": int}
     updates = []
     params = []
+    
     if staff.name is not None:
         updates.append("name = ?")
         params.append(staff.name)
@@ -60,7 +63,9 @@ def update_staff(staff_id: str, staff: StaffUpdate, current_user: Dict[str, Any]
         
     if updates:
         params.append(staff_id)
-        cursor.execute(f"UPDATE staff SET {', '.join(updates)} WHERE id = ?", params)
+        # Use parameterized query with safe column names
+        query = f"UPDATE staff SET {', '.join(updates)} WHERE id = ?"
+        cursor.execute(query, params)
         conn.commit()
         
     conn.close()
@@ -211,6 +216,7 @@ def update_staff_credentials(
     import uuid
     
     if existing_user:
+        # Build update query safely
         updates = ["username = ?", "is_admin = ?"]
         params = [username, int(is_admin)]
         
@@ -219,7 +225,9 @@ def update_staff_credentials(
             params.append(pwd_context.hash(password))
             
         params.append(existing_user["id"])
-        cursor.execute(f"UPDATE users SET {', '.join(updates)} WHERE id = ?", params)
+        # Use parameterized query with safe column names
+        query = f"UPDATE users SET {', '.join(updates)} WHERE id = ?"
+        cursor.execute(query, params)
     else:
         if not password:
              conn.close()

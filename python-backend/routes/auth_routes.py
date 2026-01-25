@@ -10,6 +10,7 @@ from auth import (
 )
 from models import Token, UserCreate, User
 from fastapi.responses import JSONResponse
+from password_validation import validate_password_strength
 import uuid
 import random
 import os
@@ -78,6 +79,15 @@ def register(user: UserCreate):
     from database import get_db_connection
     import logging
     logger = logging.getLogger(__name__)
+    
+    # Validate password strength
+    is_valid, error_message = validate_password_strength(user.password)
+    if not is_valid:
+        logger.warning(f"Registration failed: Weak password for user {user.username}")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=error_message
+        )
     
     # Check if username already exists
     conn = get_db_connection()

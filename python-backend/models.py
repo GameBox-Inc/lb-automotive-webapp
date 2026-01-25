@@ -1,4 +1,4 @@
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, ConfigDict
 from typing import Optional, Dict, Any, List
 from datetime import datetime
 from uuid import UUID, uuid4
@@ -15,8 +15,7 @@ class Service(BaseModel):
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class ServiceCreate(BaseModel):
@@ -71,8 +70,7 @@ class Appointment(BaseModel):
     updated_at: Optional[datetime] = None
     started_at: Optional[datetime] = None
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class CallState(BaseModel):
@@ -86,8 +84,7 @@ class CallState(BaseModel):
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class IVRLog(BaseModel):
@@ -97,8 +94,7 @@ class IVRLog(BaseModel):
     input: Optional[str] = None
     created_at: Optional[datetime] = None
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class User(BaseModel):
@@ -108,8 +104,7 @@ class User(BaseModel):
     is_admin: bool = False
     staff_id: Optional[str] = None
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class UserCreate(BaseModel):
@@ -151,8 +146,7 @@ class CaseNote(BaseModel):
     is_internal: bool = True
     created_at: Optional[datetime] = None
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class CaseNoteCreate(BaseModel):
@@ -169,8 +163,7 @@ class CasePart(BaseModel):
     status: str = "pending"
     created_at: Optional[datetime] = None
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class CasePartCreate(BaseModel):
@@ -192,8 +185,7 @@ class Case(BaseModel):
     notes: List[CaseNote] = []
     parts: List[CasePart] = []
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class CaseCreate(BaseModel):
@@ -217,8 +209,7 @@ class StaffSchedule(BaseModel):
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class StaffScheduleUpdate(BaseModel):
@@ -238,3 +229,21 @@ class StaffUpdate(BaseModel):
     name: Optional[str] = None
     role: Optional[str] = None
     active: Optional[bool] = None
+
+
+class BusinessHours(BaseModel):
+    day_of_week: int  # 0=Monday, 6=Sunday
+    day_name: str  # "Monday", "Tuesday", etc.
+    opening_time: Optional[str] = None  # HH:MM format
+    closing_time: Optional[str] = None  # HH:MM format
+    is_closed: bool = False
+    updated_at: Optional[str] = None
+    updated_by: Optional[str] = None
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class BusinessHoursUpdate(BaseModel):
+    opening_time: Optional[str] = None  # HH:MM format, None if closed
+    closing_time: Optional[str] = None  # HH:MM format, None if closed
+    is_closed: bool = False
