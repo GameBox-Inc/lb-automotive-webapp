@@ -1,7 +1,7 @@
 import pytest
 from fastapi.testclient import TestClient
 from main import app
-from database import init_db
+from database import init_db, get_db_connection
 import os
 
 client = TestClient(app)
@@ -9,8 +9,11 @@ client = TestClient(app)
 # Helper to override auth
 from auth import get_optional_user
 
+# Store test user ID
+test_user_id = "test_user_id"
+
 def mock_get_optional_user():
-    return {"id": "test_user_id", "phone_number": "555-1234", "is_admin": False}
+    return {"id": test_user_id, "phone_number": "555-1234", "is_admin": False}
 
 app.dependency_overrides[get_optional_user] = mock_get_optional_user
 
@@ -22,13 +25,27 @@ def setup_db():
             os.remove("test.db")
         except PermissionError:
             pass
-            
+
     init_db()
     from database import seed_data
     seed_data() # Seed to ensure services exist
-    
+
+    # Create test user that the mock references
+    from passlib.context import CryptContext
+    pwd_context = CryptContext(schemes=["sha256_crypt"], deprecated="auto")
+    test_password = pwd_context.hash("testpass123")
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute("""
+        INSERT INTO users (id, username, email, hashed_password, is_admin)
+        VALUES (?, ?, ?, ?, ?)
+    """, (test_user_id, "testuser", "test@example.com", test_password, 0))
+    conn.commit()
+    conn.close()
+
     yield
-    
+
     # Cleanup
     if os.path.exists("test.db"):
         try:
