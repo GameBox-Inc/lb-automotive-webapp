@@ -121,6 +121,13 @@ jobs:
         env:
           REMOTE_DIR: /opt/lb-automotive-dashboard
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SECRET_KEY: ${{ secrets.SECRET_KEY }}
+          ALLOWED_ORIGINS: ${{ secrets.ALLOWED_ORIGINS }}
+          LLM_PROVIDER: ${{ secrets.LLM_PROVIDER }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          TWILIO_ACCOUNT_SID: ${{ secrets.TWILIO_ACCOUNT_SID }}
+          TWILIO_AUTH_TOKEN: ${{ secrets.TWILIO_AUTH_TOKEN }}
+          TWILIO_PHONE_NUMBER: ${{ secrets.TWILIO_PHONE_NUMBER }}
         run: |
           set -e
 
@@ -150,27 +157,83 @@ jobs:
             git remote set-url origin "$HTTPS_URL"
           fi
 
-          # Check for .env file - REQUIRED for deployment
-          if [ ! -f "deployment/docker/.env" ]; then
-            echo "❌ Error: deployment/docker/.env file not found!"
+          # Create .env file from GitHub Secrets
+          echo "📝 Creating .env file from GitHub Secrets..."
+
+          # Check if required secrets are set
+          if [ -z "$SECRET_KEY" ]; then
+            echo "❌ Error: SECRET_KEY secret not set in GitHub!"
             echo ""
-            echo "To fix this, create the .env file on the server:"
-            echo "  1. SSH to the server: ssh lb-admin@178.156.223.196"
-            echo "  2. Navigate to: cd /opt/lb-automotive-dashboard/deployment/docker"
-            echo "  3. Create .env file with required variables:"
-            echo ""
-            echo "Required variables:"
-            echo "  SECRET_KEY=<generate with: openssl rand -hex 32>"
-            echo "  ALLOWED_ORIGINS=https://kozytherocket.space,https://www.kozytherocket.space"
-            echo ""
-            echo "Optional variables (see python-backend/.env.example for full list):"
-            echo "  LLM_PROVIDER=ollama"
-            echo "  ANTHROPIC_API_KEY=<your-key-if-using-anthropic>"
+            echo "To fix this:"
+            echo "  1. Go to: https://github.com/GameBox-Inc/lb-automotive-webapp/settings/secrets/actions"
+            echo "  2. Click 'New repository secret'"
+            echo "  3. Name: SECRET_KEY"
+            echo "  4. Value: Generate with 'openssl rand -hex 32'"
             echo ""
             exit 1
           fi
 
-          echo "✅ Found .env file at deployment/docker/.env"
+          if [ -z "$ALLOWED_ORIGINS" ]; then
+            echo "❌ Error: ALLOWED_ORIGINS secret not set in GitHub!"
+            echo ""
+            echo "To fix this:"
+            echo "  1. Go to: https://github.com/GameBox-Inc/lb-automotive-webapp/settings/secrets/actions"
+            echo "  2. Click 'New repository secret'"
+            echo "  3. Name: ALLOWED_ORIGINS"
+            echo "  4. Value: https://kozytherocket.space,https://www.kozytherocket.space"
+            echo ""
+            exit 1
+          fi
+
+          # Create .env file
+          cat > deployment/docker/.env << EOF
+# LB Automotive Dashboard - Production Environment
+# Auto-generated from GitHub Secrets on $(date)
+
+# Required Variables
+SECRET_KEY=$SECRET_KEY
+ALLOWED_ORIGINS=$ALLOWED_ORIGINS
+
+# LLM Configuration
+LLM_PROVIDER=${LLM_PROVIDER:-ollama}
+OLLAMA_HOST=http://ollama:11434
+OLLAMA_MODEL=smollm2:135m
+
+# Database
+DATABASE_URL=sqlite:////app/data/lb_automotive.db
+
+# Redis
+REDIS_URL=redis://redis:6379/0
+
+# Security
+CSP_POLICY=strict
+EOF
+
+          # Add Anthropic config if provided
+          if [ -n "$ANTHROPIC_API_KEY" ]; then
+            cat >> deployment/docker/.env << EOF
+
+# Anthropic Configuration
+ANTHROPIC_API_KEY=$ANTHROPIC_API_KEY
+ANTHROPIC_MODEL=${ANTHROPIC_MODEL:-claude-3-5-sonnet-20241022}
+EOF
+          fi
+
+          # Add Twilio config if provided
+          if [ -n "$TWILIO_ACCOUNT_SID" ]; then
+            cat >> deployment/docker/.env << EOF
+
+# Twilio Configuration
+TWILIO_ACCOUNT_SID=$TWILIO_ACCOUNT_SID
+TWILIO_AUTH_TOKEN=$TWILIO_AUTH_TOKEN
+TWILIO_PHONE_NUMBER=$TWILIO_PHONE_NUMBER
+EOF
+          fi
+
+          # Set secure permissions
+          chmod 600 deployment/docker/.env
+
+          echo "✅ .env file created from GitHub Secrets"
 
           # Pull latest code
           echo "📥 Pulling latest code..."
