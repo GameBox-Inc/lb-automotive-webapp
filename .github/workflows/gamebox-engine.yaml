@@ -65,10 +65,16 @@ jobs:
     permissions:
       contents: read
       packages: write
-      
+    env:
+      OWNER_LC: ${{ github.repository_owner }}
+
     steps:
       - uses: actions/checkout@v4
-      
+
+      - name: Set lowercase owner
+        run: |
+          echo "OWNER_LC=${OWNER_LC,,}" >> $GITHUB_ENV
+
       - name: Log in to the Container registry
         uses: docker/login-action@v3
         with:
@@ -84,8 +90,8 @@ jobs:
           file: deployment/docker/Dockerfile.backend
           push: true
           tags: |
-            ${{ env.REGISTRY }}/${{ github.repository_owner }}/lb-automotive-backend:latest
-            ${{ env.REGISTRY }}/${{ github.repository_owner }}/lb-automotive-backend:${{ github.sha }}
+            ${{ env.REGISTRY }}/${{ env.OWNER_LC }}/lb-automotive-backend:latest
+            ${{ env.REGISTRY }}/${{ env.OWNER_LC }}/lb-automotive-backend:${{ github.sha }}
 
       # Frontend Build
       - name: Build and push Frontend
@@ -97,8 +103,8 @@ jobs:
           build-args: |
             VITE_API_URL=/api
           tags: |
-            ${{ env.REGISTRY }}/${{ github.repository_owner }}/lb-automotive-frontend:latest
-            ${{ env.REGISTRY }}/${{ github.repository_owner }}/lb-automotive-frontend:${{ github.sha }}
+            ${{ env.REGISTRY }}/${{ env.OWNER_LC }}/lb-automotive-frontend:latest
+            ${{ env.REGISTRY }}/${{ env.OWNER_LC }}/lb-automotive-frontend:${{ github.sha }}
 
   deploy:
     needs: build-and-push
