@@ -59,24 +59,8 @@ def get_setting(key: str, default: str) -> str:
         logger.error(f"Error fetching setting {key}: {e}")
         return default
 
-def is_within_business_hours() -> bool:
-    """Check if currently within business hours based on DB settings."""
-    try:
-        opening_time_str = get_setting('opening_time', "08:00")
-        closing_time_str = get_setting('closing_time', "18:00")
-        
-        # Parse times
-        open_time = datetime.strptime(opening_time_str, "%H:%M").time()
-        close_time = datetime.strptime(closing_time_str, "%H:%M").time()
-        
-        # Get current time in correct timezone (Assuming server local time for now)
-        # Ideally, we should handle timezone properly
-        now = datetime.now().time()
-        
-        return open_time <= now <= close_time
-    except Exception as e:
-        logger.error(f"Error checking business hours: {e}")
-        return True  # Default to open if check fails
+# Business hours check removed - 24/7 booking enabled
+# Appointments can be scheduled at any time for future dates
 
 def log_ivr_interaction(call_sid: str, step: str, input_data: str = None):
     """Log IVR interaction."""
@@ -375,15 +359,8 @@ def twilio_webhook(
         voice = get_setting('ivr_voice', 'alice')
         language = get_setting('ivr_language', 'en-US')
         
-        if step == "start":
-            if not is_within_business_hours():
-                closed_message = get_setting(
-                    'ivr_closed_message', 
-                    "We are currently closed. Our hours are 8 AM to 6 PM. Please call back during business hours."
-                )
-                response.say(closed_message, voice=voice, language=language)
-                response.hangup()
-                return Response(content=str(response), media_type="application/xml")
+        # 24/7 booking enabled - no time-based restrictions
+        # Customers can call and book appointments at any time
 
         # Fetch/Create state
         call_state = get_call_state(CallSid)
