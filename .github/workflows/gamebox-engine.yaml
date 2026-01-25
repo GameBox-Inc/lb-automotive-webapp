@@ -120,6 +120,7 @@ jobs:
       - name: Deploy to server
         env:
           REMOTE_DIR: /opt/lb-automotive-dashboard
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -e
 
@@ -135,6 +136,18 @@ jobs:
           if [ ! -d ".git" ]; then
             echo "❌ Error: Not a git repository"
             exit 1
+          fi
+
+          # Configure git to use HTTPS with token authentication
+          echo "🔐 Configuring git credentials..."
+          git config --local credential.helper '!f() { echo "username=x-access-token"; echo "password=$GH_TOKEN"; }; f'
+
+          # Set remote URL to HTTPS if it's using SSH
+          CURRENT_REMOTE=$(git remote get-url origin)
+          if [[ $CURRENT_REMOTE == git@github.com:* ]]; then
+            echo "📝 Converting SSH remote to HTTPS..."
+            HTTPS_URL=$(echo $CURRENT_REMOTE | sed 's|git@github.com:|https://github.com/|' | sed 's|\.git$||')
+            git remote set-url origin "$HTTPS_URL"
           fi
 
           # Check for .env file
