@@ -27,6 +27,10 @@ jobs:
           pip install -r requirements.txt
           pip install pytest httpx
       - name: Run Backend Tests
+        env:
+          SECRET_KEY: test-secret-key-for-ci-only-not-production
+          ALLOWED_ORIGINS: http://localhost:5173,http://localhost:3000
+          DATABASE_URL: sqlite:///./test_lb_automotive.db
         run: |
           cd python-backend
           if [ -d "tests" ] && [ "$(ls -A tests)" ]; then
