@@ -2,7 +2,7 @@
 Password validation utilities for enforcing strong password policies.
 """
 import re
-from typing import Tuple, bool
+from typing import Tuple
 
 
 def validate_password_strength(password: str) -> Tuple[bool, str]:
