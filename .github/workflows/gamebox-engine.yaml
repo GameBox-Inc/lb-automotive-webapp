@@ -150,10 +150,27 @@ jobs:
             git remote set-url origin "$HTTPS_URL"
           fi
 
-          # Check for .env file
-          if [ ! -f ".env" ] && [ ! -f "deployment/docker/.env" ]; then
-            echo "⚠️ Warning: No .env file found. Create one from .env.example if needed"
+          # Check for .env file - REQUIRED for deployment
+          if [ ! -f "deployment/docker/.env" ]; then
+            echo "❌ Error: deployment/docker/.env file not found!"
+            echo ""
+            echo "To fix this, create the .env file on the server:"
+            echo "  1. SSH to the server: ssh lb-admin@178.156.223.196"
+            echo "  2. Navigate to: cd /opt/lb-automotive-dashboard/deployment/docker"
+            echo "  3. Create .env file with required variables:"
+            echo ""
+            echo "Required variables:"
+            echo "  SECRET_KEY=<generate with: openssl rand -hex 32>"
+            echo "  ALLOWED_ORIGINS=https://kozytherocket.space,https://www.kozytherocket.space"
+            echo ""
+            echo "Optional variables (see python-backend/.env.example for full list):"
+            echo "  LLM_PROVIDER=ollama"
+            echo "  ANTHROPIC_API_KEY=<your-key-if-using-anthropic>"
+            echo ""
+            exit 1
           fi
+
+          echo "✅ Found .env file at deployment/docker/.env"
 
           # Pull latest code
           echo "📥 Pulling latest code..."
