@@ -44,10 +44,11 @@ docker exec lb-jenkins chown jenkins:jenkins /var/jenkins_home/.ssh/id_rsa.pub
 docker exec lb-jenkins chmod 600 /var/jenkins_home/.ssh/id_rsa
 docker exec lb-jenkins chmod 644 /var/jenkins_home/.ssh/id_rsa.pub
 
-# Add server to known_hosts
-echo "📝 Adding server to known_hosts..."
+# Add server and GitHub to known_hosts (container runs as jenkins user; Git and deploy use /var/jenkins_home/.ssh)
+echo "📝 Adding server and GitHub to known_hosts..."
 docker exec lb-jenkins ssh-keyscan -H 178.156.223.196 > /tmp/known_hosts_temp
 docker exec lb-jenkins ssh-keyscan -H localhost >> /tmp/known_hosts_temp
+docker exec lb-jenkins ssh-keyscan -H github.com >> /tmp/known_hosts_temp
 docker cp /tmp/known_hosts_temp lb-jenkins:/var/jenkins_home/.ssh/known_hosts
 docker exec lb-jenkins chown jenkins:jenkins /var/jenkins_home/.ssh/known_hosts
 rm /tmp/known_hosts_temp

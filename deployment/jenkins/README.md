@@ -228,7 +228,18 @@ ssh lb-admin@localhost "echo 'SSH works!'"
 
 ### Step 9: Configure Jenkins for SSH
 
-Add SSH configuration to Jenkins container:
+Add SSH configuration to the Jenkins container so it can deploy (SSH to server) and clone the repo (SSH to GitHub). Either run the script or use the manual steps below.
+
+**Note:** The container runs as the default `jenkins` user (not root). If you previously ran with `user: root`, after changing to the default user you may need to fix volume ownership once on the server: `docker run --rm -v jenkins_jenkins-data:/data alpine chown -R 1000:1000 /data` (then restart Jenkins).
+
+**Option A: Run the setup script** (recommended; adds deploy server, localhost, and GitHub to `known_hosts`):
+
+```bash
+# From the repo root on the server
+bash deployment/jenkins/configure-ssh.sh
+```
+
+**Option B: Manual steps**
 
 ```bash
 # Copy SSH keys into Jenkins container
@@ -239,9 +250,12 @@ docker cp ~/.ssh/jenkins_deploy_key.pub lb-jenkins:/var/jenkins_home/.ssh/id_rsa
 docker exec lb-jenkins chown jenkins:jenkins /var/jenkins_home/.ssh/id_rsa
 docker exec lb-jenkins chmod 600 /var/jenkins_home/.ssh/id_rsa
 
-# Add server to known_hosts
-docker exec lb-jenkins ssh-keyscan -H 178.156.223.196 >> /var/jenkins_home/.ssh/known_hosts
-docker exec lb-jenkins ssh-keyscan -H localhost >> /var/jenkins_home/.ssh/known_hosts
+# Add server and GitHub to known_hosts (container runs as jenkins user; Git and deploy both use /var/jenkins_home/.ssh)
+docker exec lb-jenkins mkdir -p /var/jenkins_home/.ssh
+docker exec lb-jenkins sh -c 'ssh-keyscan -H 178.156.223.196 >> /var/jenkins_home/.ssh/known_hosts'
+docker exec lb-jenkins sh -c 'ssh-keyscan -H localhost >> /var/jenkins_home/.ssh/known_hosts'
+docker exec lb-jenkins sh -c 'ssh-keyscan -H github.com >> /var/jenkins_home/.ssh/known_hosts'
+docker exec lb-jenkins chown -R jenkins:jenkins /var/jenkins_home/.ssh
 ```
 
 ---
@@ -416,6 +430,20 @@ docker exec lb-jenkins ls -lh /var/jenkins_home/jobs/LB-Automotive-Dashboard/bui
 ---
 
 ## Troubleshooting
+
+### Issue: Checkout fails with "No ED25519 host key is known for github.com" / "Host key verification failed"
+
+The pipeline uses an SSH repo URL (`git@github.com:...`). The Jenkins container must have GitHub's host key in `known_hosts`.
+
+**Quick fix (on the server):** Run the redirect inside the container so the file is created there (container runs as jenkins user, so Git uses `/var/jenkins_home/.ssh/known_hosts`):
+
+```bash
+docker exec lb-jenkins mkdir -p /var/jenkins_home/.ssh
+docker exec lb-jenkins sh -c 'ssh-keyscan -H github.com >> /var/jenkins_home/.ssh/known_hosts'
+docker exec lb-jenkins chown -R jenkins:jenkins /var/jenkins_home/.ssh
+```
+
+Then re-run the pipeline (Build Now). Then re-run the pipeline (Build Now).
 
 ### Issue: "Permission denied" during SSH deployment
 

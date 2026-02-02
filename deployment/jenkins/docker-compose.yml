@@ -6,7 +6,7 @@ services:
     container_name: lb-jenkins
     restart: unless-stopped
     privileged: true
-    user: root
+    # Run as default jenkins user (not root) so Git uses /var/jenkins_home/.ssh/known_hosts
     ports:
       - "8080:8080"   # Jenkins Web UI
       - "50000:50000" # Jenkins agent port
