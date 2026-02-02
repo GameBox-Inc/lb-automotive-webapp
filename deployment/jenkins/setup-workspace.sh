@@ -4,7 +4,7 @@
 
 set -e
 
-JOB_NAME="${1:-LB-Automotive-Dashboard}"
+JOB_NAME="${1:-LB-Automotive-Dashboard-Pipeline}"
 WORKSPACE="/var/jenkins_home/workspace/$JOB_NAME"
 REPO_URL="git@github.com:GameBox-Inc/lb-automotive-webapp.git"
 CONTAINER="${2:-lb-jenkins}"
@@ -59,6 +59,40 @@ docker exec "$CONTAINER" ls -la "$WORKSPACE/.git" 2>/dev/null || { echo "ERROR: 
 echo ""
 echo "git status (as jenkins):"
 docker exec -u jenkins "$CONTAINER" sh -c "cd $WORKSPACE && git status"
+echo ""
+
+# Restart Jenkins container to ensure clean state
+echo "=========================================="
+echo "Restarting Jenkins container..."
+echo "=========================================="
+COMPOSE_DIR="${3:-/opt/lb-automotive-dashboard/deployment/jenkins}"
+if [ -f "$COMPOSE_DIR/docker-compose.yml" ]; then
+    cd "$COMPOSE_DIR"
+    docker compose restart jenkins
+    echo "[OK] Jenkins container restarted."
+else
+    echo "WARNING: docker-compose.yml not found at $COMPOSE_DIR/docker-compose.yml"
+    echo "Restarting container manually: docker restart $CONTAINER"
+    docker restart "$CONTAINER"
+    echo "[OK] Jenkins container restarted."
+fi
+
+# Wait for Jenkins to be ready
+echo ""
+echo "Waiting for Jenkins to be ready..."
+sleep 5
+for i in {1..30}; do
+    if docker exec "$CONTAINER" curl -s -o /dev/null -w "%{http_code}" http://localhost:8080/login 2>/dev/null | grep -q "200\|403"; then
+        echo "[OK] Jenkins is ready."
+        break
+    fi
+    if [ $i -eq 30 ]; then
+        echo "WARNING: Jenkins may still be starting. Check manually: docker logs $CONTAINER"
+    else
+        sleep 2
+    fi
+done
+
 echo ""
 echo "=========================================="
 echo "Done. In Jenkins UI: run Build Now."
