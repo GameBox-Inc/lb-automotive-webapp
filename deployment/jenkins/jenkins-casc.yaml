@@ -1,0 +1,87 @@
+jenkins:
+  systemMessage: "LB Automotive Dashboard - CI/CD Server"
+  numExecutors: 2
+  mode: NORMAL
+
+credentials:
+  system:
+    domainCredentials:
+      - credentials:
+          - string:
+              scope: GLOBAL
+              id: "secret-key"
+              secret: "${SECRET_KEY}"
+              description: "JWT signing secret"
+          - string:
+              scope: GLOBAL
+              id: "allowed-origins"
+              secret: "${ALLOWED_ORIGINS}"
+              description: "CORS allowed origins"
+          - string:
+              scope: GLOBAL
+              id: "llm-provider"
+              secret: "${LLM_PROVIDER}"
+              description: "LLM provider selection"
+          - string:
+              scope: GLOBAL
+              id: "anthropic-api-key"
+              secret: "${ANTHROPIC_API_KEY:-}"
+              description: "Anthropic Claude API key"
+          - string:
+              scope: GLOBAL
+              id: "twilio-account-sid"
+              secret: "${TWILIO_ACCOUNT_SID}"
+              description: "Twilio Account SID"
+          - string:
+              scope: GLOBAL
+              id: "twilio-auth-token"
+              secret: "${TWILIO_AUTH_TOKEN}"
+              description: "Twilio Auth Token"
+          - string:
+              scope: GLOBAL
+              id: "twilio-phone-number"
+              secret: "${TWILIO_PHONE_NUMBER}"
+              description: "Twilio Phone Number"
+          - basicSSHUserPrivateKey:
+              scope: GLOBAL
+              id: "github-ssh-key"
+              username: "git"
+              description: "GitHub SSH Deploy Key"
+              privateKeySource:
+                directEntry:
+                  privateKey: "${GITHUB_SSH_KEY}"
+
+jobs:
+  - script: >
+      pipelineJob('LB-Automotive-Dashboard-Pipeline') {
+        description('CI/CD Pipeline for LB Automotive Dashboard - Automated testing and deployment')
+
+        properties {
+          buildDiscarder {
+            strategy {
+              logRotator {
+                numToKeepStr('10')
+              }
+            }
+          }
+        }
+
+        triggers {
+          githubPush()
+        }
+
+        definition {
+          cpsScm {
+            scm {
+              git {
+                remote {
+                  url('git@github.com:GameBox-Inc/lb-automotive-webapp.git')
+                  credentials('github-ssh-key')
+                }
+                branch('*/release/v0.1')
+              }
+            }
+            scriptPath('Jenkinsfile')
+          }
+        }
+      }
