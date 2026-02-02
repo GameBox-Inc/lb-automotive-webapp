@@ -186,48 +186,48 @@ jobs:
           fi
 
           # Create .env file
-          cat > deployment/docker/.env << EOF
-# LB Automotive Dashboard - Production Environment
-# Auto-generated from GitHub Secrets on $(date)
-
-# Required Variables
-SECRET_KEY=$SECRET_KEY
-ALLOWED_ORIGINS=$ALLOWED_ORIGINS
-
-# LLM Configuration
-LLM_PROVIDER=${LLM_PROVIDER:-ollama}
-OLLAMA_HOST=http://ollama:11434
-OLLAMA_MODEL=smollm2:135m
-
-# Database
-DATABASE_URL=sqlite:////app/data/lb_automotive.db
-
-# Redis
-REDIS_URL=redis://redis:6379/0
-
-# Security
-CSP_POLICY=strict
-EOF
+          {
+            echo "# LB Automotive Dashboard - Production Environment"
+            echo "# Auto-generated from GitHub Secrets on $(date)"
+            echo ""
+            echo "# Required Variables"
+            echo "SECRET_KEY=$SECRET_KEY"
+            echo "ALLOWED_ORIGINS=$ALLOWED_ORIGINS"
+            echo ""
+            echo "# LLM Configuration"
+            echo "LLM_PROVIDER=${LLM_PROVIDER:-ollama}"
+            echo "OLLAMA_HOST=http://ollama:11434"
+            echo "OLLAMA_MODEL=smollm2:135m"
+            echo ""
+            echo "# Database"
+            echo "DATABASE_URL=sqlite:////app/data/lb_automotive.db"
+            echo ""
+            echo "# Redis"
+            echo "REDIS_URL=redis://redis:6379/0"
+            echo ""
+            echo "# Security"
+            echo "CSP_POLICY=strict"
+          } > deployment/docker/.env
 
           # Add Anthropic config if provided
           if [ -n "$ANTHROPIC_API_KEY" ]; then
-            cat >> deployment/docker/.env << EOF
-
-# Anthropic Configuration
-ANTHROPIC_API_KEY=$ANTHROPIC_API_KEY
-ANTHROPIC_MODEL=${ANTHROPIC_MODEL:-claude-3-5-sonnet-20241022}
-EOF
+            {
+              echo ""
+              echo "# Anthropic Configuration"
+              echo "ANTHROPIC_API_KEY=$ANTHROPIC_API_KEY"
+              echo "ANTHROPIC_MODEL=${ANTHROPIC_MODEL:-claude-3-5-sonnet-20241022}"
+            } >> deployment/docker/.env
           fi
 
           # Add Twilio config if provided
           if [ -n "$TWILIO_ACCOUNT_SID" ]; then
-            cat >> deployment/docker/.env << EOF
-
-# Twilio Configuration
-TWILIO_ACCOUNT_SID=$TWILIO_ACCOUNT_SID
-TWILIO_AUTH_TOKEN=$TWILIO_AUTH_TOKEN
-TWILIO_PHONE_NUMBER=$TWILIO_PHONE_NUMBER
-EOF
+            {
+              echo ""
+              echo "# Twilio Configuration"
+              echo "TWILIO_ACCOUNT_SID=$TWILIO_ACCOUNT_SID"
+              echo "TWILIO_AUTH_TOKEN=$TWILIO_AUTH_TOKEN"
+              echo "TWILIO_PHONE_NUMBER=$TWILIO_PHONE_NUMBER"
+            } >> deployment/docker/.env
           fi
 
           # Set secure permissions
