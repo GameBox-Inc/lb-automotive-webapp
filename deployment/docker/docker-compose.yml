@@ -31,7 +31,7 @@ services:
     environment:
       - DATABASE_URL=sqlite:////app/data/lb_automotive.db
       - SECRET_KEY=${SECRET_KEY}
-      - ALLOWED_ORIGINS=${ALLOWED_ORIGINS:-http://localhost:5173,http://localhost:8080,https://kozytherocket.space,https://www.kozytherocket.space,https://lb-auto.com,http://10.100.0.1:8080,http://178.156.223.196:8080}
+      - ALLOWED_ORIGINS=${ALLOWED_ORIGINS:-http://localhost:5173,http://localhost:8080,http://178.156.223.196,http://178.156.223.196:8080}
       - REDIS_URL=redis://redis:6379/0
       - OLLAMA_API_URL=http://ollama:11434
       - LLM_PROVIDER=${LLM_PROVIDER:-ollama}
