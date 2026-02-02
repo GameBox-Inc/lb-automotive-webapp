@@ -73,7 +73,7 @@ jobs:
 
       - name: Set lowercase owner
         run: |
-          echo "OWNER_LC=${OWNER_LC,,}" >> $GITHUB_ENV
+          echo "OWNER_LC=$(echo $OWNER_LC | tr '[:upper:]' '[:lower:]')" >> $GITHUB_ENV
 
       - name: Log in to the Container registry
         uses: docker/login-action@v3
