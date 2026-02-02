@@ -10,7 +10,7 @@ DB_PATH = DATABASE_URL.replace("sqlite:///", "").replace("sqlite://", "")
 pwd_context = CryptContext(schemes=["sha256_crypt"], deprecated="auto")
 
 def reset_admin():
-    print(f"Connecting to {DB_PATH}...")
+    print(f"Connecting to {DB_PATH}...")z
     try:
         conn = sqlite3.connect(DB_PATH)
         conn.row_factory = sqlite3.Row
