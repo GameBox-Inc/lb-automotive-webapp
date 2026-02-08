@@ -1,4 +1,4 @@
-apiVersion: indent
+apiVersion: v1
 kind: Namespace
 metadata:
   name: lb-automotive
