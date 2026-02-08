@@ -32,21 +32,13 @@ pipeline {
             steps {
                 echo '📥 Checking out code...'
                 script {
-                    // Clean workspace
-                    sh 'rm -rf .git * .*git* 2>/dev/null || true'
-                    
-                    // Use credentials binding for SSH key
-                    withCredentials([sshUserPrivateKey(credentialsId: GITHUB_CREDENTIALS, keyFileVariable: 'SSH_KEY')]) {
+                    // Clean workspace and clone
+                    sshagent([GITHUB_CREDENTIALS]) {
                         sh '''
-                            # Setup SSH
-                            mkdir -p ~/.ssh
-                            chmod 700 ~/.ssh
-                            cp "$SSH_KEY" ~/.ssh/id_rsa
-                            chmod 600 ~/.ssh/id_rsa
-                            ssh-keyscan -H github.com >> ~/.ssh/known_hosts 2>/dev/null
+                            rm -rf .git * .*git* 2>/dev/null || true
                             
-                            # Configure Git to use SSH
-                            export GIT_SSH_COMMAND="ssh -i ~/.ssh/id_rsa -o StrictHostKeyChecking=no"
+                            # Add workspace to safe.directory to fix ownership check
+                            git config --global --add safe.directory ${WORKSPACE}
                             
                             # Clone repository
                             git clone ${GIT_REPO} .
@@ -166,16 +158,8 @@ pipeline {
         stage('Commit & Push Manifests') {
             steps {
                 echo '🚀 Committing manifest changes (triggers ArgoCD)...'
-                withCredentials([sshUserPrivateKey(credentialsId: GITHUB_CREDENTIALS, keyFileVariable: 'SSH_KEY')]) {
+                sshagent([GITHUB_CREDENTIALS]) {
                     sh """
-                        # Setup SSH for git push
-                        mkdir -p ~/.ssh
-                        chmod 700 ~/.ssh
-                        cp "\$SSH_KEY" ~/.ssh/id_rsa
-                        chmod 600 ~/.ssh/id_rsa
-                        ssh-keyscan -H github.com >> ~/.ssh/known_hosts 2>/dev/null || true
-                        export GIT_SSH_COMMAND="ssh -i ~/.ssh/id_rsa -o StrictHostKeyChecking=no"
-                        
                         # Configure Git
                         git config user.name "Jenkins CI"
                         git config user.email "jenkins@lb-automotive.local"
