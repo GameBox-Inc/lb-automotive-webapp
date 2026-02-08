@@ -35,8 +35,8 @@ RUN groupadd -f docker && usermod -aG docker jenkins
 # Switch back to jenkins user
 USER jenkins
 
-# Install Jenkins plugins for SSH Agent
-RUN jenkins-plugin-cli --plugins ssh-agent:333.v878b_53c89c9b_
+# Install Jenkins plugins for SSH Agent (latest version)
+RUN jenkins-plugin-cli --plugins ssh-agent
 
 # Display versions
 RUN python3 --version && \
