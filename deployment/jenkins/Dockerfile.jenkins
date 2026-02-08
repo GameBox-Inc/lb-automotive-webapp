@@ -29,8 +29,8 @@ RUN curl -fsSL https://download.docker.com/linux/debian/gpg | gpg --dearmor -o /
     apt-get install -y docker-ce-cli && \
     rm -rf /var/lib/apt/lists/*
 
-# Add jenkins user to docker group
-RUN usermod -aG docker jenkins
+# Create docker group and add jenkins user to it
+RUN groupadd -f docker && usermod -aG docker jenkins
 
 # Switch back to jenkins user
 USER jenkins
