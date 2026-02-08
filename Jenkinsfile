@@ -231,15 +231,6 @@ pipeline {
     }
 
     post {
-        always {
-            echo '🧹 Cleaning up...'
-            cleanWs(cleanWhenNotBuilt: false,
-                    deleteDirs: true,
-                    disableDeferredWipeout: true,
-                    patterns: [[pattern: 'python-backend/venv', type: 'INCLUDE'],
-                               [pattern: 'frontend/node_modules', type: 'INCLUDE']])
-        }
-
         success {
             echo '✅ Pipeline completed successfully!'
             script {
