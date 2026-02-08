@@ -32,13 +32,15 @@ pipeline {
             steps {
                 echo '📥 Checking out code...'
                 script {
-                    // Clean workspace and clone
-                    sh '''
-                        rm -rf .git * .*git* 2>/dev/null || true
-                        git clone ${GIT_REPO} .
-                        git checkout ${GIT_BRANCH}
-                        git log -1 --oneline
-                    '''
+                    // Clean workspace and clone with SSH credentials
+                    sshagent([GITHUB_CREDENTIALS]) {
+                        sh '''
+                            rm -rf .git * .*git* 2>/dev/null || true
+                            git clone ${GIT_REPO} .
+                            git checkout ${GIT_BRANCH}
+                            git log -1 --oneline
+                        '''
+                    }
                     
                     env.GIT_COMMIT = sh(
                         script: 'git rev-parse --short HEAD',
@@ -206,10 +208,16 @@ Triggered by: ${BUILD_USER:-Jenkins}
 
         cleanup {
             echo '🧹 Cleaning up Docker images...'
-            sh """
-                docker rmi ${BACKEND_IMAGE}:${IMAGE_TAG} || true
-                docker rmi ${FRONTEND_IMAGE}:${IMAGE_TAG} || true
-            """
+            script {
+                if (env.IMAGE_TAG) {
+                    sh """
+                        docker rmi ${BACKEND_IMAGE}:${IMAGE_TAG} || true
+                        docker rmi ${FRONTEND_IMAGE}:${IMAGE_TAG} || true
+                    """
+                } else {
+                    echo 'No IMAGE_TAG set, skipping image cleanup'
+                }
+            }
         }
     }
 }
