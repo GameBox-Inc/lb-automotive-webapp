@@ -32,10 +32,23 @@ pipeline {
             steps {
                 echo '📥 Checking out code...'
                 script {
-                    // Clean workspace and clone with SSH credentials
-                    sshagent([GITHUB_CREDENTIALS]) {
+                    // Clean workspace
+                    sh 'rm -rf .git * .*git* 2>/dev/null || true'
+                    
+                    // Use credentials binding for SSH key
+                    withCredentials([sshUserPrivateKey(credentialsId: GITHUB_CREDENTIALS, keyFileVariable: 'SSH_KEY')]) {
                         sh '''
-                            rm -rf .git * .*git* 2>/dev/null || true
+                            # Setup SSH
+                            mkdir -p ~/.ssh
+                            chmod 700 ~/.ssh
+                            cp "$SSH_KEY" ~/.ssh/id_rsa
+                            chmod 600 ~/.ssh/id_rsa
+                            ssh-keyscan -H github.com >> ~/.ssh/known_hosts 2>/dev/null
+                            
+                            # Configure Git to use SSH
+                            export GIT_SSH_COMMAND="ssh -i ~/.ssh/id_rsa -o StrictHostKeyChecking=no"
+                            
+                            # Clone repository
                             git clone ${GIT_REPO} .
                             git checkout ${GIT_BRANCH}
                             git log -1 --oneline
@@ -153,18 +166,28 @@ pipeline {
         stage('Commit & Push Manifests') {
             steps {
                 echo '🚀 Committing manifest changes (triggers ArgoCD)...'
-                sshagent([GITHUB_CREDENTIALS]) {
+                withCredentials([sshUserPrivateKey(credentialsId: GITHUB_CREDENTIALS, keyFileVariable: 'SSH_KEY')]) {
                     sh """
+                        # Setup SSH for git push
+                        mkdir -p ~/.ssh
+                        chmod 700 ~/.ssh
+                        cp "\$SSH_KEY" ~/.ssh/id_rsa
+                        chmod 600 ~/.ssh/id_rsa
+                        ssh-keyscan -H github.com >> ~/.ssh/known_hosts 2>/dev/null || true
+                        export GIT_SSH_COMMAND="ssh -i ~/.ssh/id_rsa -o StrictHostKeyChecking=no"
+                        
+                        # Configure Git
                         git config user.name "Jenkins CI"
                         git config user.email "jenkins@lb-automotive.local"
                         
+                        # Commit and push
                         git add deployment/k8s/backend.yaml deployment/k8s/frontend.yaml
                         
                         git commit -m "🚀 Deploy: Update images to ${IMAGE_TAG}
 
 Build: #${BUILD_NUMBER}
 Commit: ${GIT_COMMIT}
-Triggered by: ${BUILD_USER:-Jenkins}
+Triggered by: \${BUILD_USER:-Jenkins}
 " || echo "No changes to commit"
                         
                         git push origin ${GIT_BRANCH}
