@@ -15,29 +15,86 @@ spec:
       labels:
         app: backend
     spec:
+      imagePullSecrets:
+      - name: ghcr-secret
       containers:
       - name: backend
         # Image updated by Jenkins CI pipeline
-        image: ghcr.io/gamebox-inc/lb-automotive-backend:14-daca1f0
-        imagePullPolicy: Always
+        image: ghcr.io/gamebox-inc/lb-automotive-backend:latest
+        imagePullPolicy: IfNotPresent
         ports:
         - containerPort: 8000
         env:
+        - name: SECRET_KEY
+          valueFrom:
+            secretKeyRef:
+              name: app-secrets
+              key: SECRET_KEY
+        - name: ALLOWED_ORIGINS
+          valueFrom:
+            secretKeyRef:
+              name: app-secrets
+              key: ALLOWED_ORIGINS
         - name: DATABASE_URL
-          value: "sqlite:////app/data/lb_automotive.db"
+          valueFrom:
+            secretKeyRef:
+              name: app-secrets
+              key: DATABASE_URL
         - name: REDIS_URL
+          valueFrom:
+            secretKeyRef:
+              name: app-secrets
+              key: REDIS_URL
         - name: LLM_PROVIDER
-          value: "anthropic"  # or "ollama" for local LLM
+          valueFrom:
+            secretKeyRef:
+              name: app-secrets
+              key: LLM_PROVIDER
         - name: ANTHROPIC_API_KEY
           valueFrom:
             secretKeyRef:
               name: anthropic-secrets
-              key: api-key
+              key: ANTHROPIC_API_KEY
+              optional: true
         - name: ANTHROPIC_MODEL
-          value: "claude-3-5-sonnet-20241022"
+          valueFrom:
+            secretKeyRef:
+              name: anthropic-secrets
+              key: ANTHROPIC_MODEL
+              optional: true
+        - name: CSP_POLICY
+          valueFrom:
+            secretKeyRef:
+              name: app-secrets
+              key: CSP_POLICY
+        - name: TWILIO_ACCOUNT_SID
+          valueFrom:
+            secretKeyRef:
+              name: twilio-secrets
+              key: TWILIO_ACCOUNT_SID
+              optional: true
+        - name: TWILIO_AUTH_TOKEN
+          valueFrom:
+            secretKeyRef:
+              name: twilio-secrets
+              key: TWILIO_AUTH_TOKEN
+              optional: true
+        - name: TWILIO_PHONE_NUMBER
+          valueFrom:
+            secretKeyRef:
+              name: twilio-secrets
+              key: TWILIO_PHONE_NUMBER
+              optional: true
         volumeMounts:
         - name: app-data
           mountPath: /app/data
+        resources:
+          limits:
+            memory: "512Mi"
+            cpu: "500m"
+          requests:
+            memory: "256Mi"
+            cpu: "250m"
       volumes:
       - name: app-data
         persistentVolumeClaim:
