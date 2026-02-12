@@ -90,11 +90,11 @@ spec:
           mountPath: /app/data
         resources:
           limits:
-            memory: "512Mi"
-            cpu: "500m"
+            memory: "384Mi"
+            cpu: "400m"
           requests:
             memory: "256Mi"
-            cpu: "250m"
+            cpu: "200m"
       volumes:
       - name: app-data
         persistentVolumeClaim:

@@ -26,24 +26,26 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Architecture
 
 ### Current State (Production)
-- **Frontend:** React 18 + TypeScript + Vite + TailwindCSS
-- **Backend:** FastAPI (Python 3.11+) with SQLite database
-- **Cache/Queue:** Redis
-- **Reverse Proxy:** Traefik
-- **Deployment:** Docker Compose on Hetzner server (178.156.223.196)
+- **Server:** Hetzner 2GB RAM / 2 vCPU / 40GB SSD - **Optimized for low resources**
+- **Frontend:** React 18 + TypeScript + Vite + TailwindCSS (128MB limit)
+- **Backend:** FastAPI (Python 3.11+) with SQLite database (384MB limit)
+- **Cache/Queue:** Redis (64MB limit, LRU eviction)
+- **Reverse Proxy:** K3s Ingress
+- **Deployment:** Kubernetes (K3s) on Hetzner server (178.156.223.196)
 - **Domain:** kozytherocket.space
 - **CI/CD:** GitHub Actions with self-hosted runner
+- **LLM:** Anthropic Claude API (Ollama removed due to memory constraints)
 
 ### Tech Stack Details
 
 **Backend:**
 - FastAPI with Pydantic V2 models
-- SQLite (WAL mode) - **Migration to PostgreSQL planned**
+- SQLite (WAL mode) with monthly archiving - **Migration to PostgreSQL planned**
 - JWT authentication (python-jose)
-- Redis for caching, rate limiting, and session management
+- Redis for caching (64MB limit for 2GB server), rate limiting, and session management
 - Alembic for database migrations
 - Twilio integration for IVR
-- LLM integration: Ollama (local) and Anthropic Claude (cloud)
+- LLM integration: Anthropic Claude (cloud) - **Ollama removed for 2GB server**
 - Prometheus-compatible metrics
 
 **Frontend:**
@@ -56,13 +58,15 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - Custom API client (`src/lib/supabase.ts` - misleading name, it's a generic API wrapper)
 
 **Infrastructure:**
-- Docker & Docker Compose
-- Kubernetes manifests (in `deployment/k8s/`) - prepared, not yet deployed
-- Traefik v2.10 reverse proxy (load balancing & routing)
+- Docker & Docker Compose (for local development)
+- K3s (lightweight Kubernetes) in production - **Optimized for 2GB RAM**
+- Kubernetes manifests (in `deployment/k8s/`) with strict memory limits
 - Cloudflare Tunnel (optional, for zero-exposed-ports access)
 - WireGuard VPN (for secure server access)
 - GitHub Actions with self-hosted runner for CI/CD
 - GitHub Container Registry (GHCR) for Docker images
+- Automated log rotation and compression (7-day retention)
+- Monthly database archiving (K8s CronJob)
 
 ---
 
@@ -218,6 +222,12 @@ OLLAMA_MODEL=smollm2:135m                    # Ollama model
 REDIS_URL=redis://redis:6379/0
 DATABASE_URL=sqlite:///./lb_automotive.db
 CSP_POLICY=strict  # or "development"
+
+# Database archiving (for K8s CronJob)
+DATABASE_PATH=/app/data/lb_automotive.db
+ARCHIVE_DIR=/app/data/archives
+ARCHIVE_AFTER_DAYS=90  # Archive data older than 90 days
+DELETE_ARCHIVED_AFTER_DAYS=30  # Delete from DB 30 days after archiving
 ```
 
 ---
@@ -352,17 +362,25 @@ Every new feature MUST follow these security practices:
 ## Known Issues & TODOs
 
 ### High Priority
-1. **Database Migration** - SQLite → PostgreSQL (required for production scale)
-2. **Connection Pooling** - Full implementation needed
-3. **JWT Storage** - Move from localStorage to httpOnly cookies
-4. **CSRF Protection** - Implement CSRF tokens
-5. **Database Backups** - Automated backup system
+1. **Server Resources** - 2GB RAM is minimal; upgrade to 4GB+ recommended for production
+2. **Database Migration** - SQLite → PostgreSQL (required for production scale)
+3. **Connection Pooling** - Full implementation needed
+4. **JWT Storage** - Move from localStorage to httpOnly cookies
+5. **CSRF Protection** - Implement CSRF tokens
 
 ### Medium Priority
-- Kubernetes production deployment (manifests exist, not deployed)
 - TLS/HTTPS certificate automation (currently self-signed)
 - Enhanced monitoring and observability
 - Multi-business architecture (see `ARCHITECTURE_GAP_ANALYSIS.md`)
+- Restore Ollama support (requires 8GB+ RAM server)
+
+### Recently Completed
+- ✅ Kubernetes production deployment (K3s on 2GB server)
+- ✅ Memory optimization for low-resource environment
+- ✅ Automated log rotation and compression
+- ✅ Database archiving and vacuuming
+- ✅ Disk space monitoring
+- ✅ Ollama removed (uses Anthropic Claude API instead)
 
 ### Known Bugs
 - `getCases()` and `createCase()` methods missing from API client (StaffDashboard needs them)
@@ -373,19 +391,24 @@ Every new feature MUST follow these security practices:
 
 ### Configuration
 - `docker-compose.yml` - Local development
-- `deployment/docker/docker-compose.yml` - Production deployment
+- `deployment/docker/docker-compose.yml` - Docker Compose deployment (deprecated)
+- `deployment/k8s/` - Kubernetes manifests (production)
 - `.github/workflows/gamebox-engine.yaml` - CI/CD pipeline
 - `python-backend/.env.example` - Environment variable template
 
 ### Documentation
+- `DEPLOYMENT_2GB_SERVER.md` - **Complete 2GB server deployment guide**
+- `QUICK_FIX_2GB_SERVER.md` - **Emergency OOM fix guide**
 - `API_REFERENCE.md` - API endpoint documentation
 - `SECURITY_IMPROVEMENTS_SUMMARY.md` - Security changes log
 - `ARCHITECTURE_GAP_ANALYSIS.md` - Current vs. future architecture
 - `python-backend/README.md` - Backend-specific docs
 
 ### Scripts
+- `deployment/scripts/remove_memory_hogs.sh` - **Remove Ollama/ArgoCD to free RAM**
+- `deployment/scripts/setup_log_rotation.sh` - **Setup automated log cleanup**
+- `python-backend/database_archiving.py` - **Archive old database records**
 - `deployment/scripts/generate_vpn_client.sh` - WireGuard client generation
-- `deployment/scripts/setup_ollama.sh` - LLM service setup
 - `setup_git_on_server.sh` - Git repository initialization on server
 
 ---
