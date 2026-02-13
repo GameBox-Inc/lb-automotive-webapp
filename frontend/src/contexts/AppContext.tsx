@@ -17,6 +17,12 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     const [isLoading, setIsLoading] = useState(true);
 
     const fetchData = async () => {
+        // Only fetch if user is authenticated
+        if (!apiClient.isAuthenticated()) {
+            setIsLoading(false);
+            return;
+        }
+
         try {
             const [servicesData, staffData] = await Promise.all([
                 apiClient.getServices(),

@@ -23,6 +23,12 @@ export function useAppointments() {
   const [timeframe, setTimeframe] = useState<'24h' | '7d' | '30d'>('24h')
 
   const fetchData = useCallback(async () => {
+    // Only fetch if user is authenticated
+    if (!apiClient.isAuthenticated()) {
+      setLoading(false)
+      return
+    }
+
     setLoading(true)
     try {
       const now = new Date()
