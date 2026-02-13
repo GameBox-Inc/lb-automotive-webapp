@@ -20,7 +20,7 @@ spec:
       containers:
       - name: frontend
         # Image updated by Jenkins CI pipeline
-        image: ghcr.io/gamebox-inc/lb-automotive-frontend:latest
+        image: ghcr.io/gamebox-inc/lb-automotive-frontend:15-0426de3
         imagePullPolicy: IfNotPresent
         ports:
         - containerPort: 80
