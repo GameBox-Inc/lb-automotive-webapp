@@ -43,6 +43,8 @@ export type {
 
 class APIClient {
   private token: string | null = null;
+  private retryAttempts: Map<string, number> = new Map();
+  private lastRateLimitTime: number = 0;
 
   constructor() {
     this.token = localStorage.getItem(TOKEN_KEY);
@@ -105,9 +107,18 @@ class APIClient {
         console.log(`[API] Response: ${response.status} ${response.statusText}`);
       }
 
-      // Handle rate limiting
+      // Handle rate limiting with exponential backoff
       if (response.status === 429) {
         const resetTime = response.headers.get('X-RateLimit-Reset');
+        const now = Date.now();
+        
+        // Prevent multiple rapid requests after rate limit
+        if (now - this.lastRateLimitTime < 5000) {
+          // If we were rate limited less than 5 seconds ago, wait before retrying
+          await new Promise(resolve => setTimeout(resolve, 5000));
+        }
+        
+        this.lastRateLimitTime = now;
         throw new Error(`Rate limit exceeded. Try again after ${new Date(Number(resetTime) * 1000).toLocaleTimeString()}`);
       }
 

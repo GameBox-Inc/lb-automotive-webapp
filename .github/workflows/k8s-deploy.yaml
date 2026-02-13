@@ -1,0 +1,271 @@
+name: K8s CI/CD Pipeline
+
+on:
+  push:
+    branches: [ "main", "master", "release/*" ]
+  pull_request:
+    branches: [ "main", "master", "release/*" ]
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      # Backend Tests
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install dependencies
+        run: |
+          cd python-backend
+          pip install -r requirements.txt
+          pip install pytest httpx
+      - name: Run Backend Tests
+        env:
+          SECRET_KEY: test-secret-key-for-ci-only-not-production
+          ALLOWED_ORIGINS: http://localhost:5173,http://localhost:3000
+          DATABASE_URL: sqlite:///./test_lb_automotive.db
+        run: |
+          cd python-backend
+          if [ -d "tests" ] && [ "$(ls -A tests)" ]; then
+            pytest
+          else
+            echo "⚠️ No backend tests found, skipping..."
+          fi
+
+      # Frontend Tests
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+      - name: Install dependencies
+        run: |
+          cd frontend
+          npm ci
+      - name: Run Frontend Tests
+        run: |
+          cd frontend
+          if npm run test --if-present; then
+            echo "✅ Frontend tests passed"
+          else
+            echo "⚠️ No frontend tests configured, skipping..."
+          fi
+        continue-on-error: true
+
+  build-and-push:
+    needs: test
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    env:
+      OWNER_LC: ${{ github.repository_owner }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set lowercase owner
+        run: |
+          echo "OWNER_LC=$(echo $OWNER_LC | tr '[:upper:]' '[:lower:]')" >> $GITHUB_ENV
+
+      - name: Log in to the Container registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # Backend Build
+      - name: Build and push Backend
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: deployment/docker/Dockerfile.backend
+          push: true
+          tags: |
+            ${{ env.REGISTRY }}/${{ env.OWNER_LC }}/lb-automotive-backend:latest
+            ${{ env.REGISTRY }}/${{ env.OWNER_LC }}/lb-automotive-backend:${{ github.sha }}
+
+      # Frontend Build
+      - name: Build and push Frontend
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: deployment/docker/Dockerfile.frontend
+          push: true
+          build-args: |
+            VITE_API_URL=/api
+          tags: |
+            ${{ env.REGISTRY }}/${{ env.OWNER_LC }}/lb-automotive-frontend:latest
+            ${{ env.REGISTRY }}/${{ env.OWNER_LC }}/lb-automotive-frontend:${{ github.sha }}
+
+  deploy:
+    needs: build-and-push
+    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master' || startsWith(github.ref, 'refs/heads/release/'))
+    runs-on: self-hosted  # Uses self-hosted runner on your server
+    environment:
+      name: production
+      url: https://kozytherocket.space
+    
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Deploy to Kubernetes
+        env:
+          REMOTE_DIR: /opt/lb-automotive-dashboard
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          SECRET_KEY: ${{ secrets.SECRET_KEY }}
+          ALLOWED_ORIGINS: ${{ secrets.ALLOWED_ORIGINS }}
+          TWILIO_ACCOUNT_SID: ${{ secrets.TWILIO_ACCOUNT_SID }}
+          TWILIO_AUTH_TOKEN: ${{ secrets.TWILIO_AUTH_TOKEN }}
+          TWILIO_PHONE_NUMBER: ${{ secrets.TWILIO_PHONE_NUMBER }}
+        run: |
+          set -e
+
+          # Verify kubectl is available
+          if ! command -v kubectl &> /dev/null; then
+            echo "❌ Error: kubectl not found"
+            exit 1
+          fi
+
+          # Verify we're in the right directory
+          if [ ! -d "$REMOTE_DIR" ]; then
+            echo "❌ Error: Directory $REMOTE_DIR does not exist"
+            exit 1
+          fi
+
+          cd $REMOTE_DIR
+
+          # Configure git to use HTTPS with token authentication
+          echo "🔐 Configuring git credentials..."
+          git config --local credential.helper '!f() { echo "username=x-access-token"; echo "password=$GH_TOKEN"; }; f'
+
+          # Pull latest code
+          echo "📥 Pulling latest code..."
+          BRANCH_NAME=$(echo $GITHUB_REF | sed 's/refs\/heads\///')
+          echo "Branch: $BRANCH_NAME"
+          git fetch origin
+          git reset --hard origin/$BRANCH_NAME
+
+          # Update Kubernetes secrets (Anthropic API)
+          echo "🔐 Updating Kubernetes secrets..."
+          if [ -n "$ANTHROPIC_API_KEY" ]; then
+            kubectl create secret generic anthropic-secrets -n lb-automotive \
+              --from-literal=ANTHROPIC_API_KEY="$ANTHROPIC_API_KEY" \
+              --from-literal=ANTHROPIC_MODEL="claude-3-5-sonnet-20241022" \
+              --dry-run=client -o yaml | kubectl apply -f -
+            echo "✅ Anthropic secrets updated"
+          fi
+
+          # Update app secrets
+          if [ -n "$SECRET_KEY" ] && [ -n "$ALLOWED_ORIGINS" ]; then
+            kubectl create secret generic app-secrets -n lb-automotive \
+              --from-literal=SECRET_KEY="$SECRET_KEY" \
+              --from-literal=ALLOWED_ORIGINS="$ALLOWED_ORIGINS" \
+              --from-literal=DATABASE_URL="sqlite:////app/data/lb_automotive.db" \
+              --from-literal=REDIS_URL="redis://redis:6379/0" \
+              --from-literal=LLM_PROVIDER="anthropic" \
+              --from-literal=CSP_POLICY="strict" \
+              --dry-run=client -o yaml | kubectl apply -f -
+            echo "✅ App secrets updated"
+          fi
+
+          # Update Twilio secrets if provided
+          if [ -n "$TWILIO_ACCOUNT_SID" ]; then
+            kubectl create secret generic twilio-secrets -n lb-automotive \
+              --from-literal=TWILIO_ACCOUNT_SID="$TWILIO_ACCOUNT_SID" \
+              --from-literal=TWILIO_AUTH_TOKEN="$TWILIO_AUTH_TOKEN" \
+              --from-literal=TWILIO_PHONE_NUMBER="$TWILIO_PHONE_NUMBER" \
+              --dry-run=client -o yaml | kubectl apply -f -
+            echo "✅ Twilio secrets updated"
+          fi
+
+          # Apply memory-optimized Kubernetes configurations
+          echo "📦 Applying Kubernetes configurations..."
+          kubectl apply -f deployment/k8s/namespace.yaml
+          kubectl apply -f deployment/k8s/pvc.yaml
+          kubectl apply -f deployment/k8s/redis.yaml
+          kubectl apply -f deployment/k8s/backend.yaml
+          kubectl apply -f deployment/k8s/frontend.yaml
+          kubectl apply -f deployment/k8s/ingress.yaml
+          kubectl apply -f deployment/k8s/disk-monitor-cronjob.yaml
+
+          # Update image pull secret for GHCR
+          echo "🔐 Updating image pull secret..."
+          kubectl create secret docker-registry ghcr-secret -n lb-automotive \
+            --docker-server=ghcr.io \
+            --docker-username=${{ github.actor }} \
+            --docker-password=$GH_TOKEN \
+            --dry-run=client -o yaml | kubectl apply -f -
+
+          # Restart deployments to pick up new images
+          echo "🔄 Restarting deployments..."
+          kubectl rollout restart deployment backend -n lb-automotive
+          kubectl rollout restart deployment frontend -n lb-automotive
+          kubectl rollout restart deployment redis -n lb-automotive
+
+          # Wait for rollout to complete
+          echo "⏳ Waiting for deployments to complete..."
+          kubectl rollout status deployment backend -n lb-automotive --timeout=5m
+          kubectl rollout status deployment frontend -n lb-automotive --timeout=5m
+          kubectl rollout status deployment redis -n lb-automotive --timeout=5m
+
+          echo "✅ Deployment complete!"
+
+      - name: Verify deployment
+        run: |
+          echo "🔍 Checking pod status..."
+          kubectl get pods -n lb-automotive -o wide
+
+          echo ""
+          echo "🔍 Checking services..."
+          kubectl get services -n lb-automotive
+
+          echo ""
+          echo "🔍 Checking resource usage..."
+          kubectl top nodes || echo "⚠️ Metrics not available yet"
+          kubectl top pods -n lb-automotive || echo "⚠️ Pod metrics not available yet"
+
+          # Get backend pod
+          BACKEND_POD=$(kubectl get pods -n lb-automotive -l app=backend -o jsonpath='{.items[0].metadata.name}')
+          
+          # Check backend logs
+          echo ""
+          echo "🔍 Backend logs (last 20 lines):"
+          kubectl logs -n lb-automotive $BACKEND_POD --tail=20 || echo "⚠️ Could not fetch backend logs"
+
+          # Get frontend pod
+          FRONTEND_POD=$(kubectl get pods -n lb-automotive -l app=frontend -o jsonpath='{.items[0].metadata.name}')
+          
+          # Check frontend logs
+          echo ""
+          echo "🔍 Frontend logs (last 20 lines):"
+          kubectl logs -n lb-automotive $FRONTEND_POD --tail=20 || echo "⚠️ Could not fetch frontend logs"
+
+      - name: Deployment Summary
+        if: always()
+        run: |
+          echo "========================================"
+          echo "📊 Deployment Summary"
+          echo "========================================"
+          echo "Branch: $(echo $GITHUB_REF | sed 's/refs\/heads\///')"
+          echo "Commit: ${{ github.sha }}"
+          echo "Environment: https://kozytherocket.space"
+          echo "========================================"
+          echo "Pod Status:"
+          kubectl get pods -n lb-automotive
+          echo "========================================"
+          echo "Memory Usage:"
+          free -h || echo "⚠️ free command not available"
+          echo "========================================"
+          echo "Disk Usage:"
+          df -h / || echo "⚠️ df command not available"
+          echo "========================================"

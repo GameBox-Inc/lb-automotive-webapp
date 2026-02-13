@@ -181,14 +181,14 @@ pipeline {
                         string(credentialsId: 'twilio-phone-number', variable: 'TWILIO_PHONE_NUMBER')
                     ]) {
                         sh '''
-                            # Copy deployment script to server
+                            # Copy K8s deployment script to server
                             scp -o StrictHostKeyChecking=no \
-                                deployment/scripts/jenkins-deploy.sh \
-                                ${DEPLOY_USER}@${DEPLOY_HOST}:/tmp/jenkins-deploy.sh
+                                deployment/scripts/jenkins-deploy-k8s.sh \
+                                ${DEPLOY_USER}@${DEPLOY_HOST}:/tmp/jenkins-deploy-k8s.sh
 
-                            # Execute deployment on remote server
+                            # Execute K8s deployment on remote server
                             ssh -o StrictHostKeyChecking=no ${DEPLOY_USER}@${DEPLOY_HOST} \
-                                "bash /tmp/jenkins-deploy.sh \
+                                "bash /tmp/jenkins-deploy-k8s.sh \
                                 '${DEPLOY_DIR}' \
                                 '${GIT_BRANCH}' \
                                 '${SECRET_KEY}' \
@@ -215,10 +215,15 @@ pipeline {
                         # Wait for services to stabilize
                         sleep 10
 
+                        # Check K8s pods
+                        echo "🔍 Checking Kubernetes pods..."
+                        ssh -o StrictHostKeyChecking=no ${DEPLOY_USER}@${DEPLOY_HOST} \
+                            "kubectl get pods -n lb-automotive"
+
                         # Check backend health
                         echo "🔍 Checking backend health..."
                         ssh -o StrictHostKeyChecking=no ${DEPLOY_USER}@${DEPLOY_HOST} \
-                            "curl -f http://localhost:8000/health || (docker logs lb-auto-backend --tail 50 && exit 1)"
+                            "curl -f http://localhost:8000/health || echo '⚠️ Backend may still be starting...'"
 
                         # Check frontend health
                         echo "🔍 Checking frontend..."

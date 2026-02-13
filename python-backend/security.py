@@ -173,7 +173,7 @@ async def rate_limit_middleware(request: Request, call_next):
     
     # Configure rate limits
     SHORT_WINDOW = 60  # 1 minute
-    SHORT_LIMIT = 300  # Increased from 100 to accommodate multiple concurrent requests
+    SHORT_LIMIT = 1000  # Increased to 1000 for low-resource server with aggressive frontend polling
     
     if redis_client:
         try:

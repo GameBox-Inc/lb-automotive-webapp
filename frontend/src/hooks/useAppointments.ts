@@ -89,7 +89,9 @@ export function useAppointments() {
 
   useEffect(() => {
     fetchData()
-    const interval = setInterval(fetchData, 30000)
+    // Increased polling interval from 30s to 2 minutes for 2GB server
+    // Reduces API calls and prevents rate limiting
+    const interval = setInterval(fetchData, 120000)
     return () => clearInterval(interval)
   }, [fetchData])
 
