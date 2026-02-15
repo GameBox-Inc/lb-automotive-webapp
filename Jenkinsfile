@@ -174,22 +174,27 @@ pipeline {
             steps {
                 echo '🚀 Deploying to production server...'
                 script {
-                    sh """
-                        # Update backend deployment
-                        ssh -o StrictHostKeyChecking=no ${DEPLOY_USER}@${DEPLOY_HOST} \
-                            "sudo k3s kubectl set image deployment/backend backend=${BACKEND_IMAGE}:${BUILD_TAG} -n lb-automotive"
-                        
-                        # Update frontend deployment
-                        ssh -o StrictHostKeyChecking=no ${DEPLOY_USER}@${DEPLOY_HOST} \
-                            "sudo k3s kubectl set image deployment/frontend frontend=${FRONTEND_IMAGE}:${BUILD_TAG} -n lb-automotive"
-                        
-                        # Wait for rollouts to complete
-                        ssh -o StrictHostKeyChecking=no ${DEPLOY_USER}@${DEPLOY_HOST} \
-                            "sudo k3s kubectl rollout status deployment/backend -n lb-automotive --timeout=2m"
-                        
-                        ssh -o StrictHostKeyChecking=no ${DEPLOY_USER}@${DEPLOY_HOST} \
-                            "sudo k3s kubectl rollout status deployment/frontend -n lb-automotive --timeout=2m"
-                    """
+                    sshagent(credentials: ['lb-server-ssh']) {
+                        sh """
+                            # Update backend deployment
+                            ssh -o StrictHostKeyChecking=no ${DEPLOY_USER}@${DEPLOY_HOST} \
+                                "sudo k3s kubectl set image deployment/backend backend=${BACKEND_IMAGE}:${BUILD_TAG} -n lb-automotive"
+                        """
+                        sh """
+                            # Update frontend deployment
+                            ssh -o StrictHostKeyChecking=no ${DEPLOY_USER}@${DEPLOY_HOST} \
+                                "sudo k3s kubectl set image deployment/frontend frontend=${FRONTEND_IMAGE}:${BUILD_TAG} -n lb-automotive"
+                        """
+                        sh """
+                            # Wait for rollouts to complete
+                            ssh -o StrictHostKeyChecking=no ${DEPLOY_USER}@${DEPLOY_HOST} \
+                                "sudo k3s kubectl rollout status deployment/backend -n lb-automotive --timeout=2m"
+                        """
+                        sh """
+                            ssh -o StrictHostKeyChecking=no ${DEPLOY_USER}@${DEPLOY_HOST} \
+                                "sudo k3s kubectl rollout status deployment/frontend -n lb-automotive --timeout=2m"
+                        """
+                    }
                 }
             }
         }
