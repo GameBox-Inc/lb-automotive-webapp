@@ -112,10 +112,6 @@ pipeline {
             when {
                 branch pattern: "main|master|release/.*", comparator: "REGEXP"
             }
-            parallel {
-                stage('Build Backend') {
-                    steps {
-                        echo '🐳 Building backend Docker image...'
             steps {
                 echo '🐳 Building Docker images...'
                 script {
