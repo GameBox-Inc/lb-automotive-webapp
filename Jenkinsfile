@@ -2,13 +2,13 @@ pipeline {
     agent any
 
     environment {
-        // Docker Registry (using Docker Hub or private registry)
-        REGISTRY = 'docker.io'
-        REGISTRY_CREDENTIAL = 'dockerhub-credentials'
+        // Docker Registry (using GitHub Container Registry)
+        REGISTRY = 'ghcr.io'
+        REGISTRY_CREDENTIAL = 'github-token'
 
         // Image names
-        BACKEND_IMAGE = "${REGISTRY}/lb-automotive/backend"
-        FRONTEND_IMAGE = "${REGISTRY}/lb-automotive/frontend"
+        BACKEND_IMAGE = "${REGISTRY}/gamebox-inc/lb-automotive-backend"
+        FRONTEND_IMAGE = "${REGISTRY}/gamebox-inc/lb-automotive-frontend"
 
         // Build info
         BUILD_TAG = "${env.BUILD_NUMBER}-${env.GIT_COMMIT.take(7)}"
