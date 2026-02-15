@@ -116,44 +116,45 @@ pipeline {
                 stage('Build Backend') {
                     steps {
                         echo '🐳 Building backend Docker image...'
-                        script {
-                            docker.build(
-                                "${BACKEND_IMAGE}:${BUILD_TAG}",
-                                "-f deployment/docker/Dockerfile.backend ."
-                            )
-                            docker.build(
-                                "${BACKEND_IMAGE}:latest",
-                                "-f deployment/docker/Dockerfile.backend ."
-                            )
-                        }
-                    }
-                }
-
-                stage('Build Frontend Image') {
-                    steps {
-                        script {
-                            echo "Building frontend Docker image..."
-                            docker.build("${FRONTEND_IMAGE}:${BUILD_TAG}", "-f frontend/Dockerfile.prod frontend")
-                            docker.build("${FRONTEND_IMAGE}:latest", "-f frontend/Dockerfile.prod frontend")
-                        }
-                    }
+            steps {
+                echo '🐳 Building Docker images...'
+                script {
+                    // Build backend
+                    sh """
+                        docker build -t ${BACKEND_IMAGE}:${BUILD_TAG} -f python-backend/Dockerfile .
+                        docker tag ${BACKEND_IMAGE}:${BUILD_TAG} ${BACKEND_IMAGE}:latest
+                    """
+                    
+                    // Build frontend
+                    sh """
+                        docker build -t ${FRONTEND_IMAGE}:${BUILD_TAG} -f frontend/Dockerfile.prod .
+                        docker tag ${FRONTEND_IMAGE}:${BUILD_TAG} ${FRONTEND_IMAGE}:latest
+                    """
                 }
             }
         }
 
-        stage('Push Docker Images') {
+        stage('Push Images to Registry') {
             when {
                 branch pattern: "main|master|release/.*", comparator: "REGEXP"
             }
             steps {
-                echo '📤 Pushing Docker images to registry...'
+                echo '📤 Pushing images to GHCR...'
                 script {
-                    docker.withRegistry("https://${REGISTRY}", REGISTRY_CREDENTIAL) {
-                        docker.image("${BACKEND_IMAGE}:${BUILD_TAG}").push()
-                        docker.image("${BACKEND_IMAGE}:latest").push()
-                        docker.image("${FRONTEND_IMAGE}:${BUILD_TAG}").push()
-                        docker.image("${FRONTEND_IMAGE}:latest").push()
+                    // Login to GHCR
+                    withCredentials([string(credentialsId: 'github-token', variable: 'GITHUB_TOKEN')]) {
+                        sh '''
+                            echo "$GITHUB_TOKEN" | docker login ghcr.io -u gamebox-inc --password-stdin
+                        '''
                     }
+                    
+                    // Push images
+                    sh """
+                        docker push ${BACKEND_IMAGE}:${BUILD_TAG}
+                        docker push ${BACKEND_IMAGE}:latest
+                        docker push ${FRONTEND_IMAGE}:${BUILD_TAG}
+                        docker push ${FRONTEND_IMAGE}:latest
+                    """
                 }
             }
         }
