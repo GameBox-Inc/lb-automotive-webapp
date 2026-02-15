@@ -165,41 +165,31 @@ pipeline {
 
         stage('Deploy to Production') {
             when {
-                branch pattern: "main|master|release/.*", comparator: "REGEXP"
+                anyOf {
+                    branch 'main'
+                    branch 'master'
+                    expression { env.GIT_BRANCH ==~ /.*release\/.*/ }
+                }
             }
             steps {
                 echo '🚀 Deploying to production server...'
                 script {
-                    withCredentials([
-                        string(credentialsId: 'secret-key', variable: 'SECRET_KEY'),
-                        string(credentialsId: 'allowed-origins', variable: 'ALLOWED_ORIGINS'),
-                        string(credentialsId: 'llm-provider', variable: 'LLM_PROVIDER'),
-                        string(credentialsId: 'anthropic-api-key', variable: 'ANTHROPIC_API_KEY'),
-                        string(credentialsId: 'twilio-account-sid', variable: 'TWILIO_ACCOUNT_SID'),
-                        string(credentialsId: 'twilio-auth-token', variable: 'TWILIO_AUTH_TOKEN'),
-                        string(credentialsId: 'twilio-phone-number', variable: 'TWILIO_PHONE_NUMBER')
-                    ]) {
-                        sh '''
-                            # Copy K8s deployment script to server
-                            scp -o StrictHostKeyChecking=no \
-                                deployment/scripts/jenkins-deploy-k8s.sh \
-                                ${DEPLOY_USER}@${DEPLOY_HOST}:/tmp/jenkins-deploy-k8s.sh
-
-                            # Execute K8s deployment on remote server
-                            ssh -o StrictHostKeyChecking=no ${DEPLOY_USER}@${DEPLOY_HOST} \
-                                "bash /tmp/jenkins-deploy-k8s.sh \
-                                '${DEPLOY_DIR}' \
-                                '${GIT_BRANCH}' \
-                                '${SECRET_KEY}' \
-                                '${ALLOWED_ORIGINS}' \
-                                '${LLM_PROVIDER}' \
-                                '${ANTHROPIC_API_KEY}' \
-                                '${TWILIO_ACCOUNT_SID}' \
-                                '${TWILIO_AUTH_TOKEN}' \
-                                '${TWILIO_PHONE_NUMBER}' \
-                                '${BUILD_TAG}'"
-                        '''
-                    }
+                    sh """
+                        # Update backend deployment
+                        ssh -o StrictHostKeyChecking=no ${DEPLOY_USER}@${DEPLOY_HOST} \
+                            "sudo k3s kubectl set image deployment/backend backend=${BACKEND_IMAGE}:${BUILD_TAG} -n lb-automotive"
+                        
+                        # Update frontend deployment
+                        ssh -o StrictHostKeyChecking=no ${DEPLOY_USER}@${DEPLOY_HOST} \
+                            "sudo k3s kubectl set image deployment/frontend frontend=${FRONTEND_IMAGE}:${BUILD_TAG} -n lb-automotive"
+                        
+                        # Wait for rollouts to complete
+                        ssh -o StrictHostKeyChecking=no ${DEPLOY_USER}@${DEPLOY_HOST} \
+                            "sudo k3s kubectl rollout status deployment/backend -n lb-automotive --timeout=2m"
+                        
+                        ssh -o StrictHostKeyChecking=no ${DEPLOY_USER}@${DEPLOY_HOST} \
+                            "sudo k3s kubectl rollout status deployment/frontend -n lb-automotive --timeout=2m"
+                    """
                 }
             }
         }
