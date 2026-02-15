@@ -1,4 +1,4 @@
-import { useState, useEffect, Suspense, lazy } from 'react'
+import { useState, useEffect, Suspense, lazy, startTransition } from 'react'
 import { Routes, Route, Link, useLocation, Navigate, useNavigate } from 'react-router-dom'
 import { LayoutDashboard, Calendar, Settings, LogOut, Wrench, PenTool as Tool, Phone, Users } from 'lucide-react'
 import { Toaster } from 'react-hot-toast'
@@ -44,16 +44,20 @@ function App() {
   useEffect(() => {
     // Handle redirects based on auth state
     if (!loading) {
-      if (isAuthenticated && location.pathname === '/login') {
-        navigate('/', { replace: true })
-      } else if (!isAuthenticated && location.pathname !== '/login') {
-        navigate('/login', { replace: true })
-      }
+      startTransition(() => {
+        if (isAuthenticated && location.pathname === '/login') {
+          navigate('/', { replace: true })
+        } else if (!isAuthenticated && location.pathname !== '/login') {
+          navigate('/login', { replace: true })
+        }
+      })
     }
 
     const handleUnauthorized = () => {
       dispatch(logoutUser())
-      navigate('/login', { replace: true })
+      startTransition(() => {
+        navigate('/login', { replace: true })
+      })
     }
 
     window.addEventListener('auth:unauthorized', handleUnauthorized)
