@@ -449,7 +449,7 @@ def twilio_webhook(
                 bargein=True,  # Enable cut-off
                 speechTimeout="auto", # Reduce latency
                 input="speech dtmf",
-                action="/api/twilio/webhook?step=language",
+                action="/lb-automotive/api/twilio/webhook?step=language",
                 method="POST"
             )
             gather.say(
@@ -493,7 +493,7 @@ def twilio_webhook(
                 bargein=True,  # Enable cut-off
                 speechTimeout="auto", # Reduce latency
                 input="speech dtmf",
-                action="/api/twilio/webhook?step=route_direct",
+                action="/lb-automotive/api/twilio/webhook?step=route_direct",
                 method="POST"
             )
             gather.say(message, voice=voice)
@@ -551,7 +551,7 @@ def twilio_webhook(
                     timeout=5,
                     bargein=True,
                     input="speech dtmf",
-                    action="/api/twilio/webhook?step=confirm_emergency",
+                    action="/lb-automotive/api/twilio/webhook?step=confirm_emergency",
                     method="POST"
                 )
                 response.append(gather)
@@ -686,7 +686,7 @@ def twilio_webhook(
                 gather = Gather(
                     num_digits=1,
                     input="speech dtmf", # Enable Speech
-                    action="/api/twilio/webhook?step=select_time",
+                    action="/lb-automotive/api/twilio/webhook?step=select_time",
                     method="POST"
                 )
                 response.append(gather)
@@ -768,7 +768,7 @@ def twilio_webhook(
                 num_digits=1,
                 input="speech dtmf",
                 timeout=5,
-                action="/api/twilio/webhook?step=collect_symptoms",
+                action="/lb-automotive/api/twilio/webhook?step=collect_symptoms",
                 method="POST"
             )
             response.append(gather)
@@ -829,7 +829,7 @@ def twilio_webhook(
                 
                 # We still need a Gather for the user's choice
                 # The LLM prompt asks the user to "say their preferred time".
-                gather = Gather(num_digits=1, input="speech dtmf", action="/api/twilio/webhook?step=collect_symptoms")
+                gather = Gather(num_digits=1, input="speech dtmf", action="/lb-automotive/api/twilio/webhook?step=collect_symptoms")
                 response.append(gather)
             else:
                 response.say("Invalid selection", voice=voice)
