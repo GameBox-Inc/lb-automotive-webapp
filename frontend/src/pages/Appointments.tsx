@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, startTransition } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useSelector } from 'react-redux'
 import { RootState } from '../store'
@@ -134,7 +134,9 @@ export function Appointments() {
 
       if (existingCase) {
         // Case already exists, navigate to it
-        navigate(`/cases/${existingCase.id}`);
+        startTransition(() => {
+          navigate(`/cases/${existingCase.id}`);
+        });
         return;
       }
 
@@ -149,7 +151,9 @@ export function Appointments() {
         });
 
         if (newCase && newCase.id) {
-          navigate(`/cases/${newCase.id}`);
+          startTransition(() => {
+            navigate(`/cases/${newCase.id}`);
+          });
         } else {
           toast.error('Failed to create case');
         }
