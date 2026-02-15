@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react'
+import { useState, useEffect } from 'react'
 import { Mic, MicOff } from 'lucide-react'
 import { apiClient } from '../lib/supabase'
 import toast from 'react-hot-toast'
@@ -81,7 +81,6 @@ export function VoicePrompt({ onAppointmentCreated }: VoicePromptProps) {
             phone_number: '', // Will be updated later
             appointment_time: new Date().toISOString(),
             service_type: '', // Will be updated in next step
-            status: 'pending',
             notes: 'Created via voice prompt'
           })
 
