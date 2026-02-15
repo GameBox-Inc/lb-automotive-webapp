@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react'
-import { Mic, MicOff, Phone } from 'lucide-react'
-import { supabase } from '../lib/supabase'
+import { Mic, MicOff } from 'lucide-react'
+import { apiClient } from '../lib/supabase'
 import toast from 'react-hot-toast'
 
 interface VoicePromptProps {
@@ -75,61 +75,78 @@ export function VoicePrompt({ onAppointmentCreated }: VoicePromptProps) {
     switch (currentStep) {
       case 'name':
         // Create a new appointment with the customer's name
-        const { data: appointment, error: appointmentError } = await supabase
-          .from('appointments')
-          .insert({
+        try {
+          await apiClient.createAppointment({
             customer_name: input.trim(),
-            status: 'pending'
+            phone_number: '', // Will be updated later
+            appointment_time: new Date().toISOString(),
+            service_type: '', // Will be updated in next step
+            status: 'pending',
+            notes: 'Created via voice prompt'
           })
-          .select()
-          .single()
 
-        if (appointmentError) {
+          setCurrentStep('service')
+          speak('What service would you like to schedule?')
+        } catch (error) {
+          console.error('Failed to create appointment:', error)
           toast.error('Failed to create appointment')
           stopRecording()
-          return
         }
-
-        setCurrentStep('service')
-        speak('What service would you like to schedule?')
         break
 
       case 'service':
         // Update the appointment with the service type
-        const { error: serviceError } = await supabase
-          .from('appointments')
-          .update({ service_type: input.trim() })
-          .eq('customer_name', transcript)
+        try {
+          // Get the most recent pending appointment for this customer
+          const appointments = await apiClient.getAppointments()
+          const pendingAppointment = appointments.find(
+            apt => apt.customer_name === transcript && apt.status === 'pending'
+          )
 
-        if (serviceError) {
+          if (pendingAppointment) {
+            await apiClient.updateAppointment(pendingAppointment.id, {
+              service_type: input.trim()
+            })
+
+            setCurrentStep('time')
+            speak('When would you like to schedule the appointment?')
+          } else {
+            toast.error('Could not find appointment')
+            stopRecording()
+          }
+        } catch (error) {
+          console.error('Failed to update service type:', error)
           toast.error('Failed to update service type')
           stopRecording()
-          return
         }
-
-        setCurrentStep('time')
-        speak('When would you like to schedule the appointment?')
         break
 
       case 'time':
         // Update the appointment with the time
-        const { error: timeError } = await supabase
-          .from('appointments')
-          .update({
-            appointment_time: new Date(input).toISOString(),
-            status: 'scheduled'
-          })
-          .eq('customer_name', transcript)
+        try {
+          const appointments = await apiClient.getAppointments()
+          const pendingAppointment = appointments.find(
+            apt => apt.customer_name === transcript && apt.status === 'pending'
+          )
 
-        if (timeError) {
+          if (pendingAppointment) {
+            await apiClient.updateAppointment(pendingAppointment.id, {
+              appointment_time: new Date(input).toISOString(),
+              status: 'scheduled'
+            })
+
+            speak('Appointment created successfully')
+            onAppointmentCreated()
+            stopRecording()
+          } else {
+            toast.error('Could not find appointment')
+            stopRecording()
+          }
+        } catch (error) {
+          console.error('Failed to update appointment time:', error)
           toast.error('Failed to update appointment time')
           stopRecording()
-          return
         }
-
-        speak('Appointment created successfully')
-        onAppointmentCreated()
-        stopRecording()
         break
     }
   }
@@ -138,9 +155,8 @@ export function VoicePrompt({ onAppointmentCreated }: VoicePromptProps) {
     <div className="fixed bottom-4 right-4">
       <button
         onClick={isRecording ? stopRecording : startRecording}
-        className={`p-4 rounded-full shadow-lg ${
-          isRecording ? 'bg-red-600' : 'bg-blue-600'
-        } text-white hover:opacity-90 transition-opacity`}
+        className={`p-4 rounded-full shadow-lg ${isRecording ? 'bg-red-600' : 'bg-blue-600'
+          } text-white hover:opacity-90 transition-opacity`}
       >
         {isRecording ? (
           <MicOff className="h-6 w-6" />
