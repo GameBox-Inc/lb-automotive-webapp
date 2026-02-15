@@ -171,6 +171,7 @@ async def root():
     return {
         "message": "LB Automotive API",
         "version": "1.0.0",
+        "build_tag": os.getenv("BUILD_TAG", "local-dev"),
         "docs": "/docs",
         "health": "/health"
     }

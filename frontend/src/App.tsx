@@ -35,8 +35,11 @@ function App() {
 
   useEffect(() => {
     // Check if user is authenticated via Redux
-    dispatch(checkAuth())
-  }, [dispatch])
+    // Skip auth check if we're on the login page to prevent redirect loops
+    if (location.pathname !== '/login') {
+      dispatch(checkAuth())
+    }
+  }, [dispatch, location.pathname])
 
   useEffect(() => {
     // Handle redirects based on auth state
