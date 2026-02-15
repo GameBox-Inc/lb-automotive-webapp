@@ -2,7 +2,8 @@ import { useState, useEffect, Suspense, lazy } from 'react'
 import { Routes, Route, Link, useLocation, Navigate, useNavigate } from 'react-router-dom'
 import { LayoutDashboard, Calendar, Settings, LogOut, Wrench, PenTool as Tool, Phone, Users } from 'lucide-react'
 import { Toaster } from 'react-hot-toast'
-import { apiClient } from './lib/supabase'
+import { useAppDispatch, useAppSelector } from './store/hooks'
+import { checkAuth, logoutUser } from './store/slices/authSlice'
 
 // Lazy load pages for performance
 const Dashboard = lazy(() => import('./pages/Dashboard').then(module => ({ default: module.Dashboard })))
@@ -13,6 +14,7 @@ const Login = lazy(() => import('./pages/Login').then(module => ({ default: modu
 const AdminIVR = lazy(() => import('./pages/AdminIVR'))
 const AdminCustomers = lazy(() => import('./pages/AdminCustomers'))
 const AdminStaff = lazy(() => import('./pages/AdminStaff'))
+const AdminDeploy = lazy(() => import('./pages/AdminDeploy'))
 const StaffDashboard = lazy(() => import('./pages/StaffDashboard'))
 const CaseDetails = lazy(() => import('./pages/CaseDetails'))
 const CheckIn = lazy(() => import('./pages/CheckIn'))
@@ -25,48 +27,42 @@ const PageLoader = () => (
 )
 
 function App() {
-  const [session, setSession] = useState<any>(null)
-  const [loading, setLoading] = useState(true)
+  const dispatch = useAppDispatch()
+  const { user, loading, isAuthenticated } = useAppSelector((state) => state.auth)
   const [isSidebarOpen, setIsSidebarOpen] = useState(false)
   const navigate = useNavigate()
   const location = useLocation()
 
   useEffect(() => {
-    // Check if user is authenticated
-    const checkAuth = () => {
-      const isAuth = apiClient.isAuthenticated()
-      const user = apiClient.getStoredUser()
+    // Check if user is authenticated via Redux
+    dispatch(checkAuth())
+  }, [dispatch])
 
-      if (isAuth && user) {
-        setSession({ user })
-        setLoading(false)
-        if (location.pathname === '/login') {
-          navigate('/', { replace: true })
-        }
-      } else if (!isAuth && location.pathname !== '/login') {
-        setSession(null)
-        setLoading(false)
+  useEffect(() => {
+    // Handle redirects based on auth state
+    if (!loading) {
+      if (isAuthenticated && location.pathname === '/login') {
+        navigate('/', { replace: true })
+      } else if (!isAuthenticated && location.pathname !== '/login') {
         navigate('/login', { replace: true })
-      } else {
-        setLoading(false)
       }
     }
 
-    checkAuth()
-
-    // Also check on storage events (when login happens in another tab or window)
-    const handleStorageChange = (e: StorageEvent) => {
-      if (e.key === 'auth_token' || e.key === 'current_user') {
-        checkAuth()
-      }
+    const handleUnauthorized = () => {
+      dispatch(logoutUser())
+      navigate('/login', { replace: true })
     }
 
-    window.addEventListener('storage', handleStorageChange)
-    return () => window.removeEventListener('storage', handleStorageChange)
-  }, [navigate, location.pathname])
+    window.addEventListener('auth:unauthorized', handleUnauthorized)
+
+    return () => {
+      window.removeEventListener('auth:unauthorized', handleUnauthorized)
+    }
+  }, [loading, isAuthenticated, location.pathname, navigate, dispatch])
 
   const handleSignOut = async () => {
-    apiClient.logout()
+    await dispatch(logoutUser())
+    navigate('/login')
   }
 
   const NavItem = ({ icon, text, to }: { icon: any, text: string, to: string, active?: boolean }) => {
@@ -98,54 +94,6 @@ function App() {
     setIsSidebarOpen(false)
   }, [location.pathname])
 
-  const Sidebar = () => (
-    <div className="w-64 bg-[#1F2937] min-h-screen fixed left-0 top-0 border-r border-[#374151]">
-      <div className="p-6">
-        <div className="flex items-center gap-3 mb-8">
-          <div className="bg-[#B91C1C] p-2 rounded-lg">
-            <Wrench className="h-6 w-6 text-white" />
-          </div>
-          <div>
-            <h1 className="text-xl font-bold text-white tracking-wider font-heading">LB AUTO</h1>
-            <p className="text-xs text-[#FDB80E] font-medium tracking-wide">REPAIR SERVICES</p>
-          </div>
-        </div>
-        <nav className="space-y-1">
-          <NavItem icon={<LayoutDashboard className="h-5 w-5" />} text="Overview" to="/" />
-          <NavItem icon={<Calendar className="h-5 w-5" />} text="Appointments" to="/appointments" />
-          <NavItem icon={<Tool className="h-5 w-5" />} text="Services" to="/services" />
-          {/* <NavItem icon={<Phone className="h-5 w-5" />} text="IVR Logs" to="/ivr-logs" /> */}
-          <NavItem icon={<Settings className="h-5 w-5" />} text="Settings" to="/settings" />
-
-          {(session?.user?.staff_id || session?.user?.is_admin) && (
-            <NavItem icon={<Wrench className="h-5 w-5" />} text="My Repairs" to="/repairs" />
-          )}
-
-          {session?.user?.is_admin && (
-            <NavItem icon={<Tool className="h-5 w-5" />} text="Launch Kiosk" to="/checkin" />
-          )}
-
-          {session?.user?.is_admin && (
-            <>
-              <div className="pt-4 pb-2 px-6 text-xs font-semibold text-gray-500 uppercase tracking-wider">
-                Admin
-              </div>
-              <NavItem icon={<Tool className="h-5 w-5" />} text="Manage Services" to="/admin/services" />
-              <NavItem icon={<Phone className="h-5 w-5" />} text="IVR Settings" to="/admin/ivr" />
-              <NavItem icon={<Users className="h-5 w-5" />} text="Customers" to="/admin/customers" />
-              <NavItem icon={<Users className="h-5 w-5" />} text="Staff & Schedule" to="/admin/staff" />
-            </>
-          )}
-        </nav>
-      </div>
-      <div className="absolute bottom-0 w-full p-6 border-t border-[#374151]">
-        <div className="flex items-center gap-3 text-gray-400 hover:text-[#FDB80E] cursor-pointer transition-colors" onClick={handleSignOut}>
-          <LogOut className="h-5 w-5" />
-          <span className="text-sm font-medium">Sign Out</span>
-        </div>
-      </div>
-    </div>
-  )
 
   // Show loading state while checking auth
   if (loading) {
@@ -158,11 +106,11 @@ function App() {
 
   // If not authenticated and not on login page, Login will be rendered
   // If authenticated and on login page, will be redirected to / automatically via useEffect
-  if (!session && location.pathname === '/login') {
+  if (!isAuthenticated && location.pathname === '/login') {
     return <Login />
   }
 
-  if (!session) {
+  if (!isAuthenticated) {
     return null // Will redirect to /login via useEffect
   }
 
@@ -222,15 +170,15 @@ function App() {
               <NavItem icon={<Tool className="h-5 w-5" />} text="Services" to="/services" />
               <NavItem icon={<Settings className="h-5 w-5" />} text="Settings" to="/settings" />
 
-              {(session?.user?.staff_id || session?.user?.is_admin) && (
+              {(user?.staff_id || user?.is_admin) && (
                 <NavItem icon={<Wrench className="h-5 w-5" />} text="My Repairs" to="/repairs" />
               )}
 
-              {session?.user?.is_admin && (
+              {user?.is_admin && (
                 <NavItem icon={<Tool className="h-5 w-5" />} text="Launch Kiosk" to="/checkin" />
               )}
 
-              {session?.user?.is_admin && (
+              {user?.is_admin && (
                 <>
                   <div className="pt-4 pb-2 px-6 text-xs font-semibold text-gray-500 uppercase tracking-wider">
                     Admin
@@ -239,6 +187,7 @@ function App() {
                   <NavItem icon={<Phone className="h-5 w-5" />} text="IVR Settings" to="/admin/ivr" />
                   <NavItem icon={<Users className="h-5 w-5" />} text="Customers" to="/admin/customers" />
                   <NavItem icon={<Users className="h-5 w-5" />} text="Staff & Schedule" to="/admin/staff" />
+                  <NavItem icon={<Tool className="h-5 w-5" />} text="Deployment" to="/admin/deploy" />
                 </>
               )}
             </nav>
@@ -275,7 +224,7 @@ function App() {
 
             <div className="flex items-center gap-4">
               <span className="hidden sm:inline-block text-sm text-gray-600 dark:text-gray-300">
-                {session?.user?.name}
+                {user?.username}
               </span>
               <button
                 onClick={handleSignOut}
@@ -299,10 +248,11 @@ function App() {
               <Route path="/cases/:id" element={<CaseDetails />} />
               <Route path="/checkin" element={<CheckIn />} />
               {/* <Route path="/ivr-logs" element={<IVRLogs />} /> */}
-              {/* <Route path="/admin/services" element={session?.user?.is_admin ? <AdminServices /> : <Navigate to="/" />} /> */}
-              <Route path="/admin/ivr" element={session?.user?.is_admin ? <AdminIVR /> : <Navigate to="/" />} />
-              <Route path="/admin/customers" element={session?.user?.is_admin ? <AdminCustomers /> : <Navigate to="/" />} />
-              <Route path="/admin/staff" element={session?.user?.is_admin ? <AdminStaff /> : <Navigate to="/" />} />
+              {/* <Route path="/admin/services" element={user?.is_admin ? <AdminServices /> : <Navigate to="/" />} /> */}
+              <Route path="/admin/ivr" element={user?.is_admin ? <AdminIVR /> : <Navigate to="/" />} />
+              <Route path="/admin/customers" element={user?.is_admin ? <AdminCustomers /> : <Navigate to="/" />} />
+              <Route path="/admin/staff" element={user?.is_admin ? <AdminStaff /> : <Navigate to="/" />} />
+              <Route path="/admin/deploy" element={user?.is_admin ? <AdminDeploy /> : <Navigate to="/" />} />
               <Route path="*" element={<Navigate to="/" replace />} />
             </Routes>
           </Suspense>

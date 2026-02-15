@@ -92,3 +92,18 @@ export interface BusinessHoursUpdate {
     closing_time?: string | null; // HH:MM format, null if closed
     is_closed: boolean;
 }
+
+export interface DeploymentStatus {
+    status: 'building' | 'SUCCESS' | 'FAILURE' | 'ABORTED' | 'unknown' | 'idle' | 'error';
+    build_number: number | null;
+    timestamp?: number;
+    duration?: number;
+    estimated_duration?: number;
+    detail?: string;
+}
+
+export interface BuildLog {
+    logs: string;
+    more_data: boolean;
+    next_start: string;
+}

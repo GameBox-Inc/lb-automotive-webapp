@@ -110,7 +110,9 @@ from routes import (
     reports,
     twilio_stream,
     ivr_routes,
-    business_hours
+    ivr_routes,
+    business_hours,
+    deployment_routes
 )
 
 # Include Routers
@@ -126,6 +128,7 @@ app.include_router(reports.router)
 app.include_router(twilio_stream.router)
 app.include_router(ivr_routes.router)
 app.include_router(business_hours.router)
+app.include_router(deployment_routes.router)
 
 
 @app.get("/api/debug/db")

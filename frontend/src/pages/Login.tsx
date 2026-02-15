@@ -3,10 +3,13 @@ import { useNavigate } from 'react-router-dom'
 import { Wrench, User, Lock, ArrowRight, Check, Loader2 } from 'lucide-react'
 import { apiClient } from '../lib/supabase'
 import toast from 'react-hot-toast'
+import { useAppDispatch, useAppSelector } from '../store/hooks'
+import { loginUser, registerUser } from '../store/slices/authSlice'
 
 export function Login() {
   const navigate = useNavigate()
-  const [loading, setLoading] = useState(false)
+  const dispatch = useAppDispatch()
+  const { loading } = useAppSelector((state) => state.auth)
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
   const [isSignUp, setIsSignUp] = useState(false)
@@ -56,71 +59,61 @@ export function Login() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    setLoading(true)
 
     // Add password validation
     if (isSignUp) {
       // Stronger password requirements for registration
       if (password.length < 12) {
         toast.error('Password must be at least 12 characters long')
-        setLoading(false)
         return
       }
       if (!/[A-Z]/.test(password)) {
         toast.error('Password must contain at least one uppercase letter')
-        setLoading(false)
         return
       }
       if (!/[a-z]/.test(password)) {
         toast.error('Password must contain at least one lowercase letter')
-        setLoading(false)
         return
       }
       if (!/\d/.test(password)) {
         toast.error('Password must contain at least one digit')
-        setLoading(false)
         return
       }
       if (!/[!@#$%^&*(),.?":{}|<>]/.test(password)) {
         toast.error('Password must contain at least one special character')
-        setLoading(false)
         return
       }
     } else {
       // Minimum validation for login (password already exists)
       if (password.length < 6) {
         toast.error('Password must be at least 6 characters')
-        setLoading(false)
         return
       }
     }
 
     try {
       if (isSignUp) {
-        await apiClient.register(username, password)
+        await dispatch(registerUser({ username, password })).unwrap()
         toast.success('Account created successfully! You can now sign in.')
         setIsSignUp(false)
       } else {
         if (!isCaptchaVerified) {
           toast.error('Please verify you are not a robot')
-          setLoading(false)
           return
         }
-        await apiClient.login(username, password, captchaId || undefined)
+        await dispatch(loginUser({ username, password, captchaId: captchaId || undefined })).unwrap()
         toast.success('Logged in successfully!')
-        // Small delay to ensure token is stored
-        setTimeout(() => navigate('/'), 100)
+        // Small delay to ensure token is stored (handled by Redux state change in App.tsx)
+        navigate('/')
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error:', error)
-      toast.error(error instanceof Error ? error.message : (isSignUp ? 'Failed to create account' : 'Failed to log in'))
+      toast.error(error.message || (isSignUp ? 'Failed to create account' : 'Failed to log in'))
       // Refresh captcha on error
       if (!isSignUp) {
         initCaptcha()
         setIsCaptchaVerified(false)
       }
-    } finally {
-      setLoading(false)
     }
   }
 

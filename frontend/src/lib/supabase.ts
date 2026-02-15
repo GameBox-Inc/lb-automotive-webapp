@@ -25,7 +25,9 @@ import {
   StaffScheduleUpdate,
   Customer,
   BusinessHours,
-  BusinessHoursUpdate
+  BusinessHoursUpdate,
+  DeploymentStatus,
+  BuildLog
 } from '../types';
 
 export type {
@@ -38,12 +40,13 @@ export type {
   StaffScheduleUpdate,
   Customer,
   BusinessHours,
-  BusinessHoursUpdate
+  BusinessHoursUpdate,
+  DeploymentStatus,
+  BuildLog
 };
 
 class APIClient {
   private token: string | null = null;
-  private retryAttempts: Map<string, number> = new Map();
   private lastRateLimitTime: number = 0;
 
   constructor() {
@@ -111,13 +114,13 @@ class APIClient {
       if (response.status === 429) {
         const resetTime = response.headers.get('X-RateLimit-Reset');
         const now = Date.now();
-        
+
         // Prevent multiple rapid requests after rate limit
         if (now - this.lastRateLimitTime < 5000) {
           // If we were rate limited less than 5 seconds ago, wait before retrying
           await new Promise(resolve => setTimeout(resolve, 5000));
         }
-        
+
         this.lastRateLimitTime = now;
         throw new Error(`Rate limit exceeded. Try again after ${new Date(Number(resetTime) * 1000).toLocaleTimeString()}`);
       }
@@ -242,7 +245,7 @@ class APIClient {
     this.token = null;
     localStorage.removeItem(TOKEN_KEY);
     localStorage.removeItem(USER_KEY);
-    window.location.href = '/login';
+    window.dispatchEvent(new Event('auth:unauthorized'));
   }
 
   isAuthenticated(): boolean {
@@ -521,6 +524,23 @@ class APIClient {
       method: 'PUT',
       body: JSON.stringify(updates),
     });
+  }
+
+  /**
+   * Deployment API
+   */
+  async triggerDeployment(): Promise<{ message: string; queue_item_url: string }> {
+    return this.request<{ message: string; queue_item_url: string }>('/deployment/trigger', {
+      method: 'POST'
+    });
+  }
+
+  async getDeploymentStatus(): Promise<DeploymentStatus> {
+    return this.request<DeploymentStatus>('/deployment/status');
+  }
+
+  async getBuildLogs(buildNumber: number, start: number = 0): Promise<BuildLog> {
+    return this.request<BuildLog>(`/deployment/logs/${buildNumber}?start=${start}`);
   }
 
   /**
