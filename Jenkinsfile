@@ -129,18 +129,12 @@ pipeline {
                     }
                 }
 
-                stage('Build Frontend') {
+                stage('Build Frontend Image') {
                     steps {
-                        echo '🐳 Building frontend Docker image...'
                         script {
-                            docker.build(
-                                "${FRONTEND_IMAGE}:${BUILD_TAG}",
-                                "--build-arg VITE_API_URL=/api -f deployment/docker/Dockerfile.frontend ."
-                            )
-                            docker.build(
-                                "${FRONTEND_IMAGE}:latest",
-                                "--build-arg VITE_API_URL=/api -f deployment/docker/Dockerfile.frontend ."
-                            )
+                            echo "Building frontend Docker image..."
+                            docker.build("${FRONTEND_IMAGE}:${BUILD_TAG}", "-f frontend/Dockerfile.prod frontend")
+                            docker.build("${FRONTEND_IMAGE}:latest", "-f frontend/Dockerfile.prod frontend")
                         }
                     }
                 }
