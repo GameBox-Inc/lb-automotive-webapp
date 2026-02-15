@@ -13,13 +13,14 @@ ANTHROPIC_API_KEY="$6"
 TWILIO_ACCOUNT_SID="$7"
 TWILIO_AUTH_TOKEN="$8"
 TWILIO_PHONE_NUMBER="$9"
+IMAGE_TAG="${10}"
 
 echo "========================================="
 echo "🚀 Kubernetes Deployment Script"
 echo "========================================="
 echo "Deploy directory: $DEPLOY_DIR"
 echo "Branch: $BRANCH"
-echo "LLM Provider: $LLM_PROVIDER"
+echo "Image Tag: $IMAGE_TAG"
 echo "========================================="
 
 # Navigate to deployment directory
@@ -29,6 +30,13 @@ cd "$DEPLOY_DIR"
 echo "📥 Pulling latest code from $BRANCH..."
 git fetch origin
 git reset --hard origin/"$BRANCH"
+
+# Update Image Tags in Manifests
+if [ -n "$IMAGE_TAG" ]; then
+    echo "🏷️ Updating image tags to: $IMAGE_TAG"
+    sed -i "s|image: ghcr.io/gamebox-inc/lb-automotive-backend:.*|image: ghcr.io/gamebox-inc/lb-automotive-backend:$IMAGE_TAG|g" deployment/k8s/backend.yaml
+    sed -i "s|image: ghcr.io/gamebox-inc/lb-automotive-frontend:.*|image: ghcr.io/gamebox-inc/lb-automotive-frontend:$IMAGE_TAG|g" deployment/k8s/frontend.yaml
+fi
 
 # Update Kubernetes secrets
 echo "🔐 Updating Kubernetes secrets..."
