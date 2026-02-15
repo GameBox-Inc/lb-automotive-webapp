@@ -1,4 +1,4 @@
-import React, { useState } from 'react'
+import React, { useState, startTransition } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Wrench, User, Lock, ArrowRight, Check, Loader2 } from 'lucide-react'
 import { apiClient } from '../lib/supabase'
@@ -104,7 +104,9 @@ export function Login() {
         await dispatch(loginUser({ username, password, captchaId: captchaId || undefined })).unwrap()
         toast.success('Logged in successfully!')
         // Small delay to ensure token is stored (handled by Redux state change in App.tsx)
-        navigate('/')
+        startTransition(() => {
+          navigate('/')
+        })
       }
     } catch (error: any) {
       console.error('Error:', error)

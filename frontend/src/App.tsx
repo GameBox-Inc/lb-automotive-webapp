@@ -69,7 +69,9 @@ function App() {
 
   const handleSignOut = async () => {
     await dispatch(logoutUser())
-    navigate('/login')
+    startTransition(() => {
+      navigate('/login')
+    })
   }
 
   const NavItem = ({ icon, text, to }: { icon: any, text: string, to: string, active?: boolean }) => {
