@@ -1,16 +1,13 @@
-tunnel: YOUR_TUNNEL_ID
+tunnel: 79c263d0-fc7c-40ad-9fa3-0e1c76125ccc
 credentials-file: /etc/cloudflared/credentials.json
 
 ingress:
-  # Route Twilio webhooks to K3s Traefik
-  - hostname: twilio.your-domain.com
-    service: http://localhost:80
+  # No hostname - uses auto-generated Cloudflare tunnel URL
+  # URL will be: https://79c263d0-fc7c-40ad-9fa3-0e1c76125ccc.cfargotunnel.com
+  - service: http://localhost:80
     originRequest:
       noTLSVerify: false
       connectTimeout: 30s
-      
-  # Catch-all rule (required)
-  - service: http_status:404
 
 # Logging
 loglevel: info
