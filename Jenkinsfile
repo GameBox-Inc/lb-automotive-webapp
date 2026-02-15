@@ -110,7 +110,11 @@ pipeline {
 
         stage('Build Docker Images') {
             when {
-                branch pattern: "main|master|release/.*", comparator: "REGEXP"
+                anyOf {
+                    branch 'main'
+                    branch 'master'
+                    expression { env.GIT_BRANCH ==~ /.*release/.*/ }
+                }
             }
             steps {
                 echo '🐳 Building Docker images...'
@@ -132,7 +136,11 @@ pipeline {
 
         stage('Push Images to Registry') {
             when {
-                branch pattern: "main|master|release/.*", comparator: "REGEXP"
+                anyOf {
+                    branch 'main'
+                    branch 'master'
+                    expression { env.GIT_BRANCH ==~ /.*release/.*/ }
+                }
             }
             steps {
                 echo '📤 Pushing images to GHCR...'
