@@ -3,7 +3,7 @@ credentials-file: /etc/cloudflared/credentials.json
 
 ingress:
   # Route all traffic to nginx-gateway in gamebox-security namespace
-  - hostname: twilio.yourdomain.com
+  - hostname: twilio.kozytherocket.space
     service: http://localhost:30880
     originRequest:
       noTLSVerify: false
