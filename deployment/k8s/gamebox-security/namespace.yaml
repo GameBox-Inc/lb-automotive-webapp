@@ -1,0 +1,8 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: gamebox-security
+  labels:
+    name: gamebox-security
+    organization: gamebox-inc
+    purpose: security-gateway

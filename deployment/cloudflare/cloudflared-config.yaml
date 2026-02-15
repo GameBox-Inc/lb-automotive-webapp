@@ -1,16 +1,13 @@
-tunnel: 79c263d0-fc7c-40ad-9fa3-0e1c76125ccc
+tunnel: TUNNEL_ID_PLACEHOLDER
 credentials-file: /etc/cloudflared/credentials.json
 
 ingress:
-  # No hostname - uses auto-generated Cloudflare tunnel URL
-  # URL will be: https://79c263d0-fc7c-40ad-9fa3-0e1c76125ccc.cfargotunnel.com
-  - service: http://localhost:80
+  # Route all traffic to nginx-gateway in gamebox-security namespace
+  - hostname: twilio.yourdomain.com
+    service: http://localhost:30880
     originRequest:
       noTLSVerify: false
       connectTimeout: 30s
-
-# Logging
-loglevel: info
-
-# Metrics
-metrics: 0.0.0.0:2000
+      
+  # Catch-all rule (required)
+  - service: http_status:404

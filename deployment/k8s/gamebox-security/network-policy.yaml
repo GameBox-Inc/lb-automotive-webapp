@@ -1,0 +1,66 @@
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: nginx-gateway-policy
+  namespace: gamebox-security
+spec:
+  podSelector:
+    matchLabels:
+      app: nginx-gateway
+  policyTypes:
+  - Ingress
+  - Egress
+  ingress:
+  # Allow traffic from anywhere (Cloudflare IPs enforced at nginx level)
+  - from:
+    - podSelector: {}
+    ports:
+    - protocol: TCP
+      port: 80
+  egress:
+  # Allow DNS resolution
+  - to:
+    - namespaceSelector: {}
+      podSelector:
+        matchLabels:
+          k8s-app: kube-dns
+    ports:
+    - protocol: UDP
+      port: 53
+  # Allow traffic to lb-automotive namespace
+  - to:
+    - namespaceSelector:
+        matchLabels:
+          name: lb-automotive
+    ports:
+    - protocol: TCP
+      port: 8000
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-from-security-gateway
+  namespace: lb-automotive
+spec:
+  podSelector:
+    matchLabels:
+      app: backend
+  policyTypes:
+  - Ingress
+  ingress:
+  # Allow traffic from gamebox-security namespace
+  - from:
+    - namespaceSelector:
+        matchLabels:
+          name: gamebox-security
+    ports:
+    - protocol: TCP
+      port: 8000
+  # Allow traffic from within lb-automotive namespace
+  - from:
+    - namespaceSelector:
+        matchLabels:
+          name: lb-automotive
+    ports:
+    - protocol: TCP
+      port: 8000
