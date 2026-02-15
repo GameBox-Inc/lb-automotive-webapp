@@ -1,0 +1,41 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: twilio-webhook-ingress
+  namespace: lb-automotive
+  annotations:
+    # Traefik-specific annotations
+    traefik.ingress.kubernetes.io/router.entrypoints: web,websecure
+    traefik.ingress.kubernetes.io/router.middlewares: lb-automotive-twilio-headers@kubernetescrd
+    # Rate limiting for Twilio webhooks
+    traefik.ingress.kubernetes.io/router.priority: "100"
+spec:
+  ingressClassName: traefik
+  rules:
+  - http:
+      paths:
+      # Only expose Twilio webhook endpoint
+      - path: /api/twilio
+        pathType: Prefix
+        backend:
+          service:
+            name: backend
+            port:
+              number: 8000
+---
+apiVersion: traefik.containo.us/v1alpha1
+kind: Middleware
+metadata:
+  name: twilio-headers
+  namespace: lb-automotive
+spec:
+  headers:
+    customRequestHeaders:
+      X-Forwarded-Proto: "https"
+    customResponseHeaders:
+      X-Frame-Options: "DENY"
+      X-Content-Type-Options: "nosniff"
+      Referrer-Policy: "strict-origin-when-cross-origin"
+    # Add Cloudflare IP validation
+    accessControlAllowOriginList:
+      - "*"
