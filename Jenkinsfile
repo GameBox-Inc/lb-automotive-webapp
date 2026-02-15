@@ -113,7 +113,7 @@ pipeline {
                 anyOf {
                     branch 'main'
                     branch 'master'
-                    expression { env.GIT_BRANCH ==~ /.*release/.*/ }
+                    expression { env.GIT_BRANCH ==~ /.*release\/.*/ }
                 }
             }
             steps {
@@ -139,7 +139,7 @@ pipeline {
                 anyOf {
                     branch 'main'
                     branch 'master'
-                    expression { env.GIT_BRANCH ==~ /.*release/.*/ }
+                    expression { env.GIT_BRANCH ==~ /.*release\/.*/ }
                 }
             }
             steps {
