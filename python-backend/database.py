@@ -30,7 +30,7 @@ def get_db_connection():
     Note: In production with multiple instances, consider using connection pooling
     or migrating to PostgreSQL. SQLite has limitations with concurrent writes.
     """
-    conn = sqlite3.connect(DB_PATH, timeout=20.0) # Increased timeout
+    conn = sqlite3.connect(DB_PATH, timeout=20.0, check_same_thread=False) # Increased timeout, allow async
     conn.execute("PRAGMA journal_mode=WAL") # Enable Write-Ahead Logging
     conn.execute("PRAGMA foreign_keys=ON") # Enable foreign key constraints
     conn.row_factory = sqlite3.Row
