@@ -1,5 +1,7 @@
 import React, { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { useSelector } from 'react-redux'
+import { RootState } from '../store'
 import { apiClient, Customer } from '../lib/supabase'
 import { AppointmentCard } from '../components/AppointmentCard'
 import { LoadingSpinner } from '../components/LoadingSpinner'
@@ -7,7 +9,6 @@ import { VoicePrompt } from '../components/VoicePrompt'
 import { Plus, Search, Calendar, Clock, X } from 'lucide-react';
 import { format, parseISO } from 'date-fns';
 import toast from 'react-hot-toast'
-import { useAppContext } from '../contexts/AppContext'
 
 interface Appointment {
   id: string
@@ -33,7 +34,8 @@ interface Service {
 
 export function Appointments() {
   const navigate = useNavigate()
-  const { services, staff } = useAppContext()
+  const services = useSelector((state: RootState) => state.app.services)
+  const staff = useSelector((state: RootState) => state.app.staff)
   const [appointments, setAppointments] = useState<Appointment[]>([])
   const [loading, setLoading] = useState(true)
   const [viewMode, setViewMode] = useState<'card' | 'list'>('card')
