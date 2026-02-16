@@ -64,12 +64,7 @@ def check_rate_limit(phone_number: str) -> bool:
         logger.error(f"Rate limit check failed: {e}")
         return True # Fail open on DB error to avoid service denial
 
-@router.post("/webhook", dependencies=[Depends(validate_twilio_request)])
-def twilio_webhook(
-    request: Request, # Added request for validation context if needed further
-    CallSid: str = Form(...),
-    From: str = Form(...),
-# ... remainder of function ...
+
 
 # --- Helper Functions ---
 
