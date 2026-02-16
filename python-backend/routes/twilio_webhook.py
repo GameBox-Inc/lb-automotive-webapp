@@ -17,7 +17,7 @@ from fastapi import HTTPException, Header
 TWILIO_AUTH_TOKEN = os.getenv("TWILIO_AUTH_TOKEN")
 MAX_PENDING_APPOINTMENTS = 2
 
-router = APIRouter()
+router = APIRouter(prefix="/api/twilio", tags=["twilio"])
 
 async def validate_twilio_request(request: Request):
     """
