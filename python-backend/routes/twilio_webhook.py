@@ -870,30 +870,35 @@ def twilio_webhook(
                 return Response(content=str(response), media_type="application/xml")
             
             message = (
-                "Please briefly describe the issue with your vehicle after the beep. Press any key when finished."
+                "Please briefly describe the issue with your vehicle after the beep. For example, say 'I need an oil change' or 'my brakes are squeaking'."
                 if language == "en" else
-                "Por favor describa brevemente el problema con su vehículo después del tono. Presione cualquier tecla al terminar."
+                "Por favor describa brevemente el problema. Por ejemplo, diga 'necesito un cambio de aceite' o 'mis frenos hacen ruido'."
             )
             
             response.say(message, voice=voice)
-            response.record(
-                max_length=10,
-                play_beep=True,
+            
+            # Use Gather instead of Record to get immediate transcription
+            gather = Gather(
+                input="speech",
+                timeout=5,
+                speechTimeout="auto",
                 action=f"{WEBHOOK_BASE_URL}?step=process_symptoms",
-                transcribe=True # Twilio transcription
+                method="POST"
             )
+            response.append(gather)
 
         elif step == "process_symptoms":
             # Store symptoms
-            symptoms = "User provided audio description" # Default if transcription not immediately available
-            if SpeechResult: # If we used Gather instead of Record, or transcription available
+            symptoms = "User provided audio description" 
+            if SpeechResult: 
                  symptoms = SpeechResult
+            elif Digits:
+                 symptoms = "User pressed digits during description"
             
             metadata["symptoms"] = symptoms
             upsert_call_state(CallSid, "confirm_booking", language, metadata)
 
             # Now proceed to confirm booking with the collected symptoms
-            # This step will effectively re-evaluate the time slot choice and book
             response.redirect(f"{WEBHOOK_BASE_URL}?step=confirm_booking")
             return Response(content=str(response), media_type="application/xml")
 
@@ -903,12 +908,14 @@ def twilio_webhook(
             choice = metadata.get("time_slot_choice")
 
             if choice:
-                svc = metadata.get("selected_service", {})
+                # Default to General Service if selected_service is missing or empty
+                svc = metadata.get("selected_service") or {}
+                service_name = svc.get('name', 'General Service')
+                
                 target_date_str = metadata.get("target_date")
                 slots = metadata.get("available_slots", [])
                 
                 # Resolve approximate choice to specific slot
-                
                 if choice == "1": # Morning
                     for s in slots:
                         if int(s.split(':')[0]) < 12:
@@ -930,11 +937,16 @@ def twilio_webhook(
                     
                     customer_name = metadata.get("customer_name", "Voice Customer")
                     symptoms_desc = metadata.get("symptoms", "No symptoms provided.")
+                    
+                    # Ensure we don't have "Unknown Service"
+                    if not service_name or service_name == "Service":
+                        service_name = "General Service"
 
+                    # Insert with notes!
                     cursor.execute("""
-                        INSERT INTO appointments (id, customer_name, phone_number, appointment_time, service_type, status)
-                        VALUES (?, ?, ?, ?, ?, ?)
-                    """, (aid, "Voice Customer", From, appt_time, svc.get('name', 'Service'), 'pending')) 
+                        INSERT INTO appointments (id, customer_name, phone_number, appointment_time, service_type, status, notes)
+                        VALUES (?, ?, ?, ?, ?, ?, ?)
+                    """, (aid, "Voice Customer", From, appt_time, service_name, 'pending', symptoms_desc)) 
                     conn.commit()
                     conn.close()
                     
