@@ -36,8 +36,8 @@ interface Service {
 export function Appointments() {
   const navigate = useNavigate()
   const dispatch = useAppDispatch()
-  const services = useSelector((state: RootState) => state.shop.services)
-  const staff = useSelector((state: RootState) => state.shop.staff)
+  const services = useAppSelector((state: RootState) => state.shop.services)
+  const staff = useAppSelector((state: RootState) => state.shop.staff)
   const [appointments, setAppointments] = useState<Appointment[]>([])
   const [loading, setLoading] = useState(true)
   const [viewMode, setViewMode] = useState<'card' | 'list'>('card')
