@@ -12,9 +12,12 @@ from models import CallState, IVRLog
 from twilio.request_validator import RequestValidator
 from fastapi import HTTPException, Header
 
+
 # Security Configuration
 TWILIO_AUTH_TOKEN = os.getenv("TWILIO_AUTH_TOKEN")
 MAX_PENDING_APPOINTMENTS = 2
+
+router = APIRouter()
 
 async def validate_twilio_request(request: Request):
     """
