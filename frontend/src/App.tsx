@@ -14,7 +14,6 @@ const Login = lazy(() => import('./pages/Login').then(module => ({ default: modu
 const AdminIVR = lazy(() => import('./pages/AdminIVR'))
 const AdminCustomers = lazy(() => import('./pages/AdminCustomers'))
 const AdminStaff = lazy(() => import('./pages/AdminStaff'))
-const AdminDeploy = lazy(() => import('./pages/AdminDeploy'))
 const StaffDashboard = lazy(() => import('./pages/StaffDashboard'))
 const CaseDetails = lazy(() => import('./pages/CaseDetails'))
 const CheckIn = lazy(() => import('./pages/CheckIn'))
@@ -196,7 +195,6 @@ function App() {
                   <NavItem icon={<Phone className="h-5 w-5" />} text="IVR Settings" to="/admin/ivr" />
                   <NavItem icon={<Users className="h-5 w-5" />} text="Customers" to="/admin/customers" />
                   <NavItem icon={<Users className="h-5 w-5" />} text="Staff & Schedule" to="/admin/staff" />
-                  <NavItem icon={<Tool className="h-5 w-5" />} text="Deployment" to="/admin/deploy" />
                 </>
               )}
             </nav>
@@ -261,7 +259,6 @@ function App() {
               <Route path="/admin/ivr" element={user?.is_admin ? <AdminIVR /> : <Navigate to="/" />} />
               <Route path="/admin/customers" element={user?.is_admin ? <AdminCustomers /> : <Navigate to="/" />} />
               <Route path="/admin/staff" element={user?.is_admin ? <AdminStaff /> : <Navigate to="/" />} />
-              <Route path="/admin/deploy" element={user?.is_admin ? <AdminDeploy /> : <Navigate to="/" />} />
               <Route path="*" element={<Navigate to="/" replace />} />
             </Routes>
           </Suspense>
