@@ -77,6 +77,11 @@ async def validate_twilio_request(request: Request):
             
             url = urlunparse((new_scheme, new_netloc, new_path, parsed.params, new_query, parsed.fragment))
         
+        # 3. Hard fallback for missing headers in known production environment
+        # If headers failed to provide the prefix, and we are on the specific domain, force it.
+        if "twilio.kozytherocket.space" in url and "/lb-automotive" not in url:
+            url = url.replace("/api/twilio", "/lb-automotive/api/twilio")
+
         # Get the POST data
         form = await request.form()
         params = dict(form)
