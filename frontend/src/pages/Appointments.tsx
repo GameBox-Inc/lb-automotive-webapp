@@ -1,6 +1,7 @@
 import React, { useState, useEffect, startTransition } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { useSelector } from 'react-redux'
+import { useAppDispatch, useAppSelector } from '../store/hooks'
+import { fetchServices, fetchStaff } from '../store/slices/shopSlice'
 import { RootState } from '../store'
 import { apiClient, Customer } from '../lib/supabase'
 import { AppointmentCard } from '../components/AppointmentCard'
@@ -34,6 +35,7 @@ interface Service {
 
 export function Appointments() {
   const navigate = useNavigate()
+  const dispatch = useAppDispatch()
   const services = useSelector((state: RootState) => state.shop.services)
   const staff = useSelector((state: RootState) => state.shop.staff)
   const [appointments, setAppointments] = useState<Appointment[]>([])
@@ -67,7 +69,10 @@ export function Appointments() {
 
   useEffect(() => {
     fetchAppointments()
-  }, [])
+    // Load shop data (services/staff) into Redux if not already loaded
+    if (services.length === 0) dispatch(fetchServices())
+    if (staff.length === 0) dispatch(fetchStaff())
+  }, [dispatch])
 
   // Customer Search
   useEffect(() => {
