@@ -19,6 +19,9 @@ from fastapi import HTTPException, Header
 # Security Configuration
 TWILIO_AUTH_TOKEN = os.getenv("TWILIO_AUTH_TOKEN")
 MAX_PENDING_APPOINTMENTS = 2
+# Public URL for Twilio callbacks (Gather actions, Redirects)
+# Hardcoded for stability in this environment, but could be env var
+WEBHOOK_BASE_URL = "https://twilio.kozytherocket.space/lb-automotive/api/twilio/webhook"
 
 router = APIRouter(prefix="/api/twilio", tags=["twilio"])
 
