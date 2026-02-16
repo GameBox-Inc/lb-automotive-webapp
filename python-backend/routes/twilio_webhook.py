@@ -35,12 +35,26 @@ async def validate_twilio_request(request: Request):
         # Get the full URL (including query params)
         url = str(request.url)
         
+        # Handle proxy headers for correct URL reconstruction
+        # Twilio sends requests to the public HTTPS URL, but internal proxy might forward as HTTP
+        if "x-forwarded-proto" in request.headers:
+            scheme = request.headers["x-forwarded-proto"]
+            from urllib.parse import urlparse, urlunparse
+            parsed = urlparse(url)
+            # Only replace scheme if it's different to avoid side effects
+            if parsed.scheme != scheme:
+                url = urlunparse((scheme, parsed.netloc, parsed.path, parsed.params, parsed.query, parsed.fragment))
+        
         # Get the POST data
         form = await request.form()
         params = dict(form)
         
         # Get the signature header
         signature = request.headers.get("X-Twilio-Signature", "")
+        
+        # DEBUG LOGGING (Temporary)
+        # masking token for safety in logs if ever included, but here we log what we have
+        logger.info(f"Validating Twilio Request: URL={url}, Signature={signature}")
         
         if not validator.validate(url, params, signature):
             logger.warning(f"Invalid Twilio Signature. URL: {url}")
