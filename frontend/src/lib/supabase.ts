@@ -242,6 +242,11 @@ class APIClient {
   }
 
   logout(): void {
+    // Prevent infinite loops if already logged out
+    if (!this.token && !localStorage.getItem(TOKEN_KEY)) {
+      return;
+    }
+
     this.token = null;
     localStorage.removeItem(TOKEN_KEY);
     localStorage.removeItem(USER_KEY);
