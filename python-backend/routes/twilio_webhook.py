@@ -9,14 +9,67 @@ from twilio.rest import Client
 import os
 from database import get_db_connection, upsert_call_state, update_appointment_status
 from models import CallState, IVRLog
-from llm_service import classify_intent, generate_response
+from twilio.request_validator import RequestValidator
+from fastapi import HTTPException, Header
 
-router = APIRouter(prefix="/api/twilio", tags=["twilio"])
-logger = logging.getLogger(__name__)
+# Security Configuration
+TWILIO_AUTH_TOKEN = os.getenv("TWILIO_AUTH_TOKEN")
+MAX_PENDING_APPOINTMENTS = 2
 
-# Webhook Base URL for external access via Cloudflare Tunnel
-# Must include the /lb-automotive prefix to pass through Nginx Gateway
-WEBHOOK_BASE_URL = os.getenv("WEBHOOK_BASE_URL", "/lb-automotive/api/twilio/webhook")
+async def validate_twilio_request(request: Request):
+    """
+    Validate that the request is coming from Twilio.
+    """
+    if os.getenv("ENVIRONMENT") == "development":
+        return
+
+    try:
+        validator = RequestValidator(TWILIO_AUTH_TOKEN)
+        
+        # Get the full URL (including query params)
+        url = str(request.url)
+        
+        # Get the POST data
+        form = await request.form()
+        params = dict(form)
+        
+        # Get the signature header
+        signature = request.headers.get("X-Twilio-Signature", "")
+        
+        if not validator.validate(url, params, signature):
+            logger.warning(f"Invalid Twilio Signature. URL: {url}")
+            raise HTTPException(status_code=403, detail="Invalid Twilio Signature")
+            
+    except Exception as e:
+        logger.error(f"Error validating Twilio request: {e}")
+        # Fail safe? Or fail secure? Fail secure for now.
+        raise HTTPException(status_code=403, detail="Validation Error")
+
+def check_rate_limit(phone_number: str) -> bool:
+    """
+    Check if the phone number has too many pending appointments.
+    Returns True if allowed, False if blocked.
+    """
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute("SELECT COUNT(*) as count FROM appointments WHERE phone_number = ? AND status = 'pending'", (phone_number,))
+        row = cursor.fetchone()
+        conn.close()
+        
+        if row and row['count'] >= MAX_PENDING_APPOINTMENTS:
+            return False
+        return True
+    except Exception as e:
+        logger.error(f"Rate limit check failed: {e}")
+        return True # Fail open on DB error to avoid service denial
+
+@router.post("/webhook", dependencies=[Depends(validate_twilio_request)])
+def twilio_webhook(
+    request: Request, # Added request for validation context if needed further
+    CallSid: str = Form(...),
+    From: str = Form(...),
+# ... remainder of function ...
 
 # --- Helper Functions ---
 
@@ -345,8 +398,9 @@ def process_smart_jump(intent, llm_result, CallSid, metadata, response, language
 
 # --- Webhook Handler ---
 
-@router.post("/webhook")
+@router.post("/webhook", dependencies=[Depends(validate_twilio_request)])
 def twilio_webhook(
+    request: Request,
     CallSid: str = Form(...),
     From: str = Form(...),
     Digits: Optional[str] = Form(None),
@@ -928,6 +982,13 @@ def twilio_webhook(
                             break
                 
                 if chosen_slot:
+                    # RATE LIMIT CHECK
+                    if not check_rate_limit(From):
+                        logger.warning(f"Rate limit exceeded for {From}")
+                        response.say("You have too many pending appointments. Please call us directly.", voice=voice)
+                        response.hangup()
+                        return Response(content=str(response), media_type="application/xml")
+
                     # Book it
                     appt_time = f"{target_date_str}T{chosen_slot}:00"
                     
