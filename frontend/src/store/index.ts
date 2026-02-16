@@ -3,7 +3,6 @@ import authReducer from './slices/authSlice';
 import uiReducer from './slices/uiSlice';
 import appointmentsReducer from './slices/appointmentsSlice';
 import shopReducer from './slices/shopSlice';
-import deploymentReducer from './slices/deploymentSlice';
 
 export const store = configureStore({
     reducer: {
@@ -11,7 +10,6 @@ export const store = configureStore({
         ui: uiReducer,
         appointments: appointmentsReducer,
         shop: shopReducer,
-        deployment: deploymentReducer,
     },
 });
 
