@@ -1,6 +1,9 @@
 import uuid
 import json
 import logging
+
+# Initialize logger
+logger = logging.getLogger(__name__)
 from datetime import datetime, time, timedelta
 from typing import Optional, Dict, Any
 from fastapi import APIRouter, Request, Form, Response, Depends
