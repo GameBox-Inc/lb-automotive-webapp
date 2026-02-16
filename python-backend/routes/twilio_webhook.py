@@ -37,13 +37,29 @@ async def validate_twilio_request(request: Request):
         
         # Handle proxy headers for correct URL reconstruction
         # Twilio sends requests to the public HTTPS URL, but internal proxy might forward as HTTP
-        if "x-forwarded-proto" in request.headers:
-            scheme = request.headers["x-forwarded-proto"]
+        # and strip prefixes (e.g. /lb-automotive)
+        
+        # 1. Handle Scheme (HTTP vs HTTPS)
+        scheme_override = request.headers.get("x-forwarded-proto")
+        
+        # 2. Handle Prefix (e.g. /lb-automotive)
+        prefix_override = request.headers.get("x-forwarded-prefix")
+        
+        if scheme_override or prefix_override:
             from urllib.parse import urlparse, urlunparse
             parsed = urlparse(url)
-            # Only replace scheme if it's different to avoid side effects
-            if parsed.scheme != scheme:
-                url = urlunparse((scheme, parsed.netloc, parsed.path, parsed.params, parsed.query, parsed.fragment))
+            
+            new_scheme = scheme_override if scheme_override else parsed.scheme
+            new_path = parsed.path
+            
+            if prefix_override:
+                # Ensure we don't double-slash or miss a slash
+                # parsed.path usually starts with /
+                # prefix usually starts with / and might end with /
+                clean_prefix = prefix_override.rstrip('/')
+                new_path = f"{clean_prefix}{parsed.path}"
+            
+            url = urlunparse((new_scheme, parsed.netloc, new_path, parsed.params, parsed.query, parsed.fragment))
         
         # Get the POST data
         form = await request.form()
