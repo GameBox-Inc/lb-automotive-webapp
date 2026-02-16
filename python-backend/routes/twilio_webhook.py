@@ -14,6 +14,10 @@ from llm_service import classify_intent, generate_response
 router = APIRouter(prefix="/api/twilio", tags=["twilio"])
 logger = logging.getLogger(__name__)
 
+# Webhook Base URL for external access via Cloudflare Tunnel
+# Must include the /lb-automotive prefix to pass through Nginx Gateway
+WEBHOOK_BASE_URL = os.getenv("WEBHOOK_BASE_URL", "/lb-automotive/api/twilio/webhook")
+
 # --- Helper Functions ---
 
 def get_call_state(call_sid: str) -> Optional[dict]:
@@ -334,7 +338,7 @@ def process_smart_jump(intent, llm_result, CallSid, metadata, response, language
                 # Go straight to select_time
                 # We also default language to 'en' if not explicitly spanish
                 upsert_call_state(CallSid, "select_time", "en", metadata)
-                response.redirect("/api/twilio/webhook?step=select_time")
+                response.redirect(f"{WEBHOOK_BASE_URL}?step=select_time")
                 return True
 
     return False
@@ -416,7 +420,7 @@ def twilio_webhook(
             if Digits == "2":
                 language = "es"
                 upsert_call_state(CallSid, "menu", language)
-                response.redirect("/api/twilio/webhook?step=menu")
+                response.redirect(f"{WEBHOOK_BASE_URL}?step=menu")
                 return Response(content=str(response), media_type="application/xml")
             
             # --- Smart Jump Logic ---
@@ -449,7 +453,7 @@ def twilio_webhook(
                 bargein=True,  # Enable cut-off
                 speechTimeout="auto", # Reduce latency
                 input="speech dtmf",
-                action="/lb-automotive/api/twilio/webhook?step=language",
+                action=f"{WEBHOOK_BASE_URL}?step=language",
                 method="POST"
             )
             gather.say(
@@ -469,7 +473,7 @@ def twilio_webhook(
                 language = "es"
             
             upsert_call_state(CallSid, "menu", language, metadata)
-            response.redirect("/api/twilio/webhook?step=menu")
+            response.redirect(f"{WEBHOOK_BASE_URL}?step=menu")
             return Response(content=str(response), media_type="application/xml")
 
         elif step == "menu":
@@ -493,7 +497,7 @@ def twilio_webhook(
                 bargein=True,  # Enable cut-off
                 speechTimeout="auto", # Reduce latency
                 input="speech dtmf",
-                action="/lb-automotive/api/twilio/webhook?step=route_direct",
+                action=f"{WEBHOOK_BASE_URL}?step=route_direct",
                 method="POST"
             )
             gather.say(message, voice=voice)
@@ -515,10 +519,10 @@ def twilio_webhook(
                     elif "two" in lower or "2" in lower or "emergency" in lower:
                         is_emergency = True
                     else:
-                        response.redirect("/api/twilio/webhook?step=menu")
+                        response.redirect(f"{WEBHOOK_BASE_URL}?step=menu")
                         return Response(content=str(response), media_type="application/xml")
                 else:
-                    response.redirect("/api/twilio/webhook?step=menu")
+                    response.redirect(f"{WEBHOOK_BASE_URL}?step=menu")
                     return Response(content=str(response), media_type="application/xml")
 
             if is_emergency:
@@ -551,7 +555,7 @@ def twilio_webhook(
                     timeout=5,
                     bargein=True,
                     input="speech dtmf",
-                    action="/lb-automotive/api/twilio/webhook?step=confirm_emergency",
+                    action=f"{WEBHOOK_BASE_URL}?step=confirm_emergency",
                     method="POST"
                 )
                 response.append(gather)
@@ -570,7 +574,7 @@ def twilio_webhook(
                 metadata["services"] = [default_service]
                 
                 upsert_call_state(CallSid, "select_time_direct", language, metadata)
-                response.redirect("/api/twilio/webhook?step=select_time_direct")
+                response.redirect(f"{WEBHOOK_BASE_URL}?step=select_time_direct")
                 return Response(content=str(response), media_type="application/xml")
 
         elif step == "route":
@@ -589,10 +593,10 @@ def twilio_webhook(
                      elif "two" in lower or "2" in lower:
                          is_emergency = True
                      else:
-                        response.redirect("/api/twilio/webhook?step=menu")
+                        response.redirect(f"{WEBHOOK_BASE_URL}?step=menu")
                         return Response(content=str(response), media_type="application/xml")
                  else:
-                    response.redirect("/api/twilio/webhook?step=menu")
+                    response.redirect(f"{WEBHOOK_BASE_URL}?step=menu")
                     return Response(content=str(response), media_type="application/xml")
 
             conn = get_db_connection()
@@ -643,7 +647,7 @@ def twilio_webhook(
                 timeout=5,
                 bargein=True,  # Enable cut-off
                 input="speech dtmf", # Enable speech
-                action=f"/api/twilio/webhook?step={'confirm_emergency' if is_emergency else 'select_service'}",
+                action=f"{WEBHOOK_BASE_URL}?step={'confirm_emergency' if is_emergency else 'select_service'}",
                 method="POST"
             )
             response.append(gather)
@@ -663,7 +667,7 @@ def twilio_webhook(
                         break
             
             if idx == -1:
-                 response.redirect("/api/twilio/webhook?step=route") # Retry
+                 response.redirect(f"{WEBHOOK_BASE_URL}?step=route") # Retry
                  return Response(content=str(response), media_type="application/xml")
             
             categories = metadata.get("categories", [])
@@ -686,13 +690,13 @@ def twilio_webhook(
                 gather = Gather(
                     num_digits=1,
                     input="speech dtmf", # Enable Speech
-                    action="/lb-automotive/api/twilio/webhook?step=select_time",
+                    action=f"{WEBHOOK_BASE_URL}?step=select_time",
                     method="POST"
                 )
                 response.append(gather)
             else:
                  response.say("Invalid selection", voice=voice)
-                 response.redirect("/api/twilio/webhook?step=route")
+                 response.redirect(f"{WEBHOOK_BASE_URL}?step=route")
 
         elif step == "select_time_direct":
             # Simplified time selection - no service selection required
@@ -768,7 +772,7 @@ def twilio_webhook(
                 num_digits=1,
                 input="speech dtmf",
                 timeout=5,
-                action="/lb-automotive/api/twilio/webhook?step=collect_symptoms",
+                action=f"{WEBHOOK_BASE_URL}?step=collect_symptoms",
                 method="POST"
             )
             response.append(gather)
@@ -829,11 +833,11 @@ def twilio_webhook(
                 
                 # We still need a Gather for the user's choice
                 # The LLM prompt asks the user to "say their preferred time".
-                gather = Gather(num_digits=1, input="speech dtmf", action="/lb-automotive/api/twilio/webhook?step=collect_symptoms")
+                gather = Gather(num_digits=1, input="speech dtmf", action=f"{WEBHOOK_BASE_URL}?step=collect_symptoms")
                 response.append(gather)
             else:
                 response.say("Invalid selection", voice=voice)
-                response.redirect("/api/twilio/webhook?step=select_service")
+                response.redirect(f"{WEBHOOK_BASE_URL}?step=select_service")
 
         elif step == "collect_symptoms":
              # Save selection first if coming from select_time
@@ -857,12 +861,12 @@ def twilio_webhook(
                     upsert_call_state(CallSid, "collect_symptoms", language, metadata)
                  else:
                     response.say("Invalid time selection. Please try again.", voice=voice)
-                    response.redirect("/api/twilio/webhook?step=select_time")
+                    response.redirect(f"{WEBHOOK_BASE_URL}?step=select_time")
                     return Response(content=str(response), media_type="application/xml")
             else:
                 # If no Digits or SpeechResult, redirect back to select_time
                 response.say("No selection received for time. Please try again.", voice=voice)
-                response.redirect("/api/twilio/webhook?step=select_time")
+                response.redirect(f"{WEBHOOK_BASE_URL}?step=select_time")
                 return Response(content=str(response), media_type="application/xml")
             
             message = (
@@ -875,7 +879,7 @@ def twilio_webhook(
             response.record(
                 max_length=10,
                 play_beep=True,
-                action="/api/twilio/webhook?step=process_symptoms",
+                action=f"{WEBHOOK_BASE_URL}?step=process_symptoms",
                 transcribe=True # Twilio transcription
             )
 
@@ -890,7 +894,7 @@ def twilio_webhook(
 
             # Now proceed to confirm booking with the collected symptoms
             # This step will effectively re-evaluate the time slot choice and book
-            response.redirect("/api/twilio/webhook?step=confirm_booking")
+            response.redirect(f"{WEBHOOK_BASE_URL}?step=confirm_booking")
             return Response(content=str(response), media_type="application/xml")
 
         elif step == "confirm_booking":
@@ -945,9 +949,9 @@ def twilio_webhook(
                     response.hangup()
                 else:
                     response.say("Sorry, that time block is no longer available.", voice=voice)
-                    response.redirect("/api/twilio/webhook?step=select_time") # Retry
+                    response.redirect(f"{WEBHOOK_BASE_URL}?step=select_time") # Retry
             else:
-                response.redirect("/api/twilio/webhook?step=select_time") # Retry
+                response.redirect(f"{WEBHOOK_BASE_URL}?step=select_time") # Retry
 
         elif step == "confirm_emergency":
            # Similar logic for emergency but faster
