@@ -193,16 +193,31 @@ def add_case_note(
         raise HTTPException(status_code=400, detail="User must be linked to a staff profile or be admin")
     
     staff_id = current_user.get("staff_id")
-    # Fallback for admin if not linked (should link admins too ideally, but for now ok)
+    
+    # Handle Admin user without linked staff profile
     if not staff_id and current_user.get("is_admin"):
-        # Find a default admin staff profile or just error?
-        # For now let's creating a "system" note handling if needed, 
-        # but realistically admins should have staff accounts too.
-        # Let's require staff_id for now to enforce the new system.
-        pass
+        # Auto-create or fetch a "System Admin" staff profile
+        conn = get_db_connection()
+        try:
+            cursor = conn.cursor()
+            cursor.execute("SELECT id FROM staff WHERE name = 'System Admin'")
+            row = cursor.fetchone()
+            
+            if row:
+                staff_id = row[0]
+            else:
+                # Create System Admin staff
+                new_staff_id = str(uuid.uuid4())
+                cursor.execute("""
+                    INSERT INTO staff (id, name, role, active) 
+                    VALUES (?, 'System Admin', 'admin', 1)
+                """, (new_staff_id,))
+                conn.commit()
+                staff_id = new_staff_id
+        finally:
+            conn.close()
 
     if not staff_id:
-         # Try to find staff by user ID or create one? No, create user account logic handles link.
          raise HTTPException(status_code=400, detail="Current user has no associated staff profile")
 
     conn = get_db_connection()
