@@ -43,23 +43,39 @@ async def validate_twilio_request(request: Request):
         scheme_override = request.headers.get("x-forwarded-proto")
         
         # 2. Handle Prefix (e.g. /lb-automotive)
+        # Check standard and Traefik specific headers
         prefix_override = request.headers.get("x-forwarded-prefix")
+        original_uri = request.headers.get("x-original-uri") or request.headers.get("x-forwarded-uri")
         
-        if scheme_override or prefix_override:
+        if scheme_override or prefix_override or original_uri:
             from urllib.parse import urlparse, urlunparse
             parsed = urlparse(url)
             
             new_scheme = scheme_override if scheme_override else parsed.scheme
+            new_netloc = parsed.netloc
             new_path = parsed.path
+            new_query = parsed.query
             
-            if prefix_override:
-                # Ensure we don't double-slash or miss a slash
-                # parsed.path usually starts with /
-                # prefix usually starts with / and might end with /
+            # If we have the full original URI, use its path and query
+            if original_uri:
+                # original_uri might be full URL or just path
+                if original_uri.startswith("http"):
+                    parsed_orig = urlparse(original_uri)
+                    new_path = parsed_orig.path
+                    new_query = parsed_orig.query
+                else:
+                    # It's just the path + query
+                    if "?" in original_uri:
+                        new_path, new_query = original_uri.split("?", 1)
+                    else:
+                        new_path = original_uri
+                        
+            elif prefix_override:
+                # Fallback to appending prefix if no original URI
                 clean_prefix = prefix_override.rstrip('/')
                 new_path = f"{clean_prefix}{parsed.path}"
             
-            url = urlunparse((new_scheme, parsed.netloc, new_path, parsed.params, parsed.query, parsed.fragment))
+            url = urlunparse((new_scheme, new_netloc, new_path, parsed.params, new_query, parsed.fragment))
         
         # Get the POST data
         form = await request.form()
@@ -68,9 +84,11 @@ async def validate_twilio_request(request: Request):
         # Get the signature header
         signature = request.headers.get("X-Twilio-Signature", "")
         
-        # DEBUG LOGGING (Temporary)
-        # masking token for safety in logs if ever included, but here we log what we have
-        logger.info(f"Validating Twilio Request: URL={url}, Signature={signature}")
+        # DEBUG LOGGING
+        # Log headers to debug proxy strippings
+        safe_headers = {k: v for k, v in request.headers.items() if k.lower() not in ["authorization", "x-twilio-signature"]}
+        logger.info(f"Twilio Validation Debug: Headers={safe_headers}")
+        logger.info(f"Validating URL={url}")
         
         if not validator.validate(url, params, signature):
             logger.warning(f"Invalid Twilio Signature. URL: {url}")
