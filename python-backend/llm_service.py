@@ -19,6 +19,8 @@ OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "smollm2:135m")
 ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY")
 ANTHROPIC_MODEL = os.getenv("ANTHROPIC_MODEL", "claude-3-5-sonnet-20241022")
 
+from utils.reliability import graceful_fallback
+
 # Initialize Anthropic client if API key is provided
 anthropic_client = None
 if LLM_PROVIDER == "anthropic" and ANTHROPIC_API_KEY:
@@ -36,15 +38,7 @@ elif LLM_PROVIDER == "anthropic" and not ANTHROPIC_API_KEY:
 
 def generate_response(prompt: str, context: str = "", system_prompt: str = None) -> str:
     """
-    Generate a response using the configured LLM provider (Ollama or Anthropic Claude).
-    
-    Args:
-        prompt: User prompt/question
-        context: Additional context for the prompt
-        system_prompt: System prompt/instructions (for Anthropic)
-    
-    Returns:
-        Generated response text
+    Generate a response using the configured LLM provider.
     """
     if LLM_PROVIDER == "anthropic" and anthropic_client:
         return _generate_response_anthropic(prompt, context, system_prompt)
@@ -52,53 +46,47 @@ def generate_response(prompt: str, context: str = "", system_prompt: str = None)
         return _generate_response_ollama(prompt, context)
 
 
+@graceful_fallback(fallback_value="I'm having trouble thinking right now.", circuit_name="llm_anthropic")
 def _generate_response_anthropic(prompt: str, context: str = "", system_prompt: str = None) -> str:
     """Generate response using Anthropic Claude API."""
-    try:
-        # Combine context and prompt
-        user_message = f"{context}\n\n{prompt}" if context else prompt
-        
-        # Default system prompt if not provided
-        if not system_prompt:
-            system_prompt = "You are a helpful assistant for an automotive service business."
-        
-        message = anthropic_client.messages.create(
-            model=ANTHROPIC_MODEL,
-            max_tokens=1024,
-            system=system_prompt,
-            messages=[
-                {"role": "user", "content": user_message}
-            ]
-        )
-        
-        # Extract text from response
-        if message.content and len(message.content) > 0:
-            return message.content[0].text.strip()
-        return "I'm having trouble thinking right now."
-    except Exception as e:
-        logger.error(f"Anthropic Claude generation error: {e}")
-        # Fallback to Ollama if available
-        if OLLAMA_HOST:
-            logger.info("Falling back to Ollama")
-            return _generate_response_ollama(prompt, context)
-        return "I'm having trouble thinking right now."
+    # Combine context and prompt
+    user_message = f"{context}\n\n{prompt}" if context else prompt
+    
+    # Default system prompt if not provided
+    if not system_prompt:
+        system_prompt = "You are a helpful assistant for an automotive service business."
+    
+    message = anthropic_client.messages.create(
+        model=ANTHROPIC_MODEL,
+        max_tokens=1024,
+        system=system_prompt,
+        messages=[
+            {"role": "user", "content": user_message}
+        ]
+    )
+    
+    # Extract text from response
+    if message.content and len(message.content) > 0:
+        return message.content[0].text.strip()
+    return "I'm having trouble thinking right now."
 
 
+@graceful_fallback(fallback_value="I'm having trouble thinking right now.", circuit_name="llm_ollama")
 def _generate_response_ollama(prompt: str, context: str = "") -> str:
     """Generate response using local Ollama instance."""
-    try:
-        payload = {
-            "model": OLLAMA_MODEL,
-            "prompt": f"{context}\n\nUser: {prompt}\nAssistant:",
-            "stream": False
-        }
-        response = requests.post(f"{OLLAMA_HOST}/api/generate", json=payload, timeout=10)
-        response.raise_for_status()
-        return response.json().get("response", "").strip()
-    except Exception as e:
-        logger.error(f"Ollama generation error: {e}")
-        return "I'm having trouble thinking right now."
+    payload = {
+        "model": OLLAMA_MODEL,
+        "prompt": f"{context}\n\nUser: {prompt}\nAssistant:",
+        "stream": False
+    }
+    response = requests.post(f"{OLLAMA_HOST}/api/generate", json=payload, timeout=10)
+    response.raise_for_status()
+    return response.json().get("response", "").strip()
 
+@graceful_fallback(
+    fallback_value={"intent": "unknown"}, 
+    circuit_name="llm_classifier"
+)
 @functools.lru_cache(maxsize=100)
 def classify_intent(text: str) -> dict:
     """
@@ -123,47 +111,43 @@ User: "Habla español?"
 User: "What are your hours?"
 {"intent": "other", "service": null, "time": null}"""
     
-    try:
-        if LLM_PROVIDER == "anthropic" and anthropic_client:
-            # Use Anthropic Claude for classification
-            user_prompt = f"User Input: {text}\n\nReturn ONLY the JSON object, no other text:"
-            
-            message = anthropic_client.messages.create(
-                model=ANTHROPIC_MODEL,
-                max_tokens=200,
-                system=system_prompt,
-                messages=[
-                    {"role": "user", "content": user_prompt}
-                ]
-            )
-            
-            result = message.content[0].text.strip() if message.content else ""
-        else:
-            # Use Ollama for classification
-            payload = {
-                "model": OLLAMA_MODEL,
-                "prompt": f"{system_prompt}\nUser Input: {text}\nJSON:",
-                "stream": False,
-                "format": "json" 
-            }
-            response = requests.post(f"{OLLAMA_HOST}/api/generate", json=payload, timeout=5)
-            response.raise_for_status()
-            result = response.json().get("response", "")
+    if LLM_PROVIDER == "anthropic" and anthropic_client:
+        # Use Anthropic Claude for classification
+        user_prompt = f"User Input: {text}\n\nReturn ONLY the JSON object, no other text:"
         
-        # Cleanup: Remove markdown code blocks if present
-        if result.strip().startswith("```"):
-            result = result.replace("```json", "").replace("```", "").strip()
+        message = anthropic_client.messages.create(
+            model=ANTHROPIC_MODEL,
+            max_tokens=200,
+            system=system_prompt,
+            messages=[
+                {"role": "user", "content": user_prompt}
+            ]
+        )
         
-        # Cleanup: sometimes models add text before/after
-        start = result.find("{")
-        end = result.rfind("}")
-        if start != -1 and end != -1:
-            result = result[start:end+1]
-            
-        return json.loads(result)
-    except Exception as e:
-        logger.error(f"LLM classification error ({LLM_PROVIDER}): {e}. Result was: {result if 'result' in locals() else 'N/A'}")
-        return {"intent": "unknown"}
+        result = message.content[0].text.strip() if message.content else ""
+    else:
+        # Use Ollama for classification
+        payload = {
+            "model": OLLAMA_MODEL,
+            "prompt": f"{system_prompt}\nUser Input: {text}\nJSON:",
+            "stream": False,
+            "format": "json" 
+        }
+        response = requests.post(f"{OLLAMA_HOST}/api/generate", json=payload, timeout=5)
+        response.raise_for_status()
+        result = response.json().get("response", "")
+    
+    # Cleanup: Remove markdown code blocks if present
+    if result.strip().startswith("```"):
+        result = result.replace("```json", "").replace("```", "").strip()
+    
+    # Cleanup: sometimes models add text before/after
+    start = result.find("{")
+    end = result.rfind("}")
+    if start != -1 and end != -1:
+        result = result[start:end+1]
+        
+    return json.loads(result)
 
 def generate_repair_note(text: str) -> str:
     """

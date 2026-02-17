@@ -10,6 +10,9 @@ data:
     }
 
     http {
+        # Use Kubernetes DNS resolver (ClusterIP of kube-dns)
+        resolver 10.43.0.10 valid=30s;
+        
         # Logging format for honeypot detection
         log_format honeypot_format '$remote_addr - $remote_user [$time_local] '
                                    '"$request" $status $body_bytes_sent '
@@ -46,13 +49,18 @@ data:
                 }
 
                 # Rate limiting (backup - Cloudflare does primary)
-                limit_req zone=twilio burst=10 nodelay;
+                limit_req zone=twilio burst=10;
                 
                 # Log legitimate traffic
                 access_log /var/log/nginx/twilio-webhook.log;
                 
-                # Proxy to customer namespace
-                proxy_pass http://backend.lb-automotive.svc.cluster.local:8000/api/twilio/;
+                # Proxy to customer namespace with DNS resolution
+                # Proxy to customer namespace with DNS resolution
+                set $backend_upstream backend.lb-automotive.svc.cluster.local:8000;
+                
+                # Strip /lb-automotive prefix and pass to backend
+                rewrite ^/lb-automotive(/.*)$ $1 break;
+                proxy_pass http://$backend_upstream;
                 proxy_set_header Host $host;
                 proxy_set_header X-Real-IP $http_cf_connecting_ip;
                 proxy_set_header X-Forwarded-For $http_cf_connecting_ip;

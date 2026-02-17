@@ -1,4 +1,4 @@
-tunnel: TUNNEL_ID_PLACEHOLDER
+tunnel: f768b4de-f9d2-4717-a4d2-c5c87af60d78
 credentials-file: /etc/cloudflared/credentials.json
 
 ingress:

@@ -1061,10 +1061,11 @@ def twilio_webhook(
                         service_name = "General Service"
 
                     # Insert with notes!
+                    logger.info(f"Booking Appointment: Name='{customer_name}', Notes='{symptoms_desc}'")
                     cursor.execute("""
                         INSERT INTO appointments (id, customer_name, phone_number, appointment_time, service_type, status, notes)
                         VALUES (?, ?, ?, ?, ?, ?, ?)
-                    """, (aid, "Voice Customer", From, appt_time, service_name, 'pending', symptoms_desc)) 
+                    """, (aid, customer_name, From, appt_time, service_name, 'pending', symptoms_desc)) 
                     conn.commit()
                     conn.close()
                     

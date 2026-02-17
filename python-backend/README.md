@@ -9,7 +9,7 @@ Python-based FastAPI server with SQLite database for LB Automotive shop manageme
 - 👥 **Customer Management** - CRM with history tracking
 - 🛠️ **Service Catalog** - Manage services and pricing
 - 👨‍🔧 **Staff Management** - Track mechanics and advisors
-- 📞 **Twilio IVR Integration** - Automated phone system
+- 📞 **Twilio IVR Integration** - Automated phone system with IVR menu
 - ⚙️ **Admin Settings** - Configurable business hours and IVR messages
 - 🔒 **Security Hardened** - XSS prevention, SQL injection protection, rate limiting
 
