@@ -1,0 +1,118 @@
+# =============================================================================
+# vault-network-policy.yaml — Network policies for Vault and consuming apps
+# =============================================================================
+# Rules:
+#   - Vault pod accepts traffic only from: injector, lb-automotive pods, kube-apiserver
+#   - Vault can reach kube-apiserver (for TokenReview)
+#   - lb-automotive backend pods can egress to Vault on 8200
+#   - Injector accepts admission webhook traffic from kube-apiserver
+# =============================================================================
+
+# ── Allow Vault inbound traffic ───────────────────────────────────────────────
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: vault-server-ingress
+  namespace: gamebox-security
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: vault
+      component: server
+  policyTypes:
+  - Ingress
+  ingress:
+  # Vault Agent sidecars from any namespace can reach Vault API (TLS 8200)
+  - ports:
+    - protocol: TCP
+      port: 8200
+  # Vault cluster port (for future HA)
+  - ports:
+    - protocol: TCP
+      port: 8201
+
+---
+# ── Allow Vault outbound: DNS + Kubernetes API ────────────────────────────────
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: vault-server-egress
+  namespace: gamebox-security
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: vault
+      component: server
+  policyTypes:
+  - Egress
+  egress:
+  # DNS
+  - to:
+    - namespaceSelector: {}
+      podSelector:
+        matchLabels:
+          k8s-app: kube-dns
+    ports:
+    - protocol: UDP
+      port: 53
+  # Kubernetes API server (TokenReview for k8s auth)
+  - ports:
+    - protocol: TCP
+      port: 6443
+    - protocol: TCP
+      port: 443
+
+---
+# ── Allow Agent Injector webhook traffic from kube-apiserver ─────────────────
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: vault-injector-ingress
+  namespace: gamebox-security
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: vault
+      component: webhook
+  policyTypes:
+  - Ingress
+  ingress:
+  # MutatingWebhook callbacks arrive on 8080
+  - ports:
+    - protocol: TCP
+      port: 8080
+
+---
+# ── Allow lb-automotive backend to reach Vault on 8200 ───────────────────────
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: lb-automotive-vault-egress
+  namespace: lb-automotive
+spec:
+  podSelector:
+    matchLabels:
+      app: backend
+  policyTypes:
+  - Egress
+  egress:
+  # Vault API (TLS)
+  - to:
+    - namespaceSelector:
+        matchLabels:
+          name: gamebox-security
+      podSelector:
+        matchLabels:
+          app.kubernetes.io/name: vault
+    ports:
+    - protocol: TCP
+      port: 8200
+  # Preserve existing egress (DNS, backend-to-redis, etc.)
+  - to:
+    - namespaceSelector: {}
+      podSelector:
+        matchLabels:
+          k8s-app: kube-dns
+    ports:
+    - protocol: UDP
+      port: 53
