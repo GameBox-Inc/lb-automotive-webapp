@@ -2,3 +2,8 @@ apiVersion: v1
 kind: Namespace
 metadata:
   name: lb-automotive
+  labels:
+    name: lb-automotive
+    # Activates the Vault Agent Injector MutatingWebhook for this namespace.
+    # Pods with vault.hashicorp.com/agent-inject: "true" will get the sidecar.
+    vault-injection: "enabled"

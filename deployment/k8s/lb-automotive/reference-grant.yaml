@@ -1,0 +1,20 @@
+# =============================================================================
+# reference-grant.yaml — Allow gamebox-security HTTPRoutes to reference
+# services in the lb-automotive namespace.
+#
+# Without this, the Gateway API spec forbids cross-namespace backend references
+# as a security measure. This grant explicitly opts lb-automotive in.
+# =============================================================================
+apiVersion: gateway.networking.k8s.io/v1beta1
+kind: ReferenceGrant
+metadata:
+  name: allow-gamebox-gateway
+  namespace: lb-automotive
+spec:
+  from:
+    - group: gateway.networking.k8s.io
+      kind: HTTPRoute
+      namespace: gamebox-security
+  to:
+    - group: ""
+      kind: Service

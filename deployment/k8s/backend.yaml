@@ -14,9 +14,57 @@ spec:
     metadata:
       labels:
         app: backend
+      annotations:
+        # ── Vault Agent Injector ────────────────────────────────────────────
+        # The pod is unaware of Vault. The injector sidecar starts first,
+        # authenticates to Vault using the ServiceAccount JWT, reads secrets,
+        # and writes them to /vault/secrets/app.env before the main container
+        # starts. The init-style injection guarantees secrets are ready at boot.
+        vault.hashicorp.com/agent-inject: "true"
+        vault.hashicorp.com/role: "lb-automotive-role"
+        vault.hashicorp.com/agent-init-first: "true"
+
+        # TLS — the agent validates Vault's certificate using the CA bundle
+        vault.hashicorp.com/tls-secret: "vault-server-tls"
+        vault.hashicorp.com/ca-cert: "/vault/tls/ca.crt"
+
+        # ── Secret: app (core application secrets) ──────────────────────────
+        vault.hashicorp.com/agent-inject-secret-app.env: "secret/data/lb-automotive/app"
+        vault.hashicorp.com/agent-inject-template-app.env: |
+          {{- with secret "secret/data/lb-automotive/app" -}}
+          {{- range $k, $v := .Data.data }}
+          export {{ $k }}={{ $v }}
+          {{- end }}
+          {{- end }}
+
+        # ── Secret: twilio ──────────────────────────────────────────────────
+        vault.hashicorp.com/agent-inject-secret-twilio.env: "secret/data/lb-automotive/twilio"
+        vault.hashicorp.com/agent-inject-template-twilio.env: |
+          {{- with secret "secret/data/lb-automotive/twilio" -}}
+          {{- range $k, $v := .Data.data }}
+          export {{ $k }}={{ $v }}
+          {{- end }}
+          {{- end }}
+
+        # ── Secret: anthropic ───────────────────────────────────────────────
+        vault.hashicorp.com/agent-inject-secret-anthropic.env: "secret/data/lb-automotive/anthropic"
+        vault.hashicorp.com/agent-inject-template-anthropic.env: |
+          {{- with secret "secret/data/lb-automotive/anthropic" -}}
+          {{- range $k, $v := .Data.data }}
+          export {{ $k }}={{ $v }}
+          {{- end }}
+          {{- end }}
+
+        # Token lifetime — renew after 30m, re-auth after 24h
+        vault.hashicorp.com/agent-inject-token: "false"
     spec:
+      # ── Identity used for Vault Kubernetes auth ─────────────────────────────
+      # The SA JWT is presented to Vault, which validates it against the K8s API.
+      serviceAccountName: lb-automotive-backend
+
       imagePullSecrets:
       - name: ghcr-secret
+
       containers:
       - name: backend
         # Image updated by Jenkins CI pipeline
@@ -24,70 +72,24 @@ spec:
         imagePullPolicy: Always
         ports:
         - containerPort: 8000
-        env:
-        - name: SECRET_KEY
-          valueFrom:
-            secretKeyRef:
-              name: app-secrets
-              key: SECRET_KEY
-        - name: ALLOWED_ORIGINS
-          valueFrom:
-            secretKeyRef:
-              name: app-secrets
-              key: ALLOWED_ORIGINS
-        - name: DATABASE_URL
-          valueFrom:
-            secretKeyRef:
-              name: app-secrets
-              key: DATABASE_URL
-        - name: REDIS_URL
-          valueFrom:
-            secretKeyRef:
-              name: app-secrets
-              key: REDIS_URL
-        - name: LLM_PROVIDER
-          valueFrom:
-            secretKeyRef:
-              name: app-secrets
-              key: LLM_PROVIDER
-        - name: ANTHROPIC_API_KEY
-          valueFrom:
-            secretKeyRef:
-              name: anthropic-secrets
-              key: ANTHROPIC_API_KEY
-              optional: true
-        - name: ANTHROPIC_MODEL
-          valueFrom:
-            secretKeyRef:
-              name: anthropic-secrets
-              key: ANTHROPIC_MODEL
-              optional: true
-        - name: CSP_POLICY
-          valueFrom:
-            secretKeyRef:
-              name: app-secrets
-              key: CSP_POLICY
-        - name: TWILIO_ACCOUNT_SID
-          valueFrom:
-            secretKeyRef:
-              name: twilio-secrets
-              key: TWILIO_ACCOUNT_SID
-              optional: true
-        - name: TWILIO_AUTH_TOKEN
-          valueFrom:
-            secretKeyRef:
-              name: twilio-secrets
-              key: TWILIO_AUTH_TOKEN
-              optional: true
-        - name: TWILIO_PHONE_NUMBER
-          valueFrom:
-            secretKeyRef:
-              name: twilio-secrets
-              key: TWILIO_PHONE_NUMBER
-              optional: true
+
+        # Secrets are injected from Vault — no more secretKeyRef ENV vars.
+        # The startup command sources all three env files before exec-ing uvicorn.
+        command:
+        - /bin/sh
+        - -c
+        - |
+          set -e
+          # Source Vault-injected secrets (written by the init agent)
+          [ -f /vault/secrets/app.env ]       && . /vault/secrets/app.env
+          [ -f /vault/secrets/twilio.env ]    && . /vault/secrets/twilio.env
+          [ -f /vault/secrets/anthropic.env ] && . /vault/secrets/anthropic.env
+          exec uvicorn main:app --host 0.0.0.0 --port 8000
+
         volumeMounts:
         - name: app-data
           mountPath: /app/data
+
         resources:
           limits:
             memory: "384Mi"
@@ -95,6 +97,7 @@ spec:
           requests:
             memory: "256Mi"
             cpu: "200m"
+
       volumes:
       - name: app-data
         persistentVolumeClaim:

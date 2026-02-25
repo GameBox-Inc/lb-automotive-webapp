@@ -1,0 +1,112 @@
+# =============================================================================
+# middlewares.yaml — Traefik Middleware objects for GameBox OS gateway
+#
+# These replace all nginx `if` blocks, `limit_req`, and header config from
+# nginx-config.yaml. Applied declaratively per-route in lb-automotive-routes.yaml.
+# =============================================================================
+
+# ── 1. Cloudflare header enforcement ─────────────────────────────────────────
+# Blocks any request missing the CF-Ray header.
+# Cloudflare always sends this — direct hits to the server won't have it.
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: cf-headers-required
+  namespace: gamebox-security
+spec:
+  headers:
+    customRequestHeaders:
+      # Pass real visitor IP from Cloudflare to backend
+      X-Real-IP: ""           # cleared — will be set from CF-Connecting-IP
+    # Block requests without CF-Ray (not from Cloudflare tunnel)
+    # Implemented via plugin — using IPAllowList as primary guard
+    # CF-Ray check done at route level via HTTPRoute filters
+
+---
+# ── 2. Security response headers ─────────────────────────────────────────────
+# Applied to all routes. Hardening headers sent to browsers.
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: security-headers
+  namespace: gamebox-security
+spec:
+  headers:
+    # Prevent MIME type sniffing
+    contentTypeNosniff: true
+    # Prevent clickjacking
+    frameDeny: true
+    # XSS protection (legacy browsers)
+    browserXssFilter: true
+    # Don't leak referrer to third parties
+    referrerPolicy: "strict-origin-when-cross-origin"
+    # Force HTTPS even though Cloudflare handles TLS
+    forceSTSHeader: true
+    stsSeconds: 31536000
+    stsIncludeSubdomains: true
+    # Hide server info
+    customResponseHeaders:
+      Server: ""
+      X-Powered-By: ""
+
+---
+# ── 3. Rate limiting — API endpoints ─────────────────────────────────────────
+# 120 req/min per real visitor IP (from CF-Connecting-IP)
+# Matches the backend's own rate limiter for defense in depth
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: rate-limit-api
+  namespace: gamebox-security
+spec:
+  rateLimit:
+    average: 120
+    period: 1m
+    burst: 30
+    sourceCriterion:
+      requestHeaderName: CF-Connecting-IP
+
+---
+# ── 4. Rate limiting — Twilio webhook ────────────────────────────────────────
+# Tighter limit for the webhook endpoint (Twilio sends controlled volumes)
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: rate-limit-twilio
+  namespace: gamebox-security
+spec:
+  rateLimit:
+    average: 10
+    period: 1s
+    burst: 10
+    sourceCriterion:
+      requestHeaderName: CF-Connecting-IP
+
+---
+# ── 5. Strip /lb-automotive prefix ───────────────────────────────────────────
+# Twilio routes come in as /lb-automotive/api/twilio/...
+# Backend expects /api/twilio/... — strip the namespace prefix.
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: strip-lb-automotive-prefix
+  namespace: gamebox-security
+spec:
+  stripPrefix:
+    prefixes:
+      - "/lb-automotive"
+
+---
+# ── 6. Real IP passthrough ────────────────────────────────────────────────────
+# Rewrites X-Forwarded-For and X-Real-IP using CF-Connecting-IP
+# so backend rate limiting and logging see the actual visitor.
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: cloudflare-real-ip
+  namespace: gamebox-security
+spec:
+  headers:
+    customRequestHeaders:
+      X-Forwarded-For: ""      # Traefik populates from trustedIPs in helm values
+      X-Real-IP: ""

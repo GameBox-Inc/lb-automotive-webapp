@@ -1,0 +1,116 @@
+# =============================================================================
+# traefik-helm-values.yaml — Traefik v3 Helm values for GameBox OS
+#
+# Install (run from repo root on server after scp):
+#   helm repo add traefik https://traefik.github.io/charts && helm repo update
+#   helm install traefik traefik/traefik \
+#     --namespace gamebox-security \
+#     --values deployment/k8s/gamebox-security/traefik/traefik-helm-values.yaml
+#
+# Runs on port 30881 alongside nginx-gateway (30880) — safe parallel install.
+# After live traffic validated, nginx-gateway is removed.
+# =============================================================================
+
+# ── Deployment ────────────────────────────────────────────────────────────────
+deployment:
+  replicas: 2
+
+# ── Providers ─────────────────────────────────────────────────────────────────
+providers:
+  # Gateway API — primary routing mechanism (HTTPRoute, GatewayClass)
+  kubernetesGateway:
+    enabled: true
+  # Keep Ingress support for any existing Ingress objects
+  kubernetesIngress:
+    enabled: true
+    allowExternalNameServices: false
+
+# ── Entry Points ──────────────────────────────────────────────────────────────
+# Cloudflare terminates TLS — Traefik only needs HTTP internally.
+# Port 30881 used during parallel install. After nginx removed, change to 30880.
+ports:
+  web:
+    port: 8080
+    nodePort: 30881
+    expose:
+      default: true
+    protocol: TCP
+    # Forward real visitor IP from CF-Connecting-IP header
+    forwardedHeaders:
+      trustedIPs:
+        - "127.0.0.1/8"
+        - "10.0.0.0/8"
+        - "172.16.0.0/12"
+        - "192.168.0.0/16"
+  # Disable HTTPS entry point — Cloudflare handles TLS
+  websecure:
+    expose:
+      default: false
+
+# ── Service ───────────────────────────────────────────────────────────────────
+service:
+  type: NodePort
+
+# ── Logs ──────────────────────────────────────────────────────────────────────
+logs:
+  general:
+    level: INFO
+  access:
+    enabled: true
+    format: json
+    fields:
+      headers:
+        defaultMode: keep
+        names:
+          CF-Connecting-IP: keep
+          CF-Ray: keep
+          X-Forwarded-For: keep
+
+# ── Metrics ───────────────────────────────────────────────────────────────────
+metrics:
+  prometheus:
+    entryPoint: metrics
+    addEntryPointsLabels: true
+    addServicesLabels: true
+
+# ── API / Dashboard — disabled in production ──────────────────────────────────
+api:
+  dashboard: false
+  insecure: false
+
+# ── Security context ─────────────────────────────────────────────────────────
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 65532
+  runAsGroup: 65532
+
+securityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  capabilities:
+    drop:
+      - ALL
+    add:
+      - NET_BIND_SERVICE
+
+# ── Resources ─────────────────────────────────────────────────────────────────
+resources:
+  requests:
+    cpu: "100m"
+    memory: "128Mi"
+  limits:
+    cpu: "500m"
+    memory: "256Mi"
+
+# ── RBAC — allow cross-namespace route references ─────────────────────────────
+rbac:
+  enabled: true
+
+# ── Gateway API RBAC ──────────────────────────────────────────────────────────
+# Required for Traefik to read HTTPRoute objects in other namespaces
+serviceAccount:
+  create: true
+  name: traefik
+
+additionalArguments:
+  - "--providers.kubernetesgateway.experimentalchannel=true"

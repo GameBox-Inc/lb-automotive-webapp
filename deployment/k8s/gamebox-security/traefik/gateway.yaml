@@ -1,0 +1,33 @@
+# =============================================================================
+# gateway.yaml — GatewayClass + Gateway for GameBox OS
+# All HTTPRoutes across all namespaces attach to this single Gateway.
+# =============================================================================
+
+# ── GatewayClass — tells K8s that Traefik handles this class ──────────────────
+apiVersion: gateway.networking.k8s.io/v1
+kind: GatewayClass
+metadata:
+  name: traefik
+spec:
+  controllerName: traefik.io/gateway-controller
+
+---
+# ── Gateway — the platform ingress point ──────────────────────────────────────
+# Cloudflare Tunnel connects to this via NodePort 30881.
+# All app HTTPRoutes attach here via parentRefs.
+apiVersion: gateway.networking.k8s.io/v1
+kind: Gateway
+metadata:
+  name: gamebox-gateway
+  namespace: gamebox-security
+spec:
+  gatewayClassName: traefik
+  listeners:
+    - name: http
+      protocol: HTTP
+      port: 8080
+      # Allow HTTPRoutes from all namespaces to attach.
+      # Individual route hostnames restrict what each app can expose.
+      allowedRoutes:
+        namespaces:
+          from: All
