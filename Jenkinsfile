@@ -265,7 +265,7 @@ pipeline {
                         # Check backend health via internal NodePort
                         echo "🔍 Checking backend health..."
                         ssh -o StrictHostKeyChecking=no ${DEPLOY_USER}@${DEPLOY_HOST} \
-                            "curl -sf http://localhost:30800/api/health || echo '⚠️ Backend may still be starting...'"
+                            "curl -sf http://localhost:30800/health || echo '⚠️ Backend may still be starting...'"
 
                         # Check frontend health
                         echo "🔍 Checking frontend..."
