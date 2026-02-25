@@ -65,8 +65,48 @@ spec:
     - protocol: TCP
       port: 8000
 
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: traefik-policy
+  namespace: gamebox-security
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: traefik
+  policyTypes:
+  - Ingress
+  - Egress
+  ingress:
+  # Allow traffic from cloudflared pods
+  - from:
+    - podSelector:
+        matchLabels:
+          app: cloudflared
+    ports:
+    - protocol: TCP
+      port: 8000
+  egress:
+  # DNS resolution
+  - to:
+    - namespaceSelector: {}
+      podSelector:
+        matchLabels:
+          k8s-app: kube-dns
+    ports:
+    - protocol: UDP
+      port: 53
+  # Traffic to lb-automotive namespace (backend + frontend)
+  - to:
+    - namespaceSelector:
+        matchLabels:
+          name: lb-automotive
+    ports:
+    - protocol: TCP
+      port: 8000
+    - protocol: TCP
+      port: 80
 ---
-# ── cloudflared: egress to Cloudflare edge + nginx-gateway ───────────────────
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -96,35 +136,13 @@ spec:
   - ports:
     - protocol: TCP
       port: 443
-  # Internal: cloudflared → nginx-gateway
+  # Internal: cloudflared → traefik
   - to:
     - podSelector:
         matchLabels:
-          app: nginx-gateway
+          app.kubernetes.io/name: traefik
     ports:
     - protocol: TCP
-      port: 80
+      port: 8000
 
----
-# ── nginx-gateway: allow ingress from cloudflared ────────────────────────────
-# Adds to the existing nginx-gateway-policy by allowing cloudflared pods
-apiVersion: networking.k8s.io/v1
-kind: NetworkPolicy
-metadata:
-  name: nginx-gateway-allow-cloudflared
-  namespace: gamebox-security
-spec:
-  podSelector:
-    matchLabels:
-      app: nginx-gateway
-  policyTypes:
-  - Ingress
-  ingress:
-  - from:
-    - podSelector:
-        matchLabels:
-          app: cloudflared
-    ports:
-    - protocol: TCP
-      port: 80
 
