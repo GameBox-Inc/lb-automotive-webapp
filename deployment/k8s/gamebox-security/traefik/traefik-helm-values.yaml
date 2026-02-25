@@ -30,7 +30,7 @@ providers:
 # Port 30881 used during parallel install. After nginx removed, change to 30880.
 ports:
   web:
-    port: 8080
+    port: 8000
     nodePort: 30881
     expose:
       default: true

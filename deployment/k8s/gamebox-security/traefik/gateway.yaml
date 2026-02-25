@@ -25,7 +25,7 @@ spec:
   listeners:
     - name: http
       protocol: HTTP
-      port: 8080
+      port: 8000
       # Allow HTTPRoutes from all namespaces to attach.
       # Individual route hostnames restrict what each app can expose.
       allowedRoutes:
