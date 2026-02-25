@@ -192,17 +192,17 @@ pipeline {
                         // Apply namespace + RBAC first (order matters)
                         sh """
                             ssh -o StrictHostKeyChecking=no ${DEPLOY_USER}@${DEPLOY_HOST} \
-                                'kubectl apply -f ${MANIFEST_DIR}/k8s/namespace.yaml'
+                                'sudo k3s kubectl apply -f ${MANIFEST_DIR}/k8s/namespace.yaml'
                         """
                         // Apply gamebox-security namespace resources
                         sh """
                             ssh -o StrictHostKeyChecking=no ${DEPLOY_USER}@${DEPLOY_HOST} \
-                                'kubectl apply -f ${MANIFEST_DIR}/k8s/gamebox-security/'
+                                'sudo k3s kubectl apply -f ${MANIFEST_DIR}/k8s/gamebox-security/'
                         """
                         // Apply lb-automotive namespace resources
                         sh """
                             ssh -o StrictHostKeyChecking=no ${DEPLOY_USER}@${DEPLOY_HOST} \
-                                'kubectl apply -f ${MANIFEST_DIR}/k8s/lb-automotive/'
+                                'sudo k3s kubectl apply -f ${MANIFEST_DIR}/k8s/lb-automotive/'
                         """
                         echo '✅ Manifests applied successfully'
                     }
