@@ -17,6 +17,7 @@ pipeline {
         DEPLOY_USER = 'lb-admin'
         DEPLOY_HOST = '178.156.223.196'
         DEPLOY_DIR = '/opt/lb-automotive-dashboard'
+        MANIFEST_DIR = '~/k8s-manifests'
 
         // Python version
         PYTHON_VERSION = '3.11'
@@ -163,6 +164,52 @@ pipeline {
             }
         }
 
+        stage('Deploy Manifests') {
+            // Syncs K8s manifests to server and applies them.
+            // Replaces ArgoCD — Jenkins is now the GitOps mechanism.
+            when {
+                anyOf {
+                    branch 'main'
+                    branch 'master'
+                    expression { env.GIT_BRANCH ==~ /.*release\/.*/ }
+                }
+            }
+            steps {
+                echo '📋 Syncing K8s manifests to server...'
+                script {
+                    sshagent(credentials: ['lb-server-ssh']) {
+                        // Create manifest staging dir on server
+                        sh """
+                            ssh -o StrictHostKeyChecking=no ${DEPLOY_USER}@${DEPLOY_HOST} \
+                                'mkdir -p ${MANIFEST_DIR}'
+                        """
+                        // Copy all manifests to server
+                        sh """
+                            scp -o StrictHostKeyChecking=no -r \
+                                deployment/k8s/ \
+                                ${DEPLOY_USER}@${DEPLOY_HOST}:${MANIFEST_DIR}/
+                        """
+                        // Apply namespace + RBAC first (order matters)
+                        sh """
+                            ssh -o StrictHostKeyChecking=no ${DEPLOY_USER}@${DEPLOY_HOST} \
+                                'kubectl apply -f ${MANIFEST_DIR}/k8s/namespace.yaml'
+                        """
+                        // Apply gamebox-security namespace resources
+                        sh """
+                            ssh -o StrictHostKeyChecking=no ${DEPLOY_USER}@${DEPLOY_HOST} \
+                                'kubectl apply -f ${MANIFEST_DIR}/k8s/gamebox-security/'
+                        """
+                        // Apply lb-automotive namespace resources
+                        sh """
+                            ssh -o StrictHostKeyChecking=no ${DEPLOY_USER}@${DEPLOY_HOST} \
+                                'kubectl apply -f ${MANIFEST_DIR}/k8s/lb-automotive/'
+                        """
+                        echo '✅ Manifests applied successfully'
+                    }
+                }
+            }
+        }
+
         stage('Deploy to Production') {
             when {
                 anyOf {
@@ -215,15 +262,15 @@ pipeline {
                         ssh -o StrictHostKeyChecking=no ${DEPLOY_USER}@${DEPLOY_HOST} \
                             "kubectl get pods -n lb-automotive"
 
-                        # Check backend health
+                        # Check backend health via internal NodePort
                         echo "🔍 Checking backend health..."
                         ssh -o StrictHostKeyChecking=no ${DEPLOY_USER}@${DEPLOY_HOST} \
-                            "curl -f http://localhost:8000/health || echo '⚠️ Backend may still be starting...'"
+                            "curl -sf http://localhost:30800/api/health || echo '⚠️ Backend may still be starting...'"
 
                         # Check frontend health
                         echo "🔍 Checking frontend..."
                         ssh -o StrictHostKeyChecking=no ${DEPLOY_USER}@${DEPLOY_HOST} \
-                            "curl -f http://localhost/ || echo '⚠️ Frontend may still be starting...'"
+                            "curl -sf http://localhost:30080/ || echo '⚠️ Frontend may still be starting...'"
                     '''
                 }
             }
