@@ -105,12 +105,3 @@ resources:
 # ── RBAC — allow cross-namespace route references ─────────────────────────────
 rbac:
   enabled: true
-
-# ── Gateway API RBAC ──────────────────────────────────────────────────────────
-# Required for Traefik to read HTTPRoute objects in other namespaces
-serviceAccount:
-  create: true
-  name: traefik
-
-additionalArguments:
-  - "--providers.kubernetesgateway.experimentalchannel=true"
