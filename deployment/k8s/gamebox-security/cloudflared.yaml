@@ -28,14 +28,13 @@ data:
     metrics: 0.0.0.0:2000
 
     ingress:
-      # Main application — routes to nginx-gateway via internal cluster DNS.
-      # No more NodePort dependency — cloudflared is inside the cluster now.
+      # Main application — Traefik Gateway API handles all routing
       - hostname: kozytherocket.space
-        service: http://nginx-gateway.gamebox-security.svc.cluster.local:80
+        service: http://traefik.gamebox-security.svc.cluster.local:80
 
-      # Twilio webhook — same nginx-gateway, path routing handled by nginx
+      # Twilio webhook — Traefik HTTPRoute handles path routing + prefix strip
       - hostname: twilio.kozytherocket.space
-        service: http://nginx-gateway.gamebox-security.svc.cluster.local:80
+        service: http://traefik.gamebox-security.svc.cluster.local:80
         originRequest:
           noTLSVerify: false
           connectTimeout: 30s
