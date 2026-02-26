@@ -192,17 +192,23 @@ pipeline {
                         // Apply namespace + RBAC first (order matters)
                         sh """
                             ssh -o StrictHostKeyChecking=no ${DEPLOY_USER}@${DEPLOY_HOST} \
-                                'sudo k3s kubectl apply -f ${MANIFEST_DIR}/k8s/namespace.yaml'
+                                'sudo k3s kubectl apply -R -f ${MANIFEST_DIR}/k8s/namespace.yaml'
                         """
-                        // Apply gamebox-security namespace resources
+                        // Apply gamebox-security namespace resources (recursive — includes traefik/ subdir)
                         sh """
                             ssh -o StrictHostKeyChecking=no ${DEPLOY_USER}@${DEPLOY_HOST} \
-                                'sudo k3s kubectl apply -f ${MANIFEST_DIR}/k8s/gamebox-security/'
+                                'sudo k3s kubectl apply -R -f ${MANIFEST_DIR}/k8s/gamebox-security/'
                         """
                         // Apply lb-automotive namespace resources
                         sh """
                             ssh -o StrictHostKeyChecking=no ${DEPLOY_USER}@${DEPLOY_HOST} \
-                                'sudo k3s kubectl apply -f ${MANIFEST_DIR}/k8s/lb-automotive/'
+                                'sudo k3s kubectl apply -R -f ${MANIFEST_DIR}/k8s/lb-automotive/'
+                        """
+                        // Remove legacy Ingress objects (replaced by Traefik HTTPRoutes)
+                        sh """
+                            ssh -o StrictHostKeyChecking=no ${DEPLOY_USER}@${DEPLOY_HOST} \
+                                'sudo k3s kubectl delete ingress lb-automotive-ingress -n lb-automotive --ignore-not-found && \\
+                                 sudo k3s kubectl delete ingress twilio-webhook-ingress -n lb-automotive --ignore-not-found'
                         """
                         echo '✅ Manifests applied successfully'
                     }

@@ -89,6 +89,7 @@ spec:
 ---
 # ── Route 3: Twilio Webhook ───────────────────────────────────────────────────
 # twilio.kozytherocket.space/lb-automotive/api/twilio/* → backend:8000
+# POST only — Twilio only ever POSTs to webhooks. Any other method is rejected.
 # Strips /lb-automotive prefix before proxying (backend sees /api/twilio/...)
 apiVersion: gateway.networking.k8s.io/v1
 kind: HTTPRoute
@@ -106,6 +107,7 @@ spec:
         - path:
             type: PathPrefix
             value: /lb-automotive/api/twilio
+          method: POST
       filters:
         - type: ExtensionRef
           extensionRef:
@@ -126,3 +128,29 @@ spec:
         - name: backend
           namespace: lb-automotive
           port: 8000
+
+---
+# ── Route 4: Default Deny — Twilio subdomain ─────────────────────────────────
+# Any request that does not match Route 3 (e.g., wrong path, GET probes,
+# scanners) is explicitly rejected with 404 by Traefik itself.
+# This prevents fallback to the frontend container.
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: lb-automotive-twilio-default-deny
+  namespace: gamebox-security
+spec:
+  parentRefs:
+    - name: gamebox-gateway
+      namespace: gamebox-security
+  hostnames:
+    - "twilio.kozytherocket.space"
+  rules:
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /
+      filters:
+        - type: RequestRedirect
+          requestRedirect:
+            statusCode: 404
