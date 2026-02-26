@@ -6,6 +6,7 @@ from auth import get_current_active_user, get_optional_user
 from database import get_db_connection, current_user_context
 from security import sanitize_input, validate_appointment_data
 from repositories.appointment_repository import AppointmentRepository
+from utils.time_utils import get_current_business_time, get_business_timezone
 import traceback
 
 router = APIRouter(prefix="/api/appointments", tags=["appointments"])
@@ -114,10 +115,26 @@ def get_available_slots(
     current_time = start_time_obj + timedelta(minutes=global_start_min)
     end_time = start_time_obj + timedelta(minutes=global_end_min)
 
+    # Get current time in business timezone
+    now_business = get_current_business_time()
+    # If target_date is today, ensure we don't show past slots
+    # Convert naive current_time to business timezone for comparison
+    import pytz
+    business_tz = pytz.timezone(get_business_timezone())
+    
+    # We treat the "target_date" as being in the business timezone
+    # So we localize the slot times
+    
     while current_time + timedelta(minutes=duration_minutes) <= end_time:
         slot_start = current_time
         slot_end = current_time + timedelta(minutes=duration_minutes)
         
+        # Check if slot is in the past (with 30 min buffer)
+        slot_start_aware = business_tz.localize(slot_start)
+        if slot_start_aware < now_business + timedelta(minutes=30):
+             current_time += interval
+             continue
+
         # Check if slot is viable
         # A slot is viable if at least ONE staff member is working AND free
         
@@ -129,12 +146,18 @@ def get_available_slots(
         for appt in existing_appointments:
             try:
                 appt_start = datetime.fromisoformat(appt["appointment_time"])
+                # If stored as UTC or naive, we need to be careful.
+                # Convention: DB stores ISO string. If naive, assume it matches business timezone context of request?
+                # Actually, standardizing on Naive == Business Time is easiest for single-location apps.
+                # If DB has tz info, we compare properly.
+                if appt_start.tzinfo is None:
+                    appt_start = business_tz.localize(appt_start)
             except ValueError:
                 continue 
                 
             appt_end = appt_start + timedelta(minutes=appt["duration"])
             
-            if slot_start < appt_end and slot_end > appt_start:
+            if slot_start_aware < appt_end and business_tz.localize(slot_end) > appt_start:
                 conflicts += 1
         
         # Count staff working covering this FULL slot

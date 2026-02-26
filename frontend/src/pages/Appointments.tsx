@@ -5,7 +5,7 @@ import { fetchServices, fetchStaff } from '../store/slices/shopSlice'
 import { RootState } from '../store'
 import { apiClient } from '../lib/supabase'
 import { AppointmentCard } from '../components/AppointmentCard'
-import { SmartCalendar } from '../components/smart-calendar'
+import { AppointmentCalendar } from '../components/AppointmentCalendar'
 import { LoadingSpinner } from '../components/LoadingSpinner'
 import { VoicePrompt } from '../components/VoicePrompt'
 import { Plus, Search, Calendar, Clock, X } from 'lucide-react';
@@ -442,17 +442,11 @@ export function Appointments() {
           )}
 
           {viewMode === 'calendar' && (
-            <SmartCalendar
+            <AppointmentCalendar
               appointments={filteredAppointments}
-              staff={staff}
               services={services}
-              onSelectEvent={(apt) => handleOpenCase(apt)}
-              onSelectSlot={(slotInfo) => {
-                setSelectedDate(format(slotInfo.start, 'yyyy-MM-dd'))
-                setNewAppointment(prev => ({
-                  ...prev,
-                  appointment_time: format(slotInfo.start, 'HH:mm')
-                }))
+              onDateClick={(date) => {
+                setSelectedDate(format(date, 'yyyy-MM-dd'))
                 setShowAddModal(true)
               }}
             />

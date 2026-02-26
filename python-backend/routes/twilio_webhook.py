@@ -19,17 +19,27 @@ from fastapi import HTTPException, Header
 # Security Configuration
 TWILIO_AUTH_TOKEN = os.getenv("TWILIO_AUTH_TOKEN")
 MAX_PENDING_APPOINTMENTS = 2
-# Public URL for Twilio callbacks (Gather actions, Redirects)
-# Hardcoded for stability in this environment, but could be env var
-WEBHOOK_BASE_URL = "https://twilio.kozytherocket.space/lb-automotive/api/twilio/webhook"
+# MED-3: Moved from hardcoded string to environment variable.
+# Set TWILIO_WEBHOOK_BASE_URL in your .env or K8s secret.
+WEBHOOK_BASE_URL = os.getenv(
+    "TWILIO_WEBHOOK_BASE_URL",
+    "https://twilio.kozytherocket.space/lb-automotive/api/twilio/webhook"
+)
 
 router = APIRouter(prefix="/api/twilio", tags=["twilio"])
 
 async def validate_twilio_request(request: Request):
     """
     Validate that the request is coming from Twilio.
+    MED-4: Set TWILIO_SKIP_VALIDATION=true ONLY in dev environments without real Twilio traffic.
     """
-    if os.getenv("ENVIRONMENT") == "development":
+    # MED-4: Replaced broad ENVIRONMENT==development bypass with an explicit opt-in flag.
+    # This prevents accidental bypass if ENVIRONMENT is misconfigured in production.
+    if os.getenv("TWILIO_SKIP_VALIDATION", "false").lower() == "true":
+        logger.warning(
+            "SECURITY WARNING: Twilio request validation is DISABLED (TWILIO_SKIP_VALIDATION=true). "
+            "This must not be set in production environments."
+        )
         return
 
     try:

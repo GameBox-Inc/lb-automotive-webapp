@@ -329,7 +329,8 @@ def seed_data():
         ('ivr_closed_message', 'We are currently closed. Our hours are 8 AM to 6 PM. Please call back during business hours.', 'Message played when closed'),
         ('ivr_voice', 'alice', 'Voice for text-to-speech (alice, man, woman)'),
         ('ivr_language', 'en-US', 'Language for text-to-speech'),
-        ('staff_count', '5', 'Number of staff members available per day')
+        ('staff_count', '5', 'Number of staff members available per day'),
+        ('timezone', 'America/New_York', 'Business timezone')
     ]
 
     for key, value, desc in default_settings:

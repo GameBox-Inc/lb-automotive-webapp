@@ -20,7 +20,10 @@ if not SECRET_KEY:
 ALGORITHM = os.getenv("ALGORITHM", "HS256")
 ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "30"))
 
-pwd_context = CryptContext(schemes=["sha256_crypt"], deprecated="auto")
+# argon2id is the OWASP-recommended hashing algorithm.
+# sha256_crypt is listed as deprecated so existing hashes still verify
+# but all new/changed passwords will be hashed with argon2.
+pwd_context = CryptContext(schemes=["argon2", "sha256_crypt"], deprecated=["sha256_crypt"])
 security = HTTPBearer()
 
 

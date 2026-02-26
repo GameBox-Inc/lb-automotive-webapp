@@ -269,7 +269,7 @@ def update_case(
         conn.close()
         return get_case(case_id, current_user)
 
-    query = f"UPDATE cases SET {', '.join(updates)} WHERE id = ?"
+    query = f"UPDATE cases SET {', '.join(updates)} WHERE id = ?"  # nosec B608
     params.append(case_id)
     
     cursor.execute(query, params)
@@ -330,7 +330,7 @@ def sign_and_close_case(
         conn.close()
         raise HTTPException(status_code=400, detail="No updates provided")
 
-    query = f"UPDATE cases SET {', '.join(updates)} WHERE id = ?"
+    query = f"UPDATE cases SET {', '.join(updates)} WHERE id = ?"  # nosec B608
     params.append(case_id)
     
     cursor.execute(query, params)

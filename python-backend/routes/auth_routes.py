@@ -22,15 +22,24 @@ router = APIRouter(prefix="/api/auth", tags=["authentication"])
 async def get_captcha():
     """Generate a captcha token for checkbox verification."""
     import time
+    import logging
+    logger = logging.getLogger(__name__)
     captcha_id = str(uuid.uuid4())
-    
-    # Store token with creation timestamp in Redis (5 minute expiry)
+
+    # Store token in Redis (5 minute expiry).
+    # If Redis is unavailable, still return the captcha_id — the verify step
+    # will reject it with a 503 so the user gets a clear error instead of a 500.
     if redis_client:
-        redis_client.setex(f"captcha:{captcha_id}", 300, str(time.time()))
-    
-    return {
-        "captcha_id": captcha_id
-    }
+        try:
+            redis_client.setex(f"captcha:{captcha_id}", 300, str(time.time()))
+        except Exception as e:
+            logger.error(f"Redis error storing captcha: {e}")
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="Captcha service temporarily unavailable. Please try again."
+            )
+
+    return {"captcha_id": captcha_id}
 
 
 @router.post("/verify-captcha")
@@ -39,37 +48,46 @@ async def verify_captcha(captcha_id: str = Form(...)):
     import time
     import logging
     logger = logging.getLogger(__name__)
-    
+
     if not redis_client:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="Captcha service unavailable"
         )
-    
-    # Check if captcha exists
-    created_at = redis_client.get(f"captcha:{captcha_id}")
-    if not created_at:
-        logger.warning(f"Invalid or expired captcha: {captcha_id}")
+
+    try:
+        # Check if captcha exists
+        created_at = redis_client.get(f"captcha:{captcha_id}")
+        if not created_at:
+            logger.warning(f"Invalid or expired captcha: {captcha_id}")
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid or expired captcha"
+            )
+
+        # Bot detection: check if checkbox was clicked too quickly (< 1 second)
+        time_elapsed = time.time() - float(created_at)
+        if time_elapsed < 1.0:
+            logger.warning(f"Captcha clicked too quickly ({time_elapsed:.2f}s): likely bot")
+            redis_client.delete(f"captcha:{captcha_id}")
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Verification failed"
+            )
+
+        # Mark as verified by updating the value
+        redis_client.setex(f"captcha:{captcha_id}", 300, "verified")
+        logger.info(f"Captcha verified successfully: {captcha_id}")
+        return {"verified": True}
+
+    except HTTPException:
+        raise  # re-raise our own HTTP errors unchanged
+    except Exception as e:
+        logger.error(f"Redis error during captcha verification: {e}")
         raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Invalid or expired captcha"
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Captcha service temporarily unavailable. Please try again."
         )
-    
-    # Bot detection: check if checkbox was clicked too quickly (< 1 second)
-    time_elapsed = time.time() - float(created_at)
-    if time_elapsed < 1.0:
-        logger.warning(f"Captcha clicked too quickly ({time_elapsed:.2f}s): likely bot")
-        redis_client.delete(f"captcha:{captcha_id}")
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Verification failed"
-        )
-    
-    # Mark as verified by updating the value
-    redis_client.setex(f"captcha:{captcha_id}", 300, "verified")
-    logger.info(f"Captcha verified successfully: {captcha_id}")
-    
-    return {"verified": True}
 
 
 
@@ -113,20 +131,29 @@ def login(
     form_data: OAuth2PasswordRequestForm = Depends(),
     captcha_id: str = Form(None)
 ):
-    """Login and get access token with optional CAPTCHA."""
+    """Login and get access token. CAPTCHA is required when Redis is available."""
     import logging
     logger = logging.getLogger(__name__)
 
-    # Enforce CAPTCHA verification
-    if captcha_id and redis_client:
-        verification_status = redis_client.get(f"captcha:{captcha_id}")
-        if verification_status != "verified":
-            logger.warning(f"CAPTCHA not verified for user: {form_data.username}")
+    # CRIT-2: Enforce CAPTCHA when Redis is available.
+    # Set CAPTCHA_REQUIRED=false in .env only to explicitly disable in dev without Redis.
+    captcha_required = os.getenv("CAPTCHA_REQUIRED", "true").lower() != "false"
+
+    if captcha_required and redis_client:
+        if not captcha_id:
+            logger.warning(f"Login attempt without captcha_id for user: {form_data.username}")
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Please verify you are human"
             )
-        # Delete after use
+        verification_status = redis_client.get(f"captcha:{captcha_id}")
+        if verification_status != "verified":
+            logger.warning(f"Invalid/unverified captcha for user: {form_data.username}")
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Please verify you are human"
+            )
+        # Consume token — single use only
         redis_client.delete(f"captcha:{captcha_id}")
 
     user = authenticate_user(form_data.username, form_data.password)
@@ -137,7 +164,7 @@ def login(
             detail="Incorrect username or password",
             headers={"WWW-Authenticate": "Bearer"},
         )
-    
+
     access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
     access_token = create_access_token(
         data={
@@ -148,9 +175,9 @@ def login(
         },
         expires_delta=access_token_expires
     )
-    
+
     logger.info(f"User logged in successfully: {user['username']}")
-    return Token(access_token=access_token, token_type="bearer")
+    return Token(access_token=access_token, token_type="bearer")  # nosec B106
 
 
 @router.get("/me", response_model=User)

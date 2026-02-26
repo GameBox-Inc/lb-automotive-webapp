@@ -42,14 +42,20 @@ def load_security_config():
     config_path = os.path.join(os.path.dirname(__file__), 'security_config.json')
     try:
         with open(config_path, 'r') as f:
-            return json.load(f)
+            config = json.load(f)
+        # LOW-6: Fail fast if pattern lists are empty — empty lists give zero protection
+        if not config.get("sql_injection_patterns") or not config.get("xss_patterns"):
+            raise ValueError(
+                "security_config.json is missing 'sql_injection_patterns' or 'xss_patterns'. "
+                "The application cannot start without these security patterns."
+            )
+        return config
     except FileNotFoundError:
-        # Fallback to defaults or empty if config is missing
-        # In production, this ensures we don't crash, but ideally config should exist
-        return {
-            "sql_injection_patterns": [],
-            "xss_patterns": []
-        }
+        raise FileNotFoundError(
+            "security_config.json not found. This file must exist and contain "
+            "'sql_injection_patterns' and 'xss_patterns' before the app can start. "
+            "See python-backend/.env.example for setup instructions."
+        )
 
 _config = load_security_config()
 
@@ -173,7 +179,9 @@ async def rate_limit_middleware(request: Request, call_next):
     
     # Configure rate limits
     SHORT_WINDOW = 60  # 1 minute
-    SHORT_LIMIT = 5000  # Temporarily increased to 5000 while debugging frontend loop issue
+    # MED-2: Reverted from debug value of 5000. 120 req/min per IP for general endpoints.
+    # Auth endpoints have stricter per-route limiting via CAPTCHA + Redis.
+    SHORT_LIMIT = int(os.getenv("RATE_LIMIT_PER_MINUTE", "120"))
     
     if redis_client:
         try:

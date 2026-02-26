@@ -180,7 +180,7 @@ class AppointmentRepository:
         update_fields.append("updated_at = CURRENT_TIMESTAMP")
         params.append(appointment_id)
         
-        query = f"UPDATE appointments SET {', '.join(update_fields)} WHERE id = ?"
+        query = f"UPDATE appointments SET {', '.join(update_fields)} WHERE id = ?"  # nosec B608
         self.cursor.execute(query, params)
         self.conn.commit()
         

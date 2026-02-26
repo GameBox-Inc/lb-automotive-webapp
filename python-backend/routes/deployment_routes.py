@@ -62,9 +62,10 @@ async def trigger_deployment(current_user: dict = Depends(get_current_admin_user
 
     except requests.RequestException as e:
         logger.error(f"Jenkins connection error: {str(e)}")
+        # MED-6: Do not leak internal network/Jenkins details to clients
         raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Jenkins connection error: {str(e)}"
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Deployment service temporarily unavailable. Check server logs."
         )
 
 @router.get("/status")

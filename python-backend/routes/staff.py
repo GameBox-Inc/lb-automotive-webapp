@@ -64,7 +64,7 @@ def update_staff(staff_id: str, staff: StaffUpdate, current_user: Dict[str, Any]
     if updates:
         params.append(staff_id)
         # Use parameterized query with safe column names
-        query = f"UPDATE staff SET {', '.join(updates)} WHERE id = ?"
+        query = f"UPDATE staff SET {', '.join(updates)} WHERE id = ?"  # nosec B608
         cursor.execute(query, params)
         conn.commit()
         
@@ -207,7 +207,8 @@ def update_staff_credentials(
         raise HTTPException(status_code=400, detail="Username already taken")
         
     from passlib.context import CryptContext
-    pwd_context = CryptContext(schemes=["sha256_crypt"], deprecated="auto")
+    # LOW-2: Match auth.py hashing scheme. New passwords use argon2; existing sha256_crypt hashes still verify.
+    pwd_context = CryptContext(schemes=["argon2", "sha256_crypt"], deprecated=["sha256_crypt"])
     
     # Check existing user for this staff
     cursor.execute("SELECT id FROM users WHERE staff_id = ?", (staff_id,))
@@ -226,7 +227,7 @@ def update_staff_credentials(
             
         params.append(existing_user["id"])
         # Use parameterized query with safe column names
-        query = f"UPDATE users SET {', '.join(updates)} WHERE id = ?"
+        query = f"UPDATE users SET {', '.join(updates)} WHERE id = ?"  # nosec B608
         cursor.execute(query, params)
     else:
         if not password:

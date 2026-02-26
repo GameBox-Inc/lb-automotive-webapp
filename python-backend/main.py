@@ -36,10 +36,21 @@ app = FastAPI(
     description="Python CORS server for LB Automotive Dashboard",
     version="1.0.0",
     lifespan=lifespan,
+    # MED-7: docs_url/redoc_url are None in production (set by ENVIRONMENT above)
+    docs_url=DOCS_URL,
+    redoc_url=REDOC_URL,
     # Security: Limit request body size to prevent DoS attacks
     # 10MB should be sufficient for most API requests
     max_request_size=10 * 1024 * 1024  # 10MB
 )
+
+# MED-7: Hide API documentation in non-development environments.
+ENVIRONMENT = os.getenv("ENVIRONMENT", "production")
+DOCS_URL = "/docs" if ENVIRONMENT == "development" else None
+REDOC_URL = "/redoc" if ENVIRONMENT == "development" else None
+
+if DOCS_URL is None:
+    logger.info("Swagger UI disabled (ENVIRONMENT != development). Set ENVIRONMENT=development to enable.")
 
 # CORS configuration
 origins_str = os.getenv("ALLOWED_ORIGINS")
@@ -49,6 +60,15 @@ if not origins_str:
         "Set it to a comma-separated list of allowed origins (e.g., http://localhost:5173,https://example.com)"
     )
 origins = [origin.strip() for origin in origins_str.split(",")]
+
+# MED-8: Warn if ngrok origins are present in non-dev environments
+if ENVIRONMENT != "development":
+    for origin in origins:
+        if "ngrok" in origin:
+            logger.warning(
+                f"SECURITY WARNING: ngrok origin '{origin}' found in ALLOWED_ORIGINS "
+                "in a non-development environment. Remove it from ALLOWED_ORIGINS."
+            )
 
 app.add_middleware(
     CORSMiddleware,

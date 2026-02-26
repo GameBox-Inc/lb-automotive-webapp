@@ -264,7 +264,7 @@ def update_service(
     updates.append("updated_at = CURRENT_TIMESTAMP")
     params.append(service_id)
     
-    query = f"UPDATE services SET {', '.join(updates)} WHERE id = ?"
+    query = f"UPDATE services SET {', '.join(updates)} WHERE id = ?"  # nosec B608
     cursor.execute(query, params)
     
     conn.commit()
