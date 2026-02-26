@@ -5,7 +5,7 @@ import { fetchServices, fetchStaff } from '../store/slices/shopSlice'
 import { RootState } from '../store'
 import { apiClient } from '../lib/supabase'
 import { AppointmentCard } from '../components/AppointmentCard'
-import { SmartCalendar } from '../components/SmartCalendar'
+import { SmartCalendar } from '../components/smart-calendar'
 import { LoadingSpinner } from '../components/LoadingSpinner'
 import { VoicePrompt } from '../components/VoicePrompt'
 import { Plus, Search, Calendar, Clock, X } from 'lucide-react';
