@@ -3,35 +3,15 @@ import { useNavigate } from 'react-router-dom'
 import { useAppDispatch, useAppSelector } from '../store/hooks'
 import { fetchServices, fetchStaff } from '../store/slices/shopSlice'
 import { RootState } from '../store'
-import { apiClient, Customer } from '../lib/supabase'
+import { apiClient } from '../lib/supabase'
 import { AppointmentCard } from '../components/AppointmentCard'
+import { SmartCalendar } from '../components/SmartCalendar'
 import { LoadingSpinner } from '../components/LoadingSpinner'
 import { VoicePrompt } from '../components/VoicePrompt'
 import { Plus, Search, Calendar, Clock, X } from 'lucide-react';
 import { format, parseISO } from 'date-fns';
 import toast from 'react-hot-toast'
-
-interface Appointment {
-  id: string
-  customer_name: string
-  phone_number: string
-  appointment_time: string
-  service_type: string
-  notes?: string
-  status: string
-  emergency_request?: boolean
-  assigned_staff_id?: string
-}
-
-interface Service {
-  id: string
-  name: string
-  description?: string
-  duration: number
-  price: number
-  is_emergency: boolean
-  category: string
-}
+import { Appointment, Service, Customer } from '../types'
 
 export function Appointments() {
   const navigate = useNavigate()
@@ -40,7 +20,7 @@ export function Appointments() {
   const staff = useAppSelector((state: RootState) => state.shop.staff)
   const [appointments, setAppointments] = useState<Appointment[]>([])
   const [loading, setLoading] = useState(true)
-  const [viewMode, setViewMode] = useState<'card' | 'list'>('card')
+  const [viewMode, setViewMode] = useState<'card' | 'list' | 'calendar'>('list')
   const [showAddModal, setShowAddModal] = useState(false)
   const [selectedCategory, setSelectedCategory] = useState('')
 
@@ -120,7 +100,12 @@ export function Appointments() {
   async function fetchAppointments() {
     try {
       const data = await apiClient.getAppointments()
-      setAppointments(data)
+      // Fix: Ensure emergency_request is always boolean if API returns undefined
+      const sanitizedData = data.map(apt => ({
+        ...apt,
+        emergency_request: !!apt.emergency_request
+      }))
+      setAppointments(sanitizedData)
     } catch (error) {
       console.error('Error fetching appointments:', error)
       toast.error('Failed to load appointments')
@@ -128,8 +113,6 @@ export function Appointments() {
       setLoading(false)
     }
   }
-
-
 
   const handleOpenCase = async (appointment: Appointment) => {
     try {
@@ -223,11 +206,9 @@ export function Appointments() {
 
   const servicesByCategory = services.reduce((acc, service) => {
     const category = service.category;
-    // Ensure the array exists
     if (!acc[category]) {
       acc[category] = [];
     }
-    // Safely push to the array (using non-null assertion since we just created it if missing)
     acc[category]?.push(service);
     return acc;
   }, {} as Record<string, Service[]>)
@@ -248,7 +229,6 @@ export function Appointments() {
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
 
           {/* Title & Count */}
-          {/* Title & Count - Title removed to avoid duplication with Main Layout Header */}
           <div>
             <div className="flex items-center gap-3">
               <span className="px-3 py-1 rounded-full text-sm font-medium bg-indigo-100 text-indigo-700 dark:bg-indigo-900/50 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800">
@@ -340,7 +320,6 @@ export function Appointments() {
                 }`}
             >
               <div className="mr-1.5">
-                {/* Grid Icon SVG manually for better control or just use Lucide */}
                 <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect width="7" height="7" x="3" y="3" rx="1" /><rect width="7" height="7" x="14" y="3" rx="1" /><rect width="7" height="7" x="14" y="14" rx="1" /><rect width="7" height="7" x="3" y="14" rx="1" /></svg>
               </div>
               Grid
@@ -357,6 +336,18 @@ export function Appointments() {
               </div>
               List
             </button>
+            <button
+              onClick={() => setViewMode('calendar')}
+              className={`flex items-center px-3 py-1.5 rounded-lg text-sm font-medium transition-all ${viewMode === 'calendar'
+                ? 'bg-white dark:bg-gray-600 text-indigo-600 dark:text-white shadow-sm ring-1 ring-black/5 dark:ring-white/10'
+                : 'text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white hover:bg-gray-200/50 dark:hover:bg-gray-600/50'
+                }`}
+            >
+              <div className="mr-1.5">
+                <Calendar className="h-4 w-4" />
+              </div>
+              Calendar
+            </button>
           </div>
         </div>
       </div>
@@ -372,7 +363,7 @@ export function Appointments() {
         </div>
       ) : (
         <>
-          {viewMode === 'card' ? (
+          {viewMode === 'card' && (
             <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
               {filteredAppointments.map((appointment) => (
                 <AppointmentCard
@@ -384,7 +375,9 @@ export function Appointments() {
                 />
               ))}
             </div>
-          ) : (
+          )}
+
+          {viewMode === 'list' && (
             <div className="bg-white dark:bg-gray-800 shadow rounded-lg overflow-hidden">
               <div className="overflow-x-auto">
                 <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
@@ -421,12 +414,15 @@ export function Appointments() {
                           </div>
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap">
-                          <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full 
-                          ${appointment.status === 'confirmed' ? 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200' :
-                              appointment.status === 'pending' ? 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200' :
-                                appointment.status === 'cancelled' ? 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200' :
-                                  'bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-200'}`}>
-                            {appointment.status}
+                          <span className={`px-2.5 py-0.5 inline-flex text-xs leading-5 font-semibold rounded-full
+                          ${appointment.status === 'completed' ? 'bg-green-100 text-green-800 dark:bg-green-900/40 dark:text-green-300' :
+                              appointment.status === 'in_progress' ? 'bg-blue-100 text-blue-800 dark:bg-blue-900/40 dark:text-blue-300' :
+                                appointment.status === 'confirmed' ? 'bg-indigo-100 text-indigo-800 dark:bg-indigo-900/40 dark:text-indigo-300' :
+                                  appointment.status === 'pending' ? 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/40 dark:text-yellow-300' :
+                                    appointment.status === 'cancelled' ? 'bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-300' :
+                                      'bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-200'}`}>
+                            {appointment.status === 'in_progress' ? 'In Progress' :
+                              appointment.status.charAt(0).toUpperCase() + appointment.status.slice(1)}
                           </span>
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
@@ -443,6 +439,23 @@ export function Appointments() {
                 </table>
               </div>
             </div>
+          )}
+
+          {viewMode === 'calendar' && (
+            <SmartCalendar
+              appointments={filteredAppointments}
+              staff={staff}
+              services={services}
+              onSelectEvent={(apt) => handleOpenCase(apt)}
+              onSelectSlot={(slotInfo) => {
+                setSelectedDate(format(slotInfo.start, 'yyyy-MM-dd'))
+                setNewAppointment(prev => ({
+                  ...prev,
+                  appointment_time: format(slotInfo.start, 'HH:mm')
+                }))
+                setShowAddModal(true)
+              }}
+            />
           )}
         </>
       )}
