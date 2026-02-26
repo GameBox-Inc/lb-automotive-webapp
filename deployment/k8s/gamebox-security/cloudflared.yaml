@@ -28,11 +28,8 @@ data:
     metrics: 0.0.0.0:2000
 
     ingress:
-      # Main application — Traefik Gateway API handles all routing
-      - hostname: kozytherocket.space
-        service: http://traefik.gamebox-security.svc.cluster.local:8000
-
-      # Twilio webhook — Traefik HTTPRoute handles path routing + prefix strip
+      # ONLY the Twilio webhook subdomain is tunneled.
+      # The app frontend/API is NOT publicly accessible — VPN only (10.100.0.1:30080).
       - hostname: twilio.kozytherocket.space
         service: http://traefik.gamebox-security.svc.cluster.local:8000
         originRequest:
