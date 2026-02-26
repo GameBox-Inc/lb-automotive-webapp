@@ -192,17 +192,25 @@ pipeline {
                         // Apply namespace + RBAC first (order matters)
                         sh """
                             ssh -o StrictHostKeyChecking=no ${DEPLOY_USER}@${DEPLOY_HOST} \
-                                'sudo k3s kubectl apply -R -f ${MANIFEST_DIR}/k8s/namespace.yaml'
+                                'sudo k3s kubectl apply -f ${MANIFEST_DIR}/k8s/namespace.yaml'
                         """
-                        // Apply gamebox-security namespace resources (recursive — includes traefik/ subdir)
+                        // Apply gamebox-security top-level manifests (non-recursive — skips helm values in subdirs)
                         sh """
                             ssh -o StrictHostKeyChecking=no ${DEPLOY_USER}@${DEPLOY_HOST} \
-                                'sudo k3s kubectl apply -R -f ${MANIFEST_DIR}/k8s/gamebox-security/'
+                                'sudo k3s kubectl apply -f ${MANIFEST_DIR}/k8s/gamebox-security/'
                         """
-                        // Apply lb-automotive namespace resources
+                        // Apply Traefik Gateway API manifests explicitly (traefik-helm-values.yaml is NOT a K8s manifest)
                         sh """
                             ssh -o StrictHostKeyChecking=no ${DEPLOY_USER}@${DEPLOY_HOST} \
-                                'sudo k3s kubectl apply -R -f ${MANIFEST_DIR}/k8s/lb-automotive/'
+                                'sudo k3s kubectl apply \
+                                   -f ${MANIFEST_DIR}/k8s/gamebox-security/traefik/gateway.yaml \
+                                   -f ${MANIFEST_DIR}/k8s/gamebox-security/traefik/middlewares.yaml \
+                                   -f ${MANIFEST_DIR}/k8s/gamebox-security/traefik/lb-automotive-routes.yaml'
+                        """
+                        // Apply lb-automotive namespace resources (non-recursive)
+                        sh """
+                            ssh -o StrictHostKeyChecking=no ${DEPLOY_USER}@${DEPLOY_HOST} \
+                                'sudo k3s kubectl apply -f ${MANIFEST_DIR}/k8s/lb-automotive/'
                         """
                         // Remove legacy Ingress objects (replaced by Traefik HTTPRoutes)
                         sh """

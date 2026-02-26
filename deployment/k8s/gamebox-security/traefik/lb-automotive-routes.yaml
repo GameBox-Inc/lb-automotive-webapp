@@ -1,93 +1,16 @@
 # =============================================================================
 # lb-automotive-routes.yaml — HTTPRoutes for the lb-automotive application
 #
-# Three routes all attach to gamebox-gateway in gamebox-security.
-# Backends are in the lb-automotive namespace — allowed by reference-grant.yaml.
+# SECURITY POLICY:
+#   - twilio.kozytherocket.space accepts ONLY POST to /lb-automotive/api/twilio.
+#   - All other requests return Traefik's native 404 (no matching route).
+#   - kozytherocket.space (root domain) is NOT routed — Cloudflare Tunnel
+#     does not forward it, so it never reaches Traefik.
+#   - The frontend and API are NOT exposed publicly.
+#     Access is via WireGuard VPN only: http://10.100.0.1:30080/
 # =============================================================================
 
-# ── Route 1: Frontend ─────────────────────────────────────────────────────────
-# kozytherocket.space/ → frontend:80
-# Catch-all for the React SPA — all non-/api paths go to the frontend.
-apiVersion: gateway.networking.k8s.io/v1
-kind: HTTPRoute
-metadata:
-  name: lb-automotive-frontend
-  namespace: gamebox-security
-spec:
-  parentRefs:
-    - name: gamebox-gateway
-      namespace: gamebox-security
-  hostnames:
-    - "kozytherocket.space"
-  rules:
-    - matches:
-        - path:
-            type: PathPrefix
-            value: /
-      filters:
-        - type: ExtensionRef
-          extensionRef:
-            group: traefik.io
-            kind: Middleware
-            name: security-headers
-        - type: ExtensionRef
-          extensionRef:
-            group: traefik.io
-            kind: Middleware
-            name: rate-limit-api
-        - type: ExtensionRef
-          extensionRef:
-            group: traefik.io
-            kind: Middleware
-            name: cloudflare-real-ip
-      backendRefs:
-        - name: frontend
-          namespace: lb-automotive
-          port: 80
-
----
-# ── Route 2: Backend API ──────────────────────────────────────────────────────
-# kozytherocket.space/api/* → backend:8000
-# More specific match (PathPrefix /api) takes priority over the frontend route.
-apiVersion: gateway.networking.k8s.io/v1
-kind: HTTPRoute
-metadata:
-  name: lb-automotive-api
-  namespace: gamebox-security
-spec:
-  parentRefs:
-    - name: gamebox-gateway
-      namespace: gamebox-security
-  hostnames:
-    - "kozytherocket.space"
-  rules:
-    - matches:
-        - path:
-            type: PathPrefix
-            value: /api
-      filters:
-        - type: ExtensionRef
-          extensionRef:
-            group: traefik.io
-            kind: Middleware
-            name: security-headers
-        - type: ExtensionRef
-          extensionRef:
-            group: traefik.io
-            kind: Middleware
-            name: rate-limit-api
-        - type: ExtensionRef
-          extensionRef:
-            group: traefik.io
-            kind: Middleware
-            name: cloudflare-real-ip
-      backendRefs:
-        - name: backend
-          namespace: lb-automotive
-          port: 8000
-
----
-# ── Route 3: Twilio Webhook ───────────────────────────────────────────────────
+# ── Route 1: Twilio Webhook ───────────────────────────────────────────────────
 # twilio.kozytherocket.space/lb-automotive/api/twilio/* → backend:8000
 # POST only — Twilio only ever POSTs to webhooks. Any other method is rejected.
 # Strips /lb-automotive prefix before proxying (backend sees /api/twilio/...)
@@ -128,29 +51,3 @@ spec:
         - name: backend
           namespace: lb-automotive
           port: 8000
-
----
-# ── Route 4: Default Deny — Twilio subdomain ─────────────────────────────────
-# Any request that does not match Route 3 (e.g., wrong path, GET probes,
-# scanners) is explicitly rejected with 404 by Traefik itself.
-# This prevents fallback to the frontend container.
-apiVersion: gateway.networking.k8s.io/v1
-kind: HTTPRoute
-metadata:
-  name: lb-automotive-twilio-default-deny
-  namespace: gamebox-security
-spec:
-  parentRefs:
-    - name: gamebox-gateway
-      namespace: gamebox-security
-  hostnames:
-    - "twilio.kozytherocket.space"
-  rules:
-    - matches:
-        - path:
-            type: PathPrefix
-            value: /
-      filters:
-        - type: RequestRedirect
-          requestRedirect:
-            statusCode: 404
