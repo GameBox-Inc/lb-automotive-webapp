@@ -30,11 +30,11 @@ data:
     ingress:
       # Main application — Traefik Gateway API handles all routing
       - hostname: kozytherocket.space
-        service: http://traefik.gamebox-security.svc.cluster.local:80
+        service: http://traefik.gamebox-security.svc.cluster.local:8000
 
       # Twilio webhook — Traefik HTTPRoute handles path routing + prefix strip
       - hostname: twilio.kozytherocket.space
-        service: http://traefik.gamebox-security.svc.cluster.local:80
+        service: http://traefik.gamebox-security.svc.cluster.local:8000
         originRequest:
           noTLSVerify: false
           connectTimeout: 30s
