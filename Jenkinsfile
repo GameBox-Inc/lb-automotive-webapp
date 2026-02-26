@@ -128,7 +128,7 @@ pipeline {
                     
                     // Build frontend
                     sh """
-                        docker build -t ${FRONTEND_IMAGE}:${BUILD_TAG} -f frontend/Dockerfile.prod .
+                        docker build --no-cache -t ${FRONTEND_IMAGE}:${BUILD_TAG} -f frontend/Dockerfile.prod .
                         docker tag ${FRONTEND_IMAGE}:${BUILD_TAG} ${FRONTEND_IMAGE}:latest
                     """
                 }
@@ -207,7 +207,16 @@ pipeline {
                                    -f ${MANIFEST_DIR}/k8s/gamebox-security/traefik/middlewares.yaml \
                                    -f ${MANIFEST_DIR}/k8s/gamebox-security/traefik/lb-automotive-routes.yaml'
                         """
-                        // Apply lb-automotive namespace resources (non-recursive)
+                        // Apply root-level lb-automotive workloads (backend, frontend, redis)
+                        // These were never applied — they live at k8s/ root, not in a subdir
+                        sh """
+                            ssh -o StrictHostKeyChecking=no ${DEPLOY_USER}@${DEPLOY_HOST} \
+                                'sudo k3s kubectl apply \
+                                   -f ${MANIFEST_DIR}/k8s/redis.yaml \
+                                   -f ${MANIFEST_DIR}/k8s/backend.yaml \
+                                   -f ${MANIFEST_DIR}/k8s/frontend.yaml'
+                        """
+                        // Apply lb-automotive namespace resources (reference-grant etc.)
                         sh """
                             ssh -o StrictHostKeyChecking=no ${DEPLOY_USER}@${DEPLOY_HOST} \
                                 'sudo k3s kubectl apply -f ${MANIFEST_DIR}/k8s/lb-automotive/'
