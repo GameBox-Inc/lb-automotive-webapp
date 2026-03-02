@@ -233,6 +233,48 @@ pipeline {
             }
         }
 
+        stage('Ensure Vault Unsealed') {
+            // Vault is sealed after every pod/node restart.
+            // Unseal keys are stored in Jenkins credentials — never in Git.
+            when {
+                anyOf {
+                    branch 'main'
+                    branch 'master'
+                    expression { env.GIT_BRANCH ==~ /.*release\/.*/ }
+                }
+            }
+            steps {
+                script {
+                    sshagent(credentials: ['lb-server-ssh']) {
+                        withCredentials([
+                            string(credentialsId: 'vault-unseal-key-1', variable: 'KEY1'),
+                            string(credentialsId: 'vault-unseal-key-2', variable: 'KEY2'),
+                            string(credentialsId: 'vault-unseal-key-3', variable: 'KEY3')
+                        ]) {
+                            sh """
+                                ssh -o StrictHostKeyChecking=no ${DEPLOY_USER}@${DEPLOY_HOST} '
+                                    # Check if Vault pod exists and is sealed
+                                    VAULT_STATUS=\$(sudo k3s kubectl exec -n gamebox-security vault-0 -- vault status -format=json 2>/dev/null || echo "unavailable")
+
+                                    if echo "\$VAULT_STATUS" | grep -q "unavailable"; then
+                                        echo "⚠️  Vault pod not found — skipping unseal (secrets may fail)"
+                                    elif echo "\$VAULT_STATUS" | grep -q "\\"sealed\\":true"; then
+                                        echo "🔓 Vault is sealed — auto-unsealing..."
+                                        sudo k3s kubectl exec -n gamebox-security vault-0 -- vault operator unseal ${KEY1}
+                                        sudo k3s kubectl exec -n gamebox-security vault-0 -- vault operator unseal ${KEY2}
+                                        sudo k3s kubectl exec -n gamebox-security vault-0 -- vault operator unseal ${KEY3}
+                                        echo "✅ Vault unsealed successfully"
+                                    else
+                                        echo "✅ Vault is already unsealed"
+                                    fi
+                                '
+                            """
+                        }
+                    }
+                }
+            }
+        }
+
         stage('Deploy to Production') {
             when {
                 anyOf {

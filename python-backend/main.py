@@ -30,6 +30,12 @@ async def lifespan(app: FastAPI):
     # Shutdown (if needed)
 
 
+
+# MED-7: Hide API documentation in non-development environments.
+ENVIRONMENT = os.getenv("ENVIRONMENT", "production")
+DOCS_URL = "/docs" if ENVIRONMENT == "development" else None
+REDOC_URL = "/redoc" if ENVIRONMENT == "development" else None
+
 # Initialize FastAPI app
 app = FastAPI(
     title="LB Automotive API",
@@ -43,11 +49,6 @@ app = FastAPI(
     # 10MB should be sufficient for most API requests
     max_request_size=10 * 1024 * 1024  # 10MB
 )
-
-# MED-7: Hide API documentation in non-development environments.
-ENVIRONMENT = os.getenv("ENVIRONMENT", "production")
-DOCS_URL = "/docs" if ENVIRONMENT == "development" else None
-REDOC_URL = "/redoc" if ENVIRONMENT == "development" else None
 
 if DOCS_URL is None:
     logger.info("Swagger UI disabled (ENVIRONMENT != development). Set ENVIRONMENT=development to enable.")
