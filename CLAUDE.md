@@ -2,7 +2,7 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-**Last Updated:** January 24, 2026
+**Last Updated:** March 2, 2026
 **Repository:** `GameBox-Inc/lb-automotive-webapp`
 **Branch:** `release/v0.1`
 
@@ -30,11 +30,14 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - **Frontend:** React 18 + TypeScript + Vite + TailwindCSS (128MB limit)
 - **Backend:** FastAPI (Python 3.11+) with SQLite database (384MB limit)
 - **Cache/Queue:** Redis (64MB limit, LRU eviction)
-- **Reverse Proxy:** K3s Ingress
+- **Reverse Proxy:** Frontend Nginx → Backend (replaces K3s Ingress)
+- **Ingress Routing:** Traefik v3 via Kubernetes Gateway API (Cloudflare Tunnel → Traefik → services)
+- **Secrets Management:** HashiCorp Vault (gamebox-security namespace, Helm-deployed)
 - **Deployment:** Kubernetes (K3s) on Hetzner server (178.156.223.196)
 - **Domain:** kozytherocket.space
-- **CI/CD:** GitHub Actions with self-hosted runner
+- **CI/CD:** Jenkins (Dockerized, self-hosted) — replaced GitHub Actions
 - **LLM:** Anthropic Claude API (Ollama removed due to memory constraints)
+- **VPN:** WireGuard (10.100.0.0/24, app accessible at 10.100.0.1:30080)
 
 ### Tech Stack Details
 
@@ -61,10 +64,12 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - Docker & Docker Compose (for local development)
 - K3s (lightweight Kubernetes) in production - **Optimized for 2GB RAM**
 - Kubernetes manifests (in `deployment/k8s/`) with strict memory limits
-- Cloudflare Tunnel (optional, for zero-exposed-ports access)
-- WireGuard VPN (for secure server access)
-- GitHub Actions with self-hosted runner for CI/CD
+- Cloudflare Tunnel (for zero-exposed-ports public access via Traefik)
+- WireGuard VPN (for secure server access, subnet 10.100.0.0/24)
+- Jenkins CI/CD (Dockerized, `Jenkinsfile` in repo root)
 - GitHub Container Registry (GHCR) for Docker images
+- HashiCorp Vault for secrets (deployed via Helm in `gamebox-security` namespace)
+- Traefik v3 as Gateway API ingress controller
 - Automated log rotation and compression (7-day retention)
 - Monthly database archiving (K8s CronJob)
 
@@ -256,16 +261,36 @@ DELETE_ARCHIVED_AFTER_DAYS=30  # Delete from DB 30 days after archiving
   - Rate limiting
   - Global exception handlers
 
-### CI/CD Pipeline
-- **Status:** ✅ Configured with self-hosted runner
-- **File:** `.github/workflows/gamebox-engine.yaml`
+### CI/CD Pipeline (Jenkins)
+- **Status:** ✅ Production pipeline running
+- **File:** `Jenkinsfile` (repo root)
 - **Process:**
-  1. Tests (backend + frontend)
-  2. Build & push Docker images to GHCR
-  3. Deploy on self-hosted runner (server)
-  4. Run migrations
-  5. Rebuild & restart containers
-- **Runner:** Self-hosted on server at `/opt/actions-runner`
+  1. Backend tests (`pytest`)
+  2. Frontend lint + build
+  3. Docker images built & pushed to GHCR
+  4. K8s manifests synced to server via SCP
+  5. `kubectl apply` for all manifests
+  6. Vault auto-unseal (keys stored in Jenkins credentials)
+  7. `kubectl set image` to update deployments
+  8. Rollout status verification
+- **Jenkins:** Dockerized, accessible on server
+- **Key credentials (in Jenkins):** `github-token`, `lb-server-ssh`, `vault-unseal-key-1/2/3`
+
+### Secrets Management (Vault)
+- **Status:** ✅ Deployed via Helm in `gamebox-security` namespace
+- **Files:** `deployment/k8s/gamebox-security/vault/`
+- **Secrets stored:**
+  - `secret/lb-automotive/app` — SECRET_KEY, ALLOWED_ORIGINS, DATABASE_URL, REDIS_URL
+  - `secret/lb-automotive/twilio` — Twilio credentials
+  - `secret/lb-automotive/anthropic` — Anthropic API key
+- **Injection:** Vault Agent sidecar writes to `/vault/secrets/*.env`, sourced by `command:` in `backend.yaml`
+- **⚠️ Vault seals on every pod restart** — Jenkins auto-unseals, but manual unseal may be needed
+
+### Routing Architecture
+- **VPN users:** `10.100.0.1:30080` → frontend Nginx → `proxy_pass http://backend:8000` for `/api/*`
+- **Public (Twilio):** Cloudflare Tunnel → Traefik → `lb-automotive-routes.yaml` → backend
+- **Frontend Nginx config:** `deployment/docker/nginx.conf` (copied into Docker image at build)
+- **⚠️ Ingress objects are deleted** by Jenkinsfile — all routing via Nginx + Traefik
 
 ---
 
@@ -293,27 +318,36 @@ DELETE_ARCHIVED_AFTER_DAYS=30  # Delete from DB 30 days after archiving
 ### Current Production Setup
 - **Server:** Hetzner (178.156.223.196)
 - **User:** `lb-admin`
-- **Directory:** `/opt/lb-automotive-dashboard`
-- **Method:** Docker Compose
+- **K8s manifests on server:** `~/k8s-manifests/k8s/`
+- **Method:** Kubernetes (K3s) via Jenkins pipeline
 - **Domain:** kozytherocket.space
-- **Access:** Cloudflare Tunnel or WireGuard VPN
+- **Access:** Cloudflare Tunnel (public) or WireGuard VPN (internal)
+- **SSH:** Port 22 (Ansible playbook for port 2222 exists but not yet applied)
 
 ### Deployment Process
 1. Push to `release/v0.1` branch
-2. GitHub Actions runs tests
-3. Builds Docker images
-4. Self-hosted runner deploys:
-   - Pulls latest code
-   - Runs migrations
-   - Rebuilds containers
-   - Restarts services
+2. Jenkins triggers automatically
+3. Runs backend tests + frontend build
+4. Builds & pushes Docker images to GHCR
+5. SCPs K8s manifests to `~/k8s-manifests/` on server
+6. `kubectl apply` for all namespaces + manifests
+7. Auto-unseals Vault if sealed
+8. `kubectl set image` to update backend + frontend deployments
+9. Waits for rollout completion
 
 ### Manual Deployment
 ```bash
-cd /opt/lb-automotive-dashboard
-git fetch origin
-git reset --hard origin/release/v0.1
-docker compose -f deployment/docker/docker-compose.yml up -d --build --force-recreate
+# SSH to server
+ssh lb-admin@178.156.223.196
+
+# Apply manifests
+sudo k3s kubectl apply -f ~/k8s-manifests/k8s/redis.yaml \
+  -f ~/k8s-manifests/k8s/backend.yaml \
+  -f ~/k8s-manifests/k8s/frontend.yaml
+
+# Update image
+sudo k3s kubectl set image deployment/backend backend=ghcr.io/gamebox-inc/lb-automotive-backend:<TAG> -n lb-automotive
+sudo k3s kubectl set image deployment/frontend frontend=ghcr.io/gamebox-inc/lb-automotive-frontend:<TAG> -n lb-automotive
 ```
 
 ---
@@ -523,17 +557,20 @@ async createFeature(data: { field: string }): Promise<NewFeature> {
 
 ### SSH Access
 ```bash
-ssh lb-admin@178.156.223.196
+ssh lb-admin@178.156.223.196  # Port 22 (default)
+# NOTE: Ansible playbook exists to change to port 2222 but not yet applied
 ```
 
 ### WireGuard VPN
 - Generate client config: `deployment/scripts/generate_vpn_client.sh <username>`
 - Server endpoint: `178.156.223.196:51820`
 - Subnet: `10.100.0.0/24`
+- App via VPN: `http://10.100.0.1:30080` (frontend), `:30800` (backend)
 
 ### Cloudflare Tunnel
-- Optional secure access method
-- See: `CLOUDFLARE_TUNNEL_SETUP.md`
+- Deployed in `gamebox-security` namespace (2 replicas)
+- Routes public traffic through Traefik
+- Twilio webhook: `twilio.kozytherocket.space/lb-automotive/api/twilio/`
 
 ---
 
@@ -609,7 +646,7 @@ docker exec lb-auto-backend python migrate_business_hours.py  # Run migrations
 
 ---
 
-## Notes for Claude
+## Notes for AI Assistants
 
 When working on this project:
 
@@ -619,17 +656,29 @@ When working on this project:
 
 3. **Database changes** - If modifying schema, consider migration scripts or Alembic migrations.
 
-4. **Environment variables** - Remember `SECRET_KEY` and `ALLOWED_ORIGINS` are required (no defaults).
+4. **Environment variables** - Remember `SECRET_KEY` and `ALLOWED_ORIGINS` are required (no defaults). Injected via Vault in production.
 
-5. **Testing** - Test changes locally before pushing. The CI/CD pipeline will deploy automatically.
+5. **Testing** - Test changes locally before pushing. Jenkins pipeline deploys automatically on push.
 
-6. **Documentation** - Update relevant docs when making significant changes.
+6. **Documentation** - **Always update `CLAUDE.md`** when making architecture or deployment changes.
 
 7. **24/7 Booking** - Business hours are per-day. IVR accepts calls 24/7. Appointments can be scheduled for future days even if currently closed.
 
 8. **Repository name** - The GitHub repo is `lb-automotive-webapp` (not `lb-automotive-dashboard`).
 
+9. **Case sensitivity** - Use kebab-case for filenames. Windows is case-insensitive but Linux Docker builds are case-sensitive. This has caused build failures.
+
+10. **`security_config.json`** - Required by `security.py` at startup. Contains SQL/XSS regex patterns. Must be in the Docker image or mounted via ConfigMap.
+
+11. **Vault seals on restart** - After any server/pod restart, Vault is sealed. The Jenkins pipeline auto-unseals, but manual unseal may be needed: `kubectl exec -n gamebox-security vault-0 -c vault -- env VAULT_SKIP_VERIFY=true vault operator unseal <KEY>`
+
+12. **Frontend Nginx proxy** - The production Nginx config is at `deployment/docker/nginx.conf`, NOT `frontend/nginx.conf`. It proxies `/api/*` to `http://backend:8000`.
+
+13. **Ingress is deleted** - The Jenkinsfile removes legacy Ingress objects. All routing is via frontend Nginx (VPN) and Traefik HTTPRoutes (public/Cloudflare).
+
+14. **SSH connection limits** - The server may drop SSH connections if too many are opened rapidly. Combine kubectl commands into single SSH sessions when possible.
+
 ---
 
-**Last Updated:** January 24, 2026  
+**Last Updated:** March 2, 2026  
 **Maintainer:** GameBox-Inc

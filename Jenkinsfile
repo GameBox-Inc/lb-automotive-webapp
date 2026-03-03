@@ -189,43 +189,35 @@ pipeline {
                                 deployment/k8s/ \
                                 ${DEPLOY_USER}@${DEPLOY_HOST}:${MANIFEST_DIR}/
                         """
-                        // Apply namespace + RBAC first (order matters)
+                        // Apply all K8s manifests in a single SSH session to avoid connection rate limits
                         sh """
-                            ssh -o StrictHostKeyChecking=no ${DEPLOY_USER}@${DEPLOY_HOST} \
-                                'sudo k3s kubectl apply -f ${MANIFEST_DIR}/k8s/namespace.yaml'
-                        """
-                        // Apply gamebox-security top-level manifests (non-recursive — skips helm values in subdirs)
-                        sh """
-                            ssh -o StrictHostKeyChecking=no ${DEPLOY_USER}@${DEPLOY_HOST} \
-                                'sudo k3s kubectl apply -f ${MANIFEST_DIR}/k8s/gamebox-security/'
-                        """
-                        // Apply Traefik Gateway API manifests explicitly (traefik-helm-values.yaml is NOT a K8s manifest)
-                        sh """
-                            ssh -o StrictHostKeyChecking=no ${DEPLOY_USER}@${DEPLOY_HOST} \
-                                'sudo k3s kubectl apply \
-                                   -f ${MANIFEST_DIR}/k8s/gamebox-security/traefik/gateway.yaml \
-                                   -f ${MANIFEST_DIR}/k8s/gamebox-security/traefik/middlewares.yaml \
-                                   -f ${MANIFEST_DIR}/k8s/gamebox-security/traefik/lb-automotive-routes.yaml'
-                        """
-                        // Apply root-level lb-automotive workloads (backend, frontend, redis)
-                        // These were never applied — they live at k8s/ root, not in a subdir
-                        sh """
-                            ssh -o StrictHostKeyChecking=no ${DEPLOY_USER}@${DEPLOY_HOST} \
-                                'sudo k3s kubectl apply \
-                                   -f ${MANIFEST_DIR}/k8s/redis.yaml \
-                                   -f ${MANIFEST_DIR}/k8s/backend.yaml \
-                                   -f ${MANIFEST_DIR}/k8s/frontend.yaml'
-                        """
-                        // Apply lb-automotive namespace resources (reference-grant etc.)
-                        sh """
-                            ssh -o StrictHostKeyChecking=no ${DEPLOY_USER}@${DEPLOY_HOST} \
-                                'sudo k3s kubectl apply -f ${MANIFEST_DIR}/k8s/lb-automotive/'
-                        """
-                        // Remove legacy Ingress objects (replaced by Traefik HTTPRoutes)
-                        sh """
-                            ssh -o StrictHostKeyChecking=no ${DEPLOY_USER}@${DEPLOY_HOST} \
-                                'sudo k3s kubectl delete ingress lb-automotive-ingress -n lb-automotive --ignore-not-found && \\
-                                 sudo k3s kubectl delete ingress twilio-webhook-ingress -n lb-automotive --ignore-not-found'
+                            ssh -o StrictHostKeyChecking=no ${DEPLOY_USER}@${DEPLOY_HOST} '
+                                set -e
+                                echo "▶ Applying namespace..."
+                                sudo k3s kubectl apply -f ${MANIFEST_DIR}/k8s/namespace.yaml
+
+                                echo "▶ Applying gamebox-security..."
+                                sudo k3s kubectl apply -f ${MANIFEST_DIR}/k8s/gamebox-security/
+
+                                echo "▶ Applying Traefik routes..."
+                                sudo k3s kubectl apply \
+                                    -f ${MANIFEST_DIR}/k8s/gamebox-security/traefik/gateway.yaml \
+                                    -f ${MANIFEST_DIR}/k8s/gamebox-security/traefik/middlewares.yaml \
+                                    -f ${MANIFEST_DIR}/k8s/gamebox-security/traefik/lb-automotive-routes.yaml
+
+                                echo "▶ Applying lb-automotive workloads..."
+                                sudo k3s kubectl apply \
+                                    -f ${MANIFEST_DIR}/k8s/redis.yaml \
+                                    -f ${MANIFEST_DIR}/k8s/backend.yaml \
+                                    -f ${MANIFEST_DIR}/k8s/frontend.yaml
+
+                                echo "▶ Applying lb-automotive namespace resources..."
+                                sudo k3s kubectl apply -f ${MANIFEST_DIR}/k8s/lb-automotive/ || true
+
+                                echo "▶ Removing legacy Ingress objects..."
+                                sudo k3s kubectl delete ingress lb-automotive-ingress -n lb-automotive --ignore-not-found
+                                sudo k3s kubectl delete ingress twilio-webhook-ingress -n lb-automotive --ignore-not-found
+                            '
                         """
                         echo '✅ Manifests applied successfully'
                     }
