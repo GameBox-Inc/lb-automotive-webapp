@@ -16,6 +16,7 @@ import json
 
 # Initialize Logging
 setup_logging()
+logger = logging.getLogger(__name__)
 
 
 @asynccontextmanager
