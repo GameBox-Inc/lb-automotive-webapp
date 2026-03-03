@@ -132,7 +132,6 @@ from routes import (
     reports,
     twilio_stream,
     ivr_routes,
-    ivr_routes,
     business_hours,
     deployment_routes
 )
