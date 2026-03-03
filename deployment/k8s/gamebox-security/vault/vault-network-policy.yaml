@@ -83,7 +83,10 @@ spec:
       port: 8080
 
 ---
-# ── Allow lb-automotive backend to reach Vault on 8200 ───────────────────────
+# ── Backend egress policy — allow Vault, Redis, DNS, external APIs ────────────
+# IMPORTANT: K8s NetworkPolicy is additive for ALLOW but once ANY egress policy
+# exists, all egress not explicitly allowed is DENIED. Every service the backend
+# needs must be listed here.
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -96,7 +99,25 @@ spec:
   policyTypes:
   - Egress
   egress:
-  # Vault API (TLS)
+  # 1. DNS (required for all service discovery)
+  - to:
+    - namespaceSelector: {}
+    ports:
+    - protocol: UDP
+      port: 53
+    - protocol: TCP
+      port: 53
+
+  # 2. Redis (same namespace, port 6379)
+  - to:
+    - podSelector:
+        matchLabels:
+          app: redis
+    ports:
+    - protocol: TCP
+      port: 6379
+
+  # 3. Vault API (gamebox-security namespace, port 8200)
   - to:
     - namespaceSelector:
         matchLabels:
@@ -107,12 +128,16 @@ spec:
     ports:
     - protocol: TCP
       port: 8200
-  # Preserve existing egress (DNS, backend-to-redis, etc.)
+
+  # 4. External HTTPS — Twilio, Anthropic Claude, webhook callbacks
   - to:
-    - namespaceSelector: {}
-      podSelector:
-        matchLabels:
-          k8s-app: kube-dns
+    - ipBlock:
+        cidr: 0.0.0.0/0
+        except:
+        - 10.0.0.0/8
+        - 172.16.0.0/12
+        - 192.168.0.0/16
     ports:
-    - protocol: UDP
-      port: 53
+    - protocol: TCP
+      port: 443
+
