@@ -678,7 +678,17 @@ When working on this project:
 
 14. **SSH connection limits** - The server may drop SSH connections if too many are opened rapidly. Combine kubectl commands into single SSH sessions when possible.
 
+15. **K3s NetworkPolicy + DNAT** — `ipBlock` rules with ClusterIPs (e.g. `10.43.0.1/32`) don't work because kube-proxy DNATs them to pod IPs before policy evaluation. Service port → container port mapping also breaks `port` rules. Avoid restrictive egress policies on Traefik and cloudflared.
+
+16. **Traefik CRD middlewares + Gateway API** — Traefik v3.6 cannot resolve Middleware CRDs referenced via `ExtensionRef` in HTTPRoutes, even with `kubernetesCRD.enabled=true`. Use native Gateway API filters (`URLRewrite`, `RequestHeaderModifier`) instead.
+
+17. **Twilio webhook path** — Twilio sends to `https://twilio.kozytherocket.space/lb-automotive/api/twilio/webhook`. The HTTPRoute uses `URLRewrite` `ReplacePrefixMatch` to strip `/lb-automotive` → backend sees `/api/twilio/webhook`.
+
+18. **Stale HTTPRoutes** — Delete any manually-created HTTPRoutes not in `lb-automotive-routes.yaml`. Stale routes referencing broken middlewares cause Traefik 502 errors for ALL routes.
+
+19. **Traefik Service port** — The Traefik K8s Service maps port **80** → container port **8000**. All internal references (cloudflared config, NetworkPolicies) must use port 80 for the Service, not 8000.
+
 ---
 
-**Last Updated:** March 2, 2026  
+**Last Updated:** March 3, 2026  
 **Maintainer:** GameBox-Inc
