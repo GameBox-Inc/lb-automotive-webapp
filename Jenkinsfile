@@ -164,6 +164,57 @@ pipeline {
             }
         }
 
+        stage('Ensure Vault Unsealed') {
+            // Vault seals after every pod restart. Unseal it before deploying
+            // so the backend's sidecar can inject secrets.
+            // Keys are stored as Jenkins Secret Text credentials — never interpolated.
+            when {
+                anyOf {
+                    branch 'main'
+                    branch 'master'
+                    expression { env.GIT_BRANCH ==~ /.*release\/.*/ }
+                }
+            }
+            steps {
+                echo '🔐 Checking Vault seal status...'
+                script {
+                    withCredentials([
+                        string(credentialsId: 'vault-unseal-key-1', variable: 'KEY1'),
+                        string(credentialsId: 'vault-unseal-key-2', variable: 'KEY2'),
+                        string(credentialsId: 'vault-unseal-key-3', variable: 'KEY3')
+                    ]) {
+                        sshagent(credentials: ['lb-server-ssh']) {
+                            // IMPORTANT: single quotes prevent Groovy from interpolating
+                            // secret variables into the shell string (Jenkins security best practice).
+                            // The shell itself expands $KEY1/$KEY2/$KEY3 safely at runtime.
+                            sh '''
+                                SEALED=$(ssh -o StrictHostKeyChecking=no ''' + env.DEPLOY_USER + '@' + env.DEPLOY_HOST + ''' \
+                                    "sudo k3s kubectl exec -n gamebox-security vault-0 -c vault -- \
+                                     env VAULT_SKIP_VERIFY=true vault status -format=json 2>/dev/null | \
+                                     python3 -c \\"import sys,json; print(json.load(sys.stdin)[\'sealed\'])\\""  \
+                                    2>/dev/null || echo True)
+                                if [ "$SEALED" = "True" ]; then
+                                    echo "Vault is sealed — unsealing..."
+                                    ssh -o StrictHostKeyChecking=no ''' + env.DEPLOY_USER + '@' + env.DEPLOY_HOST + ''' \
+                                        "sudo k3s kubectl exec -n gamebox-security vault-0 -c vault -- \
+                                         env VAULT_SKIP_VERIFY=true vault operator unseal $KEY1"
+                                    ssh -o StrictHostKeyChecking=no ''' + env.DEPLOY_USER + '@' + env.DEPLOY_HOST + ''' \
+                                        "sudo k3s kubectl exec -n gamebox-security vault-0 -c vault -- \
+                                         env VAULT_SKIP_VERIFY=true vault operator unseal $KEY2"
+                                    ssh -o StrictHostKeyChecking=no ''' + env.DEPLOY_USER + '@' + env.DEPLOY_HOST + ''' \
+                                        "sudo k3s kubectl exec -n gamebox-security vault-0 -c vault -- \
+                                         env VAULT_SKIP_VERIFY=true vault operator unseal $KEY3"
+                                    echo "✅ Vault unsealed successfully"
+                                else
+                                    echo "✅ Vault already unsealed"
+                                fi
+                            '''
+                        }
+                    }
+                }
+            }
+        }
+
         stage('Deploy Manifests') {
             // Syncs K8s manifests to server and applies them.
             // Replaces ArgoCD — Jenkins is now the GitOps mechanism.
