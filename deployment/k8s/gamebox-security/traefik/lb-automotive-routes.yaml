@@ -8,12 +8,16 @@
 #     does not forward it, so it never reaches Traefik.
 #   - The frontend and API are NOT exposed publicly.
 #     Access is via WireGuard VPN only: http://10.100.0.1:30080/
+#
+# NOTE: Traefik CRD Middleware ExtensionRefs don't work with Gateway API
+#       HTTPRoutes in Traefik v3.6. Using native Gateway API filters instead.
+#       Rate limiting is handled by the backend's own rate limiter.
 # =============================================================================
 
 # ── Route 1: Twilio Webhook ───────────────────────────────────────────────────
 # twilio.kozytherocket.space/lb-automotive/api/twilio/* → backend:8000
 # POST only — Twilio only ever POSTs to webhooks. Any other method is rejected.
-# Strips /lb-automotive prefix before proxying (backend sees /api/twilio/...)
+# URLRewrite strips /lb-automotive prefix (backend sees /api/twilio/...)
 apiVersion: gateway.networking.k8s.io/v1
 kind: HTTPRoute
 metadata:
@@ -32,16 +36,11 @@ spec:
             value: /lb-automotive/api/twilio
           method: POST
       filters:
-        - type: ExtensionRef
-          extensionRef:
-            group: traefik.io
-            kind: Middleware
-            name: rate-limit-twilio
-        - type: ExtensionRef
-          extensionRef:
-            group: traefik.io
-            kind: Middleware
-            name: strip-lb-automotive-prefix
+        - type: URLRewrite
+          urlRewrite:
+            path:
+              type: ReplacePrefixMatch
+              replacePrefixMatch: /api/twilio
       backendRefs:
         - name: backend
           namespace: lb-automotive
