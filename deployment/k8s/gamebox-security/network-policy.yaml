@@ -85,17 +85,25 @@ spec:
           app: cloudflared
     ports:
     - protocol: TCP
-      port: 8000
+      port: 80
   egress:
   # DNS resolution
   - to:
     - namespaceSelector: {}
-      podSelector:
-        matchLabels:
-          k8s-app: kube-dns
     ports:
     - protocol: UDP
       port: 53
+    - protocol: TCP
+      port: 53
+  # Kubernetes API server — Traefik MUST reach this to discover
+  # HTTPRoutes, Services, EndpointSlices, and all other resources.
+  # Without this, Traefik is completely blind and returns 502/404.
+  - to:
+    - ipBlock:
+        cidr: 10.43.0.1/32
+    ports:
+    - protocol: TCP
+      port: 443
   # Traffic to lb-automotive namespace (backend + frontend)
   - to:
     - namespaceSelector:
@@ -136,13 +144,13 @@ spec:
   - ports:
     - protocol: TCP
       port: 443
-  # Internal: cloudflared → traefik
+  # Internal: cloudflared → traefik (service port is 80, not 8000)
   - to:
     - podSelector:
         matchLabels:
           app.kubernetes.io/name: traefik
     ports:
     - protocol: TCP
-      port: 8000
+      port: 80
 
 

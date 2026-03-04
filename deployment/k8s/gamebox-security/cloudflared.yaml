@@ -31,7 +31,7 @@ data:
       # ONLY the Twilio webhook subdomain is tunneled.
       # The app frontend/API is NOT publicly accessible — VPN only (10.100.0.1:30080).
       - hostname: twilio.kozytherocket.space
-        service: http://traefik.gamebox-security.svc.cluster.local:8000
+        service: http://traefik.gamebox-security.svc.cluster.local:80
         originRequest:
           noTLSVerify: false
           connectTimeout: 30s
