@@ -1,0 +1,65 @@
+# =============================================================================
+# networkpolicy.yaml — Unseal Vault (vault-unseal namespace)
+#
+# Unseal Vault is a transit-only Vault instance.
+# It should be reachable ONLY by Main Vault pods in gamebox-security.
+# All other ingress/egress is denied by default.
+# =============================================================================
+
+# Allow egress: DNS only (Unseal Vault needs to resolve nothing external)
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: unseal-vault-egress
+  namespace: vault-unseal
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: vault
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+      - namespaceSelector: {}
+      ports:
+      - protocol: UDP
+        port: 53
+      - protocol: TCP
+        port: 53
+
+---
+# Allow ingress: ONLY from gamebox-security namespace (Main Vault pods)
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: unseal-vault-ingress
+  namespace: vault-unseal
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: vault
+  policyTypes:
+    - Ingress
+  ingress:
+    # Main Vault (gamebox-security) → Unseal Vault on 8200
+    - from:
+      - namespaceSelector:
+          matchLabels:
+            name: gamebox-security
+        podSelector:
+          matchLabels:
+            app.kubernetes.io/name: vault
+      ports:
+      - protocol: TCP
+        port: 8200
+
+    # Admin/ops: allow bootstrap script kubectl exec from within namespace
+    - from:
+      - namespaceSelector:
+          matchLabels:
+            name: vault-unseal
+      ports:
+      - protocol: TCP
+        port: 8200
+      - protocol: TCP
+        port: 8201

@@ -61,6 +61,18 @@ spec:
       port: 6443
     - protocol: TCP
       port: 443
+  # Unseal Vault (vault-unseal namespace) — required for transit auto-unseal
+  # Main Vault connects here on startup to unwrap its master key
+  - to:
+    - namespaceSelector:
+        matchLabels:
+          name: vault-unseal
+      podSelector:
+        matchLabels:
+          app.kubernetes.io/name: vault
+    ports:
+    - protocol: TCP
+      port: 8200
 
 ---
 # ── Allow Agent Injector webhook traffic from kube-apiserver ─────────────────
