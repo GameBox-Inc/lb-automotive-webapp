@@ -65,92 +65,17 @@ spec:
     - protocol: TCP
       port: 8000
 
-apiVersion: networking.k8s.io/v1
-kind: NetworkPolicy
-metadata:
-  name: traefik-policy
-  namespace: gamebox-security
-spec:
-  podSelector:
-    matchLabels:
-      app.kubernetes.io/name: traefik
-  policyTypes:
-  - Ingress
-  - Egress
-  ingress:
-  # Allow traffic from cloudflared pods
-  - from:
-    - podSelector:
-        matchLabels:
-          app: cloudflared
-    ports:
-    - protocol: TCP
-      port: 80
-  egress:
-  # DNS resolution
-  - to:
-    - namespaceSelector: {}
-    ports:
-    - protocol: UDP
-      port: 53
-    - protocol: TCP
-      port: 53
-  # Kubernetes API server — Traefik MUST reach this to discover
-  # HTTPRoutes, Services, EndpointSlices, and all other resources.
-  # Without this, Traefik is completely blind and returns 502/404.
-  - to:
-    - ipBlock:
-        cidr: 10.43.0.1/32
-    ports:
-    - protocol: TCP
-      port: 443
-  # Traffic to lb-automotive namespace (backend + frontend)
-  - to:
-    - namespaceSelector:
-        matchLabels:
-          name: lb-automotive
-    ports:
-    - protocol: TCP
-      port: 8000
-    - protocol: TCP
-      port: 80
----
-apiVersion: networking.k8s.io/v1
-kind: NetworkPolicy
-metadata:
-  name: cloudflared-egress
-  namespace: gamebox-security
-spec:
-  podSelector:
-    matchLabels:
-      app: cloudflared
-  policyTypes:
-  - Egress
-  egress:
-  # DNS
-  - to:
-    - namespaceSelector: {}
-      podSelector:
-        matchLabels:
-          k8s-app: kube-dns
-    ports:
-    - protocol: UDP
-      port: 53
-  # Cloudflare QUIC tunnel protocol (primary)
-  - ports:
-    - protocol: UDP
-      port: 7844
-  # Cloudflare HTTPS fallback
-  - ports:
-    - protocol: TCP
-      port: 443
-  # Internal: cloudflared → traefik (service port is 80, not 8000)
-  - to:
-    - podSelector:
-        matchLabels:
-          app.kubernetes.io/name: traefik
-    ports:
-    - protocol: TCP
-      port: 80
-
-
+# ── NOTE: Traefik and Cloudflared do NOT have NetworkPolicies ──────────────────
+# Traefik is an ingress controller that needs broad cluster access (K8s API,
+# service discovery, EndpointSlice watches). Restricting its egress via
+# NetworkPolicy breaks service discovery because K3s kube-proxy DNAT rewrites
+# ClusterIPs/ports before policy evaluation, causing ipBlock rules to fail.
+#
+# Cloudflared similarly needs unrestricted egress to Cloudflare (QUIC/443)
+# and to Traefik. Its egress to Traefik also hits the DNAT port mismatch
+# (Service port 80 → container port 8000).
+#
+# Security is enforced at these layers instead:
+#   - Cloudflare Tunnel: Only twilio.kozytherocket.space is tunneled
+#   - HTTPRoute: Only POST /lb-automotive/api/twilio is routed
+#   - Backend: Rate limiting, input validation, Twilio signature verification
