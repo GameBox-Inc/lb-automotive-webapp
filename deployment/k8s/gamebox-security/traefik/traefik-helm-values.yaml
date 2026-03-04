@@ -20,6 +20,10 @@ providers:
   # Gateway API — primary routing mechanism (HTTPRoute, GatewayClass)
   kubernetesGateway:
     enabled: true
+  # CRD provider — required for Middleware CRDs referenced via ExtensionRef
+  kubernetesCRD:
+    enabled: true
+    allowCrossNamespace: true
   # Keep Ingress support for any existing Ingress objects
   kubernetesIngress:
     enabled: true

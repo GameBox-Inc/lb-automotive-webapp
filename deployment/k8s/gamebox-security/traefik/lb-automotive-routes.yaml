@@ -42,11 +42,6 @@ spec:
             group: traefik.io
             kind: Middleware
             name: strip-lb-automotive-prefix
-        - type: ExtensionRef
-          extensionRef:
-            group: traefik.io
-            kind: Middleware
-            name: cloudflare-real-ip
       backendRefs:
         - name: backend
           namespace: lb-automotive
