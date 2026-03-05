@@ -1012,7 +1012,21 @@ def twilio_webhook(
             # Store symptoms
             symptoms = "User provided audio description" 
             if SpeechResult: 
-                 symptoms = SpeechResult
+                 from llm_service import generate_response
+                 system_prompt = (
+                     "You are an automotive service advisor receiving a transcribed voicemail from a customer. "
+                     "Extract the core issue or symptoms into a concise 1-2 sentence structured note for the mechanic. "
+                     "Fix any transcription errors based on typical car issues. Output ONLY the note, nothing else."
+                 )
+                 try:
+                     summary = generate_response(SpeechResult, "", system_prompt)
+                     if "trouble thinking" not in summary.lower() and len(summary) > 5:
+                         symptoms = summary
+                     else:
+                         symptoms = SpeechResult
+                 except Exception as e:
+                     logger.error(f"Error summarizing symptoms via LLM: {e}")
+                     symptoms = SpeechResult
             elif Digits:
                  symptoms = "User pressed digits during description"
             
