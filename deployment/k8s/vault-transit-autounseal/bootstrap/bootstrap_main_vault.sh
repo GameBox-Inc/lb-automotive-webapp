@@ -16,7 +16,7 @@ set -euo pipefail
 NAMESPACE="gamebox-security"
 VAULT_POD="vault-0"
 HELM_RELEASE="vault"
-VALUES_FILE="${VALUES_FILE:-../main-vault/vault-helm-values-ha.yaml}"
+VALUES_FILE="${VALUES_FILE:-../main-vault/vault-helm-values-transit-seal.yaml}"
 OUTPUT_DIR="${OUTPUT_DIR:-.}"
 K8S_AUTH_PATH="${K8S_AUTH_PATH:-kubernetes/}"
 

@@ -70,7 +70,10 @@ server:
     - name: unseal-vault-ca
       secret:
         secretName: unseal-vault-ca
-    # Mount the transit token as a file — referenced by token_file in seal config
+    # Mount the transit token as a file.
+    # NOTE: token_file is NOT a valid HCL parameter in Vault 1.21.2 — it is silently ignored.
+    # The token in the seal "transit" stanza above is what authenticates to Unseal Vault.
+    # This volume is kept for ops tooling (e.g. rotation scripts) that may read the file directly.
     - name: transit-token
       secret:
         secretName: vault-transit-token

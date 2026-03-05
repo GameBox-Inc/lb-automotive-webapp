@@ -145,8 +145,14 @@ kubectl create secret generic vault-transit-token \
 ```bash
 helm upgrade vault hashicorp/vault \
   --namespace gamebox-security \
-  --values deployment/k8s/vault-transit-autounseal/main-vault/vault-helm-values-ha.yaml
+  --values deployment/k8s/vault-transit-autounseal/main-vault/vault-helm-values-transit-seal.yaml
 ```
+
+> [!IMPORTANT]
+> The `vault-helm-values-transit-seal.yaml` file contains a `token = "PLACEHOLDER_TRANSIT_TOKEN"` placeholder.
+> You **must** patch the ConfigMap with the real token before the pod starts, or Vault will make
+> unauthenticated requests to Unseal Vault and receive a 403.
+> The `bootstrap_main_vault.sh` script handles this automatically.
 
 ### 7. Bootstrap Main Vault
 
@@ -191,6 +197,20 @@ kubectl cp gamebox-security/vault-0:/tmp/main-snap.snap ./main-vault-$(date +%Y%
 - [ ] TLS verified (no `tls_skip_verify = true` in production)
 - [ ] etcd encryption enabled on K3s for K8s Secrets at rest
 - [ ] Raft snapshots automated weekly
+
+## Known Issues / Gotchas
+
+### `token_file` is silently ignored in Vault 1.21.2
+
+The `seal "transit"` HCL stanza does **not** support a `token_file` parameter in Vault 1.21.x.
+If you set `token_file = "/path/to/token"` it is silently ignored and Vault makes unauthenticated
+requests to Unseal Vault, resulting in a `403 permission denied` on startup.
+
+**Root cause found during initial deployment (2026-03-05).**
+
+**Fix**: Use `token = "<actual_token>"` directly in the HCL `seal "transit"` stanza.
+The Helm values file uses a `PLACEHOLDER_TRANSIT_TOKEN` sentinel; the bootstrap script or
+`fix_seal.sh` patches the ConfigMap with the real token at deploy time.
 
 ## Key Rotation
 
