@@ -57,6 +57,12 @@ spec:
 
         # Token lifetime — renew after 30m, re-auth after 24h
         vault.hashicorp.com/agent-inject-token: "false"
+
+        # Sidecar Resources — restrict to allow scheduling on the constrained node
+        vault.hashicorp.com/agent-limits-cpu: "50m"
+        vault.hashicorp.com/agent-limits-mem: "64Mi"
+        vault.hashicorp.com/agent-requests-cpu: "10m"
+        vault.hashicorp.com/agent-requests-mem: "32Mi"
     spec:
       # ── Identity used for Vault Kubernetes auth ─────────────────────────────
       # The SA JWT is presented to Vault, which validates it against the K8s API.
