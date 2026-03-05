@@ -227,6 +227,72 @@ pipeline {
         }
 
 
+        stage('Patch Vault Seal Token') {
+            // ── Why this stage exists ──────────────────────────────────────────
+            // token_file is NOT a valid HCL parameter in Vault 1.21.2 — it is
+            // silently ignored.  The seal "transit" stanza requires token= set
+            // directly in the HCL.  The checked-in values file contains a
+            // PLACEHOLDER_TRANSIT_TOKEN sentinel.  This stage patches the live
+            // ConfigMap with the real token from a Jenkins credential so that:
+            //   - the real token is never stored in Git
+            //   - any helm upgrade cannot revert it without this stage re-applying it
+            //   - the patch is idempotent: vault-0 is only restarted when the token
+            //     has actually changed
+            //
+            // PREREQUISITE: Create a Jenkins secret-text credential with ID
+            //   'vault-transit-token' containing the transit token from Unseal Vault.
+            // ──────────────────────────────────────────────────────────────────
+            when {
+                anyOf {
+                    branch 'main'
+                    branch 'master'
+                    expression { env.GIT_BRANCH ==~ /.*release\/.*/ }
+                }
+            }
+            steps {
+                echo '🔐 Patching Vault transit seal token in ConfigMap...'
+                script {
+                    withCredentials([string(credentialsId: 'vault-transit-token', variable: 'TRANSIT_TOKEN')]) {
+                        sshagent(credentials: ['lb-server-ssh']) {
+                            sh """
+                                ssh -o StrictHostKeyChecking=no ${DEPLOY_USER}@${DEPLOY_HOST} '
+                                    set -e
+                                    NS=gamebox-security
+                                    CM=vault
+                                    TOKEN="${TRANSIT_TOKEN}"
+
+                                    echo "▶ Reading current ConfigMap..."
+                                    CURRENT=\$(sudo k3s kubectl get configmap "\$CM" -n "\$NS" \
+                                        -o jsonpath="{.data.extraconfig-from-values\.hcl}" 2>/dev/null || echo "")
+
+                                    # Check whether PLACEHOLDER is still present
+                                    if echo "\$CURRENT" | grep -q "PLACEHOLDER_TRANSIT_TOKEN"; then
+                                        echo "▶ PLACEHOLDER found — patching token into ConfigMap..."
+                                        NEW=\$(echo "\$CURRENT" | sed "s|PLACEHOLDER_TRANSIT_TOKEN|\$TOKEN|g")
+                                        sudo k3s kubectl patch configmap "\$CM" -n "\$NS" \
+                                            --type merge \
+                                            -p "{\"data\":{\"extraconfig-from-values.hcl\":\"\$NEW\"}}"
+                                        echo "▶ ConfigMap patched — deleting vault-0 to pick up new config..."
+                                        sudo k3s kubectl delete pod vault-0 -n "\$NS" --ignore-not-found
+                                        echo "▶ Waiting for vault-0 to become ready..."
+                                        sudo k3s kubectl wait pod vault-0 -n "\$NS" \
+                                            --for=condition=Ready --timeout=120s
+                                    else
+                                        echo "▶ Token already patched — no restart needed"
+                                    fi
+
+                                    echo "▶ Verifying Vault seal status..."
+                                    sudo k3s kubectl exec -n "\$NS" vault-0 -c vault -- \
+                                        env VAULT_SKIP_VERIFY=true vault status -format=json | \
+                                        grep -E "\"sealed\":|\"type\":"
+                                '
+                            """
+                        }
+                    }
+                }
+            }
+        }
+
         stage('Deploy to Production') {
             when {
                 anyOf {
