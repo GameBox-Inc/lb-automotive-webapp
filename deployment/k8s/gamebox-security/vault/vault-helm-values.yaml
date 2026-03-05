@@ -1,75 +1,106 @@
 # =============================================================================
-# vault-helm-values.yaml — HashiCorp Vault Helm Chart Values
-# GameBox OS Platform — gamebox-security namespace
+# vault-helm-values-transit-seal.yaml — Main Vault: standalone + transit seal
 #
-# Install:
-#   helm repo add hashicorp https://helm.releases.hashicorp.com
-#   helm repo update
-#   helm install vault hashicorp/vault \
+# This is the INTERMEDIATE migration step:
+#   - Keeps storage "file" (same as current — no data migration needed)
+#   - Adds seal "transit" pointing to Unseal Vault
+#   - After applying + running seal migration, Main Vault auto-unseals forever
+#
+# After migration is confirmed working, separately migrate to Raft storage.
+#
+# Apply with:
+#   helm upgrade vault hashicorp/vault \
 #     --namespace gamebox-security \
-#     --create-namespace \
-#     --values vault-helm-values.yaml
+#     --values vault-helm-values-transit-seal.yaml
 # =============================================================================
 
 global:
-  # All components use TLS — no plaintext Vault traffic
   tlsDisable: false
 
-# ── Vault Server ──────────────────────────────────────────────────────────────
 server:
-  # Single-node standalone. For HA upgrade to raft backend when cluster grows.
   standalone:
     enabled: true
     config: |
       ui = false
 
       listener "tcp" {
-        tls_disable     = 0
         address         = "[::]:8200"
         cluster_address = "[::]:8201"
-
-        # TLS cert from the secret created by vault-tls-secret.sh
+        tls_disable     = 0
         tls_cert_file = "/vault/userconfig/vault-server-tls/vault.crt"
         tls_key_file  = "/vault/userconfig/vault-server-tls/vault.key"
-        tls_ca_cert_file = "/vault/userconfig/vault-server-tls/ca.crt"
-
-        # Require mutual TLS for cluster traffic only; agent uses standard TLS
         tls_min_version = "tls13"
       }
 
+      # Keep file storage — no data migration required
       storage "file" {
         path = "/vault/data"
       }
 
-      # Telemetry for future Prometheus integration
+      # ── Transit Auto-Unseal ────────────────────────────────────────────────
+      # IMPORTANT: token_file is NOT valid in Vault 1.21.2 — silently ignored.
+      # The token MUST be provided via the HCL `token` parameter.
+      #
+      # At deploy time, inject the real token using one of:
+      #   1. helm upgrade ... --set-string "server.standalone.config=..." (complex)
+      #   2. Post-deploy ConfigMap patch via fix_seal.sh (recommended)
+      #
+      # The PLACEHOLDER below is replaced by fix_seal.sh or bootstrap scripts.
+      seal "transit" {
+        address         = "https://unseal-vault.vault-unseal.svc.cluster.local:8200"
+        token           = "PLACEHOLDER_TRANSIT_TOKEN"
+        key_name        = "autounseal"
+        mount_path      = "transit/"
+        tls_ca_cert     = "/vault/userconfig/unseal-vault-ca/ca.crt"
+        tls_skip_verify = false
+      }
+
+      api_addr     = "https://vault.gamebox-security.svc.cluster.local:8200"
+      cluster_addr = "https://vault.gamebox-security.svc.cluster.local:8201"
+
       telemetry {
         prometheus_retention_time = "30s"
         disable_hostname          = true
       }
 
-  # Mount the TLS secret into the pod
   volumes:
     - name: vault-server-tls
       secret:
         secretName: vault-server-tls
+    - name: unseal-vault-ca
+      secret:
+        secretName: unseal-vault-ca
+    # Mount the transit token as a file.
+    # NOTE: token_file is NOT a valid HCL parameter in Vault 1.21.2 — it is silently ignored.
+    # The token in the seal "transit" stanza above is what authenticates to Unseal Vault.
+    # This volume is kept for ops tooling (e.g. rotation scripts) that may read the file directly.
+    - name: transit-token
+      secret:
+        secretName: vault-transit-token
+        items:
+          - key: token
+            path: token
 
   volumeMounts:
     - name: vault-server-tls
       mountPath: /vault/userconfig/vault-server-tls
       readOnly: true
+    - name: unseal-vault-ca
+      mountPath: /vault/userconfig/unseal-vault-ca
+      readOnly: true
+    - name: transit-token
+      mountPath: /vault/userconfig/transit-token
+      readOnly: true
 
-  # Use the vault ServiceAccount (has TokenReview RBAC)
   serviceAccount:
     create: false
     name: vault
 
-  # Persistent storage for Vault data
   dataStorage:
     enabled: true
     size: 1Gi
-    storageClass: null  # Use cluster default
+    storageClass: null
 
-  # Security context — run as non-root
   securityContext:
     runAsNonRoot: true
     runAsUser: 100
@@ -87,7 +118,6 @@ server:
       memory: "512Mi"
       cpu: "500m"
 
-  # Readiness probe uses HTTPS
   readinessProbe:
     enabled: true
     path: "/v1/sys/health?standbyok=true&sealedcode=204&uninitcode=204"
@@ -95,42 +125,25 @@ server:
 
   livenessProbe:
     enabled: true
-    path: "/v1/sys/health?standbyok=true"
+    path: "/v1/sys/health?standbyok=true&sealedcode=204"
     scheme: HTTPS
 
-  # Expose Vault on port 8200 within the cluster
   service:
     enabled: true
     type: ClusterIP
     port: 8200
     targetPort: 8200
 
-# ── Vault Agent Injector ──────────────────────────────────────────────────────
 injector:
   enabled: true
-
-  # The injector talks to Vault over TLS
-  externalVaultAddr: ""  # Empty = use in-cluster Vault service
-
-  # Vault address the agent sidecar uses
-  # Must match the TLS SAN
   agentImage:
     repository: "hashicorp/vault"
     tag: "1.15.6"
-
-  # TLS certs for the injector webhook are auto-generated by the Helm chart.
-  # Do NOT use vault-server-tls here — those certs have SANs for the Vault
-  # server, not the injector service (vault-agent-injector-svc).
-
   webhook:
-    # Only inject into namespaces with the label: vault-injection=enabled
     namespaceSelector:
       matchLabels:
         vault-injection: "enabled"
-
-    # Fail open — don't block pod admission if injector is unavailable
     failurePolicy: Ignore
-
   resources:
     requests:
       memory: "64Mi"
@@ -138,7 +151,6 @@ injector:
     limits:
       memory: "128Mi"
       cpu: "250m"
-
   securityContext:
     runAsNonRoot: true
     runAsUser: 100
@@ -146,6 +158,5 @@ injector:
       drop:
         - ALL
 
-# ── UI — disabled in production ───────────────────────────────────────────────
 ui:
-  enabled: false  # No public UI. Use kubectl port-forward for admin access.
+  enabled: false
