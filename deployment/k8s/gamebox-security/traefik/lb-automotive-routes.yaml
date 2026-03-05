@@ -15,9 +15,8 @@
 # =============================================================================
 
 # ── Route 1: Twilio Webhook ───────────────────────────────────────────────────
-# twilio.kozytherocket.space/lb-automotive/api/twilio/* → backend:8000
+# twilio.kozytherocket.space/api/twilio/* → backend:8000
 # POST only — Twilio only ever POSTs to webhooks. Any other method is rejected.
-# URLRewrite strips /lb-automotive prefix (backend sees /api/twilio/...)
 apiVersion: gateway.networking.k8s.io/v1
 kind: HTTPRoute
 metadata:
@@ -33,14 +32,8 @@ spec:
     - matches:
         - path:
             type: PathPrefix
-            value: /lb-automotive/api/twilio
+            value: /api/twilio
           method: POST
-      filters:
-        - type: URLRewrite
-          urlRewrite:
-            path:
-              type: ReplacePrefixMatch
-              replacePrefixMatch: /api/twilio
       backendRefs:
         - name: backend
           namespace: lb-automotive
