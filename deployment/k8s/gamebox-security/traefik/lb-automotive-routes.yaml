@@ -29,11 +29,29 @@ spec:
   hostnames:
     - "twilio.kozytherocket.space"
   rules:
+    # 1. New path used by relative TwiML redirects (<Gather action="/api/twilio/webhook">)
     - matches:
         - path:
             type: PathPrefix
             value: /api/twilio
           method: POST
+      backendRefs:
+        - name: backend
+          namespace: lb-automotive
+          port: 8000
+
+    # 2. Legacy path configured in the Twilio Console (rewritten to backend path)
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /lb-automotive/api/twilio
+          method: POST
+      filters:
+        - type: URLRewrite
+          urlRewrite:
+            path:
+              type: ReplacePrefixMatch
+              replacePrefixMatch: /api/twilio
       backendRefs:
         - name: backend
           namespace: lb-automotive
