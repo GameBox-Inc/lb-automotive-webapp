@@ -11,7 +11,7 @@ import traceback
 
 router = APIRouter(prefix="/api/appointments", tags=["appointments"])
 
-def get_repository():
+async def get_repository():
     repo = AppointmentRepository()
     try:
         yield repo
