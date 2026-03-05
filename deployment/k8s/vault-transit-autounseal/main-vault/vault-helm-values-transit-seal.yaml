@@ -38,11 +38,17 @@ server:
       }
 
       # ── Transit Auto-Unseal ────────────────────────────────────────────────
-      # token_file is used instead of env var — explicit and unambiguous.
-      # The K8s secret vault-transit-token is mounted as a file at this path.
+      # IMPORTANT: token_file is NOT valid in Vault 1.21.2 — silently ignored.
+      # The token MUST be provided via the HCL `token` parameter.
+      #
+      # At deploy time, inject the real token using one of:
+      #   1. helm upgrade ... --set-string "server.standalone.config=..." (complex)
+      #   2. Post-deploy ConfigMap patch via fix_seal.sh (recommended)
+      #
+      # The PLACEHOLDER below is replaced by fix_seal.sh or bootstrap scripts.
       seal "transit" {
         address         = "https://unseal-vault.vault-unseal.svc.cluster.local:8200"
-        token_file      = "/vault/userconfig/transit-token/token"
+        token           = "PLACEHOLDER_TRANSIT_TOKEN"
         key_name        = "autounseal"
         mount_path      = "transit/"
         tls_ca_cert     = "/vault/userconfig/unseal-vault-ca/ca.crt"
