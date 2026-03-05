@@ -38,10 +38,11 @@ server:
       }
 
       # ── Transit Auto-Unseal ────────────────────────────────────────────────
-      # token is NOT set here — Vault reads VAULT_TOKEN env var automatically.
-      # HCL2 does not support inline ${} env var interpolation.
+      # token_file is used instead of env var — explicit and unambiguous.
+      # The K8s secret vault-transit-token is mounted as a file at this path.
       seal "transit" {
         address         = "https://unseal-vault.vault-unseal.svc.cluster.local:8200"
+        token_file      = "/vault/userconfig/transit-token/token"
         key_name        = "autounseal"
         mount_path      = "transit/"
         tls_ca_cert     = "/vault/userconfig/unseal-vault-ca/ca.crt"
@@ -56,15 +57,6 @@ server:
         disable_hostname          = true
       }
 
-  extraEnv:
-    # VAULT_TOKEN is used by the transit seal automatically when token= is omitted
-    # from the seal config. This is the correct way to pass the token in HCL2.
-    - name: VAULT_TOKEN
-      valueFrom:
-        secretKeyRef:
-          name: vault-transit-token
-          key: token
-
   volumes:
     - name: vault-server-tls
       secret:
@@ -72,6 +64,13 @@ server:
     - name: unseal-vault-ca
       secret:
         secretName: unseal-vault-ca
+    # Mount the transit token as a file — referenced by token_file in seal config
+    - name: transit-token
+      secret:
+        secretName: vault-transit-token
+        items:
+          - key: token
+            path: token
 
   volumeMounts:
     - name: vault-server-tls
@@ -79,6 +78,9 @@ server:
       readOnly: true
     - name: unseal-vault-ca
       mountPath: /vault/userconfig/unseal-vault-ca
+      readOnly: true
+    - name: transit-token
+      mountPath: /vault/userconfig/transit-token
       readOnly: true
 
   serviceAccount:
