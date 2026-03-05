@@ -1,0 +1,149 @@
+# =============================================================================
+# vault-helm-values-transit-seal.yaml — Main Vault: standalone + transit seal
+#
+# This is the INTERMEDIATE migration step:
+#   - Keeps storage "file" (same as current — no data migration needed)
+#   - Adds seal "transit" pointing to Unseal Vault
+#   - After applying + running seal migration, Main Vault auto-unseals forever
+#
+# After migration is confirmed working, separately migrate to Raft storage.
+#
+# Apply with:
+#   helm upgrade vault hashicorp/vault \
+#     --namespace gamebox-security \
+#     --values vault-helm-values-transit-seal.yaml
+# =============================================================================
+
+global:
+  tlsDisable: false
+
+server:
+  standalone:
+    enabled: true
+    config: |
+      ui = false
+
+      listener "tcp" {
+        address         = "[::]:8200"
+        cluster_address = "[::]:8201"
+        tls_disable     = 0
+        tls_cert_file = "/vault/userconfig/vault-server-tls/vault.crt"
+        tls_key_file  = "/vault/userconfig/vault-server-tls/vault.key"
+        tls_ca_cert_file = "/vault/userconfig/vault-server-tls/ca.crt"
+        tls_min_version = "tls13"
+      }
+
+      # Keep file storage — no data migration required
+      storage "file" {
+        path = "/vault/data"
+      }
+
+      # ── Transit Auto-Unseal ────────────────────────────────────────────────
+      seal "transit" {
+        address         = "https://unseal-vault.vault-unseal.svc.cluster.local:8200"
+        token           = "${VAULT_TRANSIT_TOKEN}"
+        key_name        = "autounseal"
+        mount_path      = "transit/"
+        tls_ca_cert     = "/vault/userconfig/unseal-vault-ca/ca.crt"
+        tls_skip_verify = false
+      }
+
+      api_addr     = "https://vault.gamebox-security.svc.cluster.local:8200"
+      cluster_addr = "https://vault.gamebox-security.svc.cluster.local:8201"
+
+      telemetry {
+        prometheus_retention_time = "30s"
+        disable_hostname          = true
+      }
+
+  extraEnv:
+    - name: VAULT_TRANSIT_TOKEN
+      valueFrom:
+        secretKeyRef:
+          name: vault-transit-token
+          key: token
+
+  volumes:
+    - name: vault-server-tls
+      secret:
+        secretName: vault-server-tls
+    - name: unseal-vault-ca
+      secret:
+        secretName: unseal-vault-ca
+
+  volumeMounts:
+    - name: vault-server-tls
+      mountPath: /vault/userconfig/vault-server-tls
+      readOnly: true
+    - name: unseal-vault-ca
+      mountPath: /vault/userconfig/unseal-vault-ca
+      readOnly: true
+
+  serviceAccount:
+    create: false
+    name: vault
+
+  dataStorage:
+    enabled: true
+    size: 1Gi
+    storageClass: null
+
+  securityContext:
+    runAsNonRoot: true
+    runAsUser: 100
+    runAsGroup: 1000
+    fsGroup: 1000
+    capabilities:
+      drop:
+        - ALL
+
+  resources:
+    requests:
+      memory: "256Mi"
+      cpu: "100m"
+    limits:
+      memory: "512Mi"
+      cpu: "500m"
+
+  readinessProbe:
+    enabled: true
+    path: "/v1/sys/health?standbyok=true&sealedcode=204&uninitcode=204"
+    scheme: HTTPS
+
+  livenessProbe:
+    enabled: true
+    path: "/v1/sys/health?standbyok=true&sealedcode=204"
+    scheme: HTTPS
+
+  service:
+    enabled: true
+    type: ClusterIP
+    port: 8200
+    targetPort: 8200
+
+injector:
+  enabled: true
+  agentImage:
+    repository: "hashicorp/vault"
+    tag: "1.15.6"
+  webhook:
+    namespaceSelector:
+      matchLabels:
+        vault-injection: "enabled"
+    failurePolicy: Ignore
+  resources:
+    requests:
+      memory: "64Mi"
+      cpu: "50m"
+    limits:
+      memory: "128Mi"
+      cpu: "250m"
+  securityContext:
+    runAsNonRoot: true
+    runAsUser: 100
+    capabilities:
+      drop:
+        - ALL
+
+ui:
+  enabled: false
