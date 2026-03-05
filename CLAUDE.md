@@ -32,7 +32,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - **Cache/Queue:** Redis (64MB limit, LRU eviction)
 - **Reverse Proxy:** Frontend Nginx → Backend (replaces K3s Ingress)
 - **Ingress Routing:** Traefik v3 via Kubernetes Gateway API (Cloudflare Tunnel → Traefik → services)
-- **Secrets Management:** HashiCorp Vault (gamebox-security namespace, Helm-deployed)
+- **Secrets Management:** Dual-Vault Architecture (Main Vault app secrets auto-unsealed via Unseal Vault using Transit engine)
 - **Deployment:** Kubernetes (K3s) on Hetzner server (178.156.223.196)
 - **Domain:** kozytherocket.space
 - **CI/CD:** Jenkins (Dockerized, self-hosted) — replaced GitHub Actions
@@ -68,7 +68,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - WireGuard VPN (for secure server access, subnet 10.100.0.0/24)
 - Jenkins CI/CD (Dockerized, `Jenkinsfile` in repo root)
 - GitHub Container Registry (GHCR) for Docker images
-- HashiCorp Vault for secrets (deployed via Helm in `gamebox-security` namespace)
+- HashiCorp Vault for secrets (deployed via Helm in `gamebox-security` & `vault-unseal` namespaces, uses Transit Auto-Unseal)
 - Traefik v3 as Gateway API ingress controller
 - Automated log rotation and compression (7-day retention)
 - Monthly database archiving (K8s CronJob)
