@@ -53,6 +53,7 @@ class AppointmentUpdate(BaseModel):
     notes: Optional[str] = None
     status: Optional[str] = None
     emergency_request: Optional[bool] = None
+    assigned_staff_id: Optional[str] = None
 
 
 class Appointment(BaseModel):
