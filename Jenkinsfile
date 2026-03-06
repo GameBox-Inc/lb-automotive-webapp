@@ -263,7 +263,7 @@ pipeline {
 
                                     echo "▶ Reading current ConfigMap..."
                                     CURRENT=\$(sudo k3s kubectl get configmap "\$CM" -n "\$NS" \
-                                        -o jsonpath="{.data.extraconfig-from-values\.hcl}" 2>/dev/null || echo "")
+                                        -o jsonpath="{.data.extraconfig-from-values\\\\.hcl}" 2>/dev/null || echo "")
 
                                     # Check whether PLACEHOLDER is still present
                                     if echo "\$CURRENT" | grep -q "PLACEHOLDER_TRANSIT_TOKEN"; then
