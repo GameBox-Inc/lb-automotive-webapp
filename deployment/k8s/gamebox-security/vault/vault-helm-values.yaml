@@ -125,7 +125,7 @@ server:
 
   livenessProbe:
     enabled: true
-    path: "/v1/sys/health?standbyok=true&sealedcode=204"
+    path: "/v1/sys/health?standbyok=true"
     scheme: HTTPS
 
   service:
