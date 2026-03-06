@@ -284,7 +284,7 @@ pipeline {
                                     echo "▶ Verifying Vault seal status..."
                                     sudo k3s kubectl exec -n "\$NS" vault-0 -c vault -- \
                                         env VAULT_SKIP_VERIFY=true vault status -format=json | \
-                                        grep -E "\"sealed\":|\"type\":"
+                                        grep -E "\\\"sealed\\\":|\\\"type\\\":"
                                 '
                             """
                         }
