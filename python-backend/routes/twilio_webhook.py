@@ -24,7 +24,7 @@ MAX_PENDING_APPOINTMENTS = 2
 WEBHOOK_BASE_URL = os.getenv(
     "TWILIO_WEBHOOK_BASE_URL",
     "https://twilio.kozytherocket.space/lb-automotive/api/twilio/webhook"
-)
+) or "https://twilio.kozytherocket.space/lb-automotive/api/twilio/webhook"
 
 router = APIRouter(prefix="/api/twilio", tags=["twilio"])
 
