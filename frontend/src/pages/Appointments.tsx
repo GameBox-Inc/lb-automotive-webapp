@@ -27,6 +27,8 @@ export function Appointments() {
   // Filter State
   const [filterDate, setFilterDate] = useState('')
   const [filterStatus, setFilterStatus] = useState('all')
+  const [sortOrder, setSortOrder] = useState<'desc' | 'asc'>('desc')
+  const [hideCompleted, setHideCompleted] = useState(true)
 
   // Customer Search State
   const [customerQuery, setCustomerQuery] = useState('')
@@ -219,7 +221,12 @@ export function Appointments() {
   const filteredAppointments = appointments.filter(apt => {
     const matchDate = filterDate ? apt.appointment_time.startsWith(filterDate) : true;
     const matchStatus = filterStatus === 'all' ? true : apt.status === filterStatus;
-    return matchDate && matchStatus;
+    const matchCompleted = hideCompleted ? apt.status !== 'completed' : true;
+    return matchDate && matchStatus && matchCompleted;
+  }).sort((a, b) => {
+    const dateA = new Date(a.appointment_time).getTime();
+    const dateB = new Date(b.appointment_time).getTime();
+    return sortOrder === 'desc' ? dateB - dateA : dateA - dateB;
   });
 
   return (
@@ -295,12 +302,35 @@ export function Appointments() {
               </div>
             </div>
 
+            {/* Sort Toggle */}
+            <button
+              onClick={() => setSortOrder(prev => prev === 'desc' ? 'asc' : 'desc')}
+              className="px-3 py-2 flex items-center bg-gray-50 dark:bg-gray-900/50 border border-gray-200 dark:border-gray-700 rounded-xl text-sm font-medium text-gray-700 dark:text-gray-200 hover:bg-white dark:hover:bg-gray-800 transition-colors whitespace-nowrap"
+            >
+              {sortOrder === 'desc' ? 'Recent First' : 'Oldest First'}
+              <svg className={`ml-1.5 h-4 w-4 transform transition-transform ${sortOrder === 'desc' ? '' : 'rotate-180'}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+              </svg>
+            </button>
+
+            {/* Hide Completed Toggle */}
+            <button
+              onClick={() => setHideCompleted(prev => !prev)}
+              className={`px-3 py-2 flex items-center border rounded-xl text-sm font-medium transition-colors whitespace-nowrap ${hideCompleted
+                ? 'bg-indigo-50 border-indigo-200 text-indigo-700 dark:bg-indigo-900/30 dark:border-indigo-800 dark:text-indigo-300'
+                : 'bg-gray-50 border-gray-200 text-gray-700 dark:bg-gray-900/50 dark:border-gray-700 dark:text-gray-200 hover:bg-white dark:hover:bg-gray-800'}`}
+            >
+              {hideCompleted ? 'Hidden: Completed' : 'Showing: Completed'}
+            </button>
+
             {/* Clear Filters */}
-            {(filterDate || filterStatus !== 'all') && (
+            {(filterDate || filterStatus !== 'all' || !hideCompleted || sortOrder === 'asc') && (
               <button
                 onClick={() => {
                   setFilterDate('');
                   setFilterStatus('all');
+                  setHideCompleted(true);
+                  setSortOrder('desc');
                 }}
                 className="px-3 py-2 text-sm font-medium text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-xl transition-colors flex items-center justify-center"
               >

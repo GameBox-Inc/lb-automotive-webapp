@@ -100,6 +100,8 @@ const StaffDashboard = () => {
     const [filterStatus, setFilterStatus] = useState('all');
     const [filterAssignee, setFilterAssignee] = useState('all');
     const [showFilters, setShowFilters] = useState(false);
+    const [sortOrder, setSortOrder] = useState<'desc' | 'asc'>('desc');
+    const [hideCompleted, setHideCompleted] = useState(true);
 
     useEffect(() => {
         fetchMyRepairs();
@@ -144,14 +146,19 @@ const StaffDashboard = () => {
     const filteredAppointments = useMemo(() => {
         return appointments.filter(apt => {
             const matchStatus = filterStatus === 'all' || apt.status === filterStatus;
+            const matchCompleted = hideCompleted ? apt.status !== 'completed' : true;
             const matchAssignee = filterAssignee === 'all'
                 ? true
                 : filterAssignee === 'unassigned'
                     ? !apt.assigned_staff_id
                     : apt.assigned_staff_id === filterAssignee;
-            return matchStatus && matchAssignee;
+            return matchStatus && matchAssignee && matchCompleted;
+        }).sort((a, b) => {
+            const dateA = new Date(a.started_at || a.appointment_time).getTime();
+            const dateB = new Date(b.started_at || b.appointment_time).getTime();
+            return sortOrder === 'desc' ? dateB - dateA : dateA - dateB;
         });
-    }, [appointments, filterStatus, filterAssignee]);
+    }, [appointments, filterStatus, filterAssignee, hideCompleted, sortOrder]);
 
     const activeFilters = (filterStatus !== 'all' ? 1 : 0) + (filterAssignee !== 'all' ? 1 : 0);
 
@@ -273,18 +280,39 @@ const StaffDashboard = () => {
                         ))}
                     </select>
 
+                    {/* Sort Toggle */}
+                    <button
+                        onClick={() => setSortOrder(prev => prev === 'desc' ? 'asc' : 'desc')}
+                        className="px-3 py-2 flex items-center bg-gray-50 dark:bg-gray-900/50 border border-gray-200 dark:border-gray-700 rounded-lg text-sm font-medium text-gray-700 dark:text-gray-200 hover:bg-white dark:hover:bg-gray-800 transition-colors whitespace-nowrap"
+                    >
+                        {sortOrder === 'desc' ? 'Recent First' : 'Oldest First'}
+                        <svg className={`ml-1.5 h-4 w-4 transform transition-transform ${sortOrder === 'desc' ? '' : 'rotate-180'}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                        </svg>
+                    </button>
+
+                    {/* Hide Completed Toggle */}
+                    <button
+                        onClick={() => setHideCompleted(prev => !prev)}
+                        className={`px-3 py-2 flex items-center border rounded-lg text-sm font-medium transition-colors whitespace-nowrap ${hideCompleted
+                            ? 'bg-indigo-50 border-indigo-200 text-indigo-700 dark:bg-indigo-900/30 dark:border-indigo-800 dark:text-indigo-300'
+                            : 'bg-gray-50 border-gray-200 text-gray-700 dark:bg-gray-900/50 dark:border-gray-700 dark:text-gray-200 hover:bg-white dark:hover:bg-gray-800'}`}
+                    >
+                        {hideCompleted ? 'Hidden: Completed' : 'Showing: Completed'}
+                    </button>
+
                     {/* Count badge */}
                     <span className="text-sm text-gray-500 dark:text-gray-400">
                         {filteredAppointments.length} result{filteredAppointments.length !== 1 ? 's' : ''}
                     </span>
 
                     {/* Clear */}
-                    {activeFilters > 0 && (
+                    {(activeFilters > 0 || !hideCompleted || sortOrder === 'asc') && (
                         <button
-                            onClick={() => { setFilterStatus('all'); setFilterAssignee('all'); }}
-                            className="flex items-center gap-1 text-sm text-red-500 hover:text-red-700"
+                            onClick={() => { setFilterStatus('all'); setFilterAssignee('all'); setHideCompleted(true); setSortOrder('desc'); }}
+                            className="flex items-center gap-1 px-3 py-2 text-sm font-medium rounded-lg text-red-500 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-900/20"
                         >
-                            <X className="h-3.5 w-3.5" /> Clear
+                            <X className="h-3.5 w-3.5 mr-1" /> Clear All
                         </button>
                     )}
                 </div>
