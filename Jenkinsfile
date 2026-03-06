@@ -298,7 +298,7 @@ pipeline {
                 anyOf {
                     branch 'main'
                     branch 'master'
-                    expression { env.GIT_BRANCH ==~ /.*release\/.*/ }
+                    expression { env.BRANCH_NAME ==~ /.*release\/.*/ }
                 }
             }
             steps {
