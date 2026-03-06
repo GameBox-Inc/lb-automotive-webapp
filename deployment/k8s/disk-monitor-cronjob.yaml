@@ -1,0 +1,99 @@
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: disk-monitor
+  namespace: lb-automotive
+spec:
+  # Run daily at 3 AM
+  schedule: "0 3 * * *"
+  successfulJobsHistoryLimit: 1
+  failedJobsHistoryLimit: 1
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          restartPolicy: OnFailure
+          containers:
+          - name: disk-monitor
+            image: alpine:latest
+            command:
+            - /bin/sh
+            - -c
+            - |
+              echo "=== Disk Space Monitor ==="
+              echo "Date: $(date)"
+              echo ""
+              
+              # Check disk usage
+              df -h /host
+              
+              echo ""
+              echo "=== Largest directories in /host/var/log ==="
+              du -sh /host/var/log/* 2>/dev/null | sort -rh | head -10
+              
+              echo ""
+              echo "=== Containerd image storage ==="
+              du -sh /host/var/lib/rancher/k3s/agent/containerd/* 2>/dev/null | sort -rh | head -5
+              
+              # Alert if disk usage > 80%
+              USAGE=$(df /host | tail -1 | awk '{print $5}' | sed 's/%//')
+              if [ "$USAGE" -gt 80 ]; then
+                echo ""
+                echo "⚠️  WARNING: Disk usage is ${USAGE}% - Cleanup recommended!"
+              fi
+            volumeMounts:
+            - name: host-root
+              mountPath: /host
+              readOnly: true
+          volumes:
+          - name: host-root
+            hostPath:
+              path: /
+              type: Directory
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: database-archiving
+  namespace: lb-automotive
+spec:
+  # Run monthly on 1st day at 2 AM
+  schedule: "0 2 1 * *"
+  successfulJobsHistoryLimit: 1
+  failedJobsHistoryLimit: 1
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          restartPolicy: OnFailure
+          imagePullSecrets:
+          - name: ghcr-secret
+          containers:
+          - name: archiver
+            image: ghcr.io/gamebox-inc/lb-automotive-backend:latest
+            command:
+            - python3
+            - /app/database_archiving.py
+            env:
+            - name: DATABASE_PATH
+              value: "/app/data/lb_automotive.db"
+            - name: ARCHIVE_DIR
+              value: "/app/data/archives"
+            - name: ARCHIVE_AFTER_DAYS
+              value: "90"
+            - name: DELETE_ARCHIVED_AFTER_DAYS
+              value: "30"
+            volumeMounts:
+            - name: app-data
+              mountPath: /app/data
+            resources:
+              limits:
+                memory: "256Mi"
+                cpu: "200m"
+              requests:
+                memory: "128Mi"
+                cpu: "100m"
+          volumes:
+          - name: app-data
+            persistentVolumeClaim:
+              claimName: app-data-pvc

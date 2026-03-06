@@ -1,0 +1,76 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: nginx-gateway-config
+  namespace: gamebox-security
+data:
+  nginx.conf: |
+    events {
+        worker_connections 1024;
+    }
+
+    http {
+        # Use Kubernetes DNS resolver (ClusterIP of kube-dns)
+        resolver 10.43.0.10 valid=30s;
+        
+        # Logging format for honeypot detection
+        log_format honeypot_format '$remote_addr - $remote_user [$time_local] '
+                                   '"$request" $status $body_bytes_sent '
+                                   '"$http_referer" "$http_user_agent" '
+                                   '"$http_cf_connecting_ip" "$http_cf_ray"';
+
+        # Rate limiting zone
+        limit_req_zone $binary_remote_addr zone=twilio:10m rate=10r/s;
+
+        server {
+            listen 80;
+            server_name _;
+
+            # Honeypot - catch all suspicious traffic
+            location / {
+                access_log /var/log/nginx/honeypot.log honeypot_format;
+                return 403 '{"error": "Access Denied", "message": "This endpoint is not publicly accessible"}';
+                add_header Content-Type application/json;
+            }
+
+            # Health check endpoint
+            location /health {
+                access_log off;
+                return 200 'OK';
+            }
+
+            # LB Automotive - Twilio webhook
+            location /lb-automotive/api/twilio/ {
+                # Validate Cloudflare headers
+                # Note: When using Cloudflare Tunnel, requests come from localhost
+                # so we validate headers instead of IP ranges
+                if ($http_cf_ray = "") {
+                    return 403 '{"error": "Invalid request", "message": "Missing Cloudflare authentication"}';
+                }
+
+                # Rate limiting (backup - Cloudflare does primary)
+                limit_req zone=twilio burst=10;
+                
+                # Log legitimate traffic
+                access_log /var/log/nginx/twilio-webhook.log;
+                
+                # Proxy to customer namespace with DNS resolution
+                # Proxy to customer namespace with DNS resolution
+                set $backend_upstream backend.lb-automotive.svc.cluster.local:8000;
+                
+                # Strip /lb-automotive prefix and pass to backend
+                rewrite ^/lb-automotive(/.*)$ $1 break;
+                proxy_pass http://$backend_upstream;
+                proxy_set_header Host $host;
+                proxy_set_header X-Real-IP $http_cf_connecting_ip;
+                proxy_set_header X-Forwarded-For $http_cf_connecting_ip;
+                proxy_set_header X-Forwarded-Proto https;
+                proxy_set_header X-Cloudflare-Ray $http_cf_ray;
+                
+                # Timeouts
+                proxy_connect_timeout 30s;
+                proxy_send_timeout 30s;
+                proxy_read_timeout 30s;
+            }
+        }
+    }

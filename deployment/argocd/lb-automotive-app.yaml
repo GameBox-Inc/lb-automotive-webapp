@@ -1,0 +1,55 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: lb-automotive
+  namespace: argocd
+  # Add finalizer to ensure proper cleanup
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  # Project to which this application belongs
+  project: default
+  
+  # Source repository
+  source:
+    repoURL: git@github.com:GameBox-Inc/lb-automotive-webapp.git
+    targetRevision: release/v0.1
+    path: deployment/k8s
+    
+    # Kustomize configuration (if needed)
+    # kustomize:
+    #   namePrefix: prod-
+  
+  # Destination cluster and namespace
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: lb-automotive
+  
+  # Sync policy
+  syncPolicy:
+    # Automated sync when Git changes detected
+    automated:
+      prune: true      # Delete resources that are no longer in Git
+      selfHeal: true   # Auto-correct drift from desired state
+      allowEmpty: false # Don't delete all resources if path becomes empty
+    
+    # Sync options
+    syncOptions:
+      - CreateNamespace=true  # Auto-create namespace if missing
+      - PruneLast=true        # Prune resources last
+      - RespectIgnoreDifferences=true
+    
+    # Retry strategy on sync failure
+    retry:
+      limit: 5
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 3m
+  
+  # Ignore differences for certain fields
+  ignoreDifferences:
+    - group: apps
+      kind: Deployment
+      jsonPointers:
+        - /spec/replicas  # Don't sync replica count if manually scaled

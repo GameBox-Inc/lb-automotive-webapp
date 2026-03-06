@@ -1,0 +1,44 @@
+# Traefik Dynamic Configuration
+http:
+  routers:
+    api-router:
+      rule: "PathPrefix(`/api`)"
+      service: api-service
+      entryPoints:
+        - web
+      middlewares:
+        - cors-headers
+
+    frontend-router:
+      rule: "PathPrefix(`/`)"
+      service: frontend-service
+      entryPoints:
+        - web
+
+  middlewares:
+    cors-headers:
+      headers:
+        accessControlAllowMethods:
+          - GET
+          - POST
+          - PUT
+          - DELETE
+          - OPTIONS
+        accessControlAllowOriginList:
+          - "*"
+        accessControlAllowHeaders:
+          - "*"
+        accessControlAllowCredentials: true
+        accessControlMaxAge: 100
+        addVaryHeader: true
+
+  services:
+    api-service:
+      loadBalancer:
+        servers:
+          - url: "http://python-backend:8000"
+    
+    frontend-service:
+      loadBalancer:
+        servers:
+          - url: "http://lb-automotive-frontend:5173"

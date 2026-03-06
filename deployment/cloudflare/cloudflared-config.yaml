@@ -1,0 +1,14 @@
+tunnel: f768b4de-f9d2-4717-a4d2-c5c87af60d78
+credentials-file: /etc/cloudflared/credentials.json
+
+ingress:
+  # ONLY the Twilio webhook subdomain is tunneled.
+  # The app is NOT publicly accessible — VPN only (http://10.100.0.1:30080).
+  - hostname: twilio.kozytherocket.space
+    service: http://localhost:30881
+    originRequest:
+      noTLSVerify: false
+      connectTimeout: 30s
+
+  # Catch-all rule (required)
+  - service: http_status:404

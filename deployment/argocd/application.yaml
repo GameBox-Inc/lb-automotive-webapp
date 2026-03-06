@@ -1,0 +1,20 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: lb-automotive
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/GameBox-Inc/lb-automotive-webapp.git
+    targetRevision: HEAD
+    path: deployment/k8s
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: lb-automotive
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+    - CreateNamespace=true

@@ -1,0 +1,24 @@
+{
+    "sql_injection_patterns": [
+        "(\\bunion\\b.*\\bselect\\b)",
+        "(\\bselect\\b.*\\bfrom\\b)",
+        "(\\binsert\\b.*\\binto\\b)",
+        "(\\bupdate\\b.*\\bset\\b)",
+        "(\\bdelete\\b.*\\bfrom\\b)",
+        "(\\bdrop\\b.*\\btable\\b)",
+        "(--)",
+        "(;.*--)",
+        "(\\bor\\b.*=.*)",
+        "(\\band\\b.*=.*)"
+    ],
+    "xss_patterns": [
+        "<script",
+        "javascript:",
+        "onerror=",
+        "onload=",
+        "onclick=",
+        "<iframe",
+        "<embed",
+        "<object"
+    ]
+}

@@ -1,0 +1,350 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Import Google Fonts - Bebas Neue for headings */
+@import url('https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Roboto:wght@400;500;700&display=swap');
+
+@layer base {
+  :root {
+    /* LB Auto Brand Colors */
+    --lb-red-primary: #B91C1C;
+    --lb-red-dark: #991B1B;
+    --lb-red-light: #DC2626;
+
+    --lb-yellow: #FDB80E;
+    --lb-yellow-light: #FDE047;
+    --lb-yellow-dark: #CA8A04;
+
+    --lb-dark-gray: #1F2937;
+    --lb-darker-gray: #111827;
+    --lb-black: #000000;
+
+    --lb-white: #FFFFFF;
+    --lb-off-white: #F9FAFB;
+
+    /* Supporting colors */
+    --lb-blue-accent: #3B82F6;
+    --lb-green-success: #059669;
+    --lb-gray-border: #E5E7EB;
+    --lb-gray-text: #6B7280;
+
+    /* Mobile dark theme (subtle touches only) */
+    --mobile-bg-primary: #1a1a1a;
+    --mobile-bg-secondary: #2d2d2d;
+    --mobile-bg-card: #242424;
+    --mobile-border: #404040;
+    --mobile-text-primary: #f2f2f2;
+    --mobile-text-secondary: #b3b3b3;
+    /* Keep LB Auto brand colors */
+    --mobile-accent: var(--lb-red-primary);
+    --mobile-accent-hover: var(--lb-red-light);
+    --mobile-yellow: var(--lb-yellow);
+
+    /* Typography */
+    --font-heading: 'Bebas Neue', 'Impact', 'Arial Black', sans-serif;
+    --font-body: 'Roboto', 'Arial', sans-serif;
+  }
+
+  * {
+    @apply border-gray-200;
+  }
+
+  body {
+    @apply bg-gradient-to-br from-gray-50 via-gray-100 to-gray-50 text-gray-900;
+    font-family: var(--font-body);
+    line-height: 1.6;
+    min-height: 100vh;
+  }
+
+  /* Mobile-first dark theme */
+  @media (max-width: 768px) {
+    body {
+      background: linear-gradient(135deg, var(--mobile-bg-primary) 0%, var(--mobile-bg-secondary) 100%);
+      color: var(--mobile-text-primary);
+    }
+  }
+
+  h1,
+  h2,
+  h3,
+  h4,
+  h5,
+  h6 {
+    font-family: var(--font-heading);
+    font-weight: 700;
+    letter-spacing: 0.02em;
+  }
+}
+
+@layer components {
+
+  /* Primary Button - Yellow CTA */
+  .btn-primary {
+    @apply bg-[#FDB80E] hover:bg-[#FDE047] text-gray-900 font-bold px-6 py-3 rounded-lg transition-all duration-300 uppercase tracking-wide shadow-md hover:shadow-lg hover:-translate-y-0.5;
+  }
+
+  /* Secondary Button - Dark */
+  .btn-secondary {
+    @apply bg-gray-800 hover:bg-gray-900 text-white font-bold px-6 py-3 rounded-lg border-2 border-transparent hover:border-[#FDB80E] transition-all duration-300 uppercase tracking-wide;
+  }
+
+  /* Emergency Button - Red */
+  .btn-emergency {
+    @apply bg-[#B91C1C] hover:bg-[#DC2626] text-white font-bold px-6 py-3 rounded-lg border-2 border-[#FDB80E] transition-all duration-300 uppercase tracking-wide shadow-lg hover:shadow-xl animate-pulse;
+  }
+
+  /* Card Component */
+  .card {
+    @apply bg-white rounded-xl shadow-md hover:shadow-2xl transition-all duration-300 border border-gray-200 hover:border-[#B91C1C] hover:-translate-y-1;
+  }
+
+  /* Mobile dark card */
+  @media (max-width: 768px) {
+    .card {
+      background-color: var(--mobile-bg-card);
+      border-color: var(--mobile-border);
+      @apply shadow-none;
+    }
+  }
+
+  /* Status Badges - Pill style (Hetzner-like) */
+  .badge-confirmed {
+    @apply bg-green-600 text-white px-3 py-1 rounded-full text-xs font-semibold uppercase whitespace-nowrap;
+  }
+
+  .badge-pending {
+    @apply bg-[#FDB80E] text-gray-900 px-3 py-1 rounded-full text-xs font-semibold uppercase whitespace-nowrap;
+  }
+
+  .badge-emergency {
+    @apply bg-[#B91C1C] text-white px-3 py-1 rounded-full text-xs font-semibold uppercase animate-pulse whitespace-nowrap;
+  }
+
+  .badge-cancelled {
+    @apply bg-gray-400 text-white px-3 py-1 rounded-full text-xs font-semibold uppercase whitespace-nowrap;
+  }
+
+  /* Mobile pill badges - smaller, more compact */
+  @media (max-width: 768px) {
+
+    .badge-confirmed,
+    .badge-pending,
+    .badge-emergency,
+    .badge-cancelled {
+      @apply px-2.5 py-0.5 text-[10px];
+    }
+  }
+
+  /* Navigation */
+  .nav-link {
+    @apply text-white font-semibold uppercase text-sm tracking-wide hover:text-[#FDB80E] transition-colors duration-200;
+  }
+
+  /* Input Fields */
+  .input-field {
+    @apply w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#B91C1C] focus:border-transparent transition-all duration-200;
+  }
+
+  /* Mobile dark input */
+  @media (max-width: 768px) {
+    .input-field {
+      background-color: var(--mobile-bg-secondary);
+      border-color: var(--mobile-border);
+      color: var(--mobile-text-primary);
+    }
+  }
+
+  /* Loading Spinner */
+  .spinner {
+    @apply animate-spin rounded-full border-4 border-gray-200 border-t-[#B91C1C];
+  }
+
+  /* Mobile compact list item (Hetzner-style) */
+  .mobile-list-item {
+    @apply flex items-center justify-between p-3 border-b;
+  }
+
+  @media (max-width: 768px) {
+    .mobile-list-item {
+      border-color: var(--mobile-border);
+      background-color: var(--mobile-bg-card);
+    }
+  }
+}
+
+@layer utilities {
+
+  /* Text gradient */
+  .text-gradient {
+    @apply bg-gradient-to-r from-[#B91C1C] to-[#DC2626] bg-clip-text text-transparent;
+  }
+
+  /* Smooth scroll */
+  .smooth-scroll {
+    scroll-behavior: smooth;
+  }
+
+  /* Mobile dark text */
+  @media (max-width: 768px) {
+    .mobile-text-primary {
+      color: var(--mobile-text-primary);
+    }
+
+    .mobile-text-secondary {
+      color: var(--mobile-text-secondary);
+    }
+
+    .mobile-bg-card {
+      background-color: var(--mobile-bg-card);
+    }
+
+    .mobile-border {
+      border-color: var(--mobile-border);
+    }
+  }
+
+  /* Glassmorphism Card */
+  .glass-card {
+    background: rgba(255, 255, 255, 0.7);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+    border: 1px solid rgba(255, 255, 255, 0.3);
+    box-shadow: 0 8px 32px 0 rgba(31, 38, 135, 0.15);
+  }
+
+  /* Button Glow Effect */
+  .btn-glow {
+    box-shadow: 0 0 20px rgba(185, 28, 28, 0.5);
+    transition: all 0.3s ease;
+  }
+
+  .btn-glow:hover {
+    box-shadow: 0 0 30px rgba(185, 28, 28, 0.8);
+    transform: translateY(-2px) scale(1.02);
+  }
+
+  /* Animated Gradient Background */
+  .gradient-animate {
+    background: linear-gradient(-45deg, #B91C1C, #DC2626, #FDB80E, #FDE047);
+    background-size: 400% 400%;
+    animation: gradient 15s ease infinite;
+  }
+
+  @keyframes gradient {
+    0% {
+      background-position: 0% 50%;
+    }
+
+    50% {
+      background-position: 100% 50%;
+    }
+
+    100% {
+      background-position: 0% 50%;
+    }
+  }
+
+  /* Fade In Animation */
+  .fade-in {
+    animation: fadeIn 0.5s ease-in;
+  }
+
+  @keyframes fadeIn {
+    from {
+      opacity: 0;
+      transform: translateY(10px);
+    }
+
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  /* Pulse Glow */
+  .pulse-glow {
+    animation: pulseGlow 2s ease-in-out infinite;
+  }
+
+  @keyframes pulseGlow {
+
+    0%,
+    100% {
+      box-shadow: 0 0 10px rgba(185, 28, 28, 0.5);
+    }
+
+    50% {
+      box-shadow: 0 0 20px rgba(185, 28, 28, 0.8);
+    }
+  }
+
+  /* Shimmer Effect */
+  .shimmer {
+    position: relative;
+    overflow: hidden;
+  }
+
+  .shimmer::after {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: -100%;
+    width: 100%;
+    height: 100%;
+    background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.3), transparent);
+    animation: shimmer 2s infinite;
+  }
+
+  @keyframes shimmer {
+    100% {
+      left: 100%;
+    }
+  }
+
+  /* Floating Animation */
+  .animate-float {
+    animation: float 3s ease-in-out infinite;
+  }
+
+  @keyframes float {
+
+    0%,
+    100% {
+      transform: translateY(0px) rotate(3deg);
+    }
+
+    50% {
+      transform: translateY(-10px) rotate(-3deg);
+    }
+  }
+
+  /* Scale In Animation */
+  .animate-scale-in {
+    animation: scaleIn 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards;
+  }
+
+  @keyframes scaleIn {
+    from {
+      transform: scale(0) rotate(-45deg);
+      opacity: 0;
+    }
+
+    to {
+      transform: scale(1) rotate(0deg);
+      opacity: 1;
+    }
+  }
+}
+
+/* Performance optimizations */
+@media (prefers-reduced-motion: reduce) {
+
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}

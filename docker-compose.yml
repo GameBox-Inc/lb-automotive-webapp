@@ -1,0 +1,121 @@
+version: '3.8'
+
+services:
+  # Python Backend Service (Scalable)
+  python-backend:
+    build:
+      context: ./python-backend
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    deploy:
+      replicas: 2
+    environment:
+      - DATABASE_URL=${DATABASE_URL:-sqlite:////app/data/lb_automotive.db}
+      - SECRET_KEY=${SECRET_KEY}
+      - ALGORITHM=${ALGORITHM:-HS256}
+      - ACCESS_TOKEN_EXPIRE_MINUTES=${ACCESS_TOKEN_EXPIRE_MINUTES:-30}
+      - TWILIO_ACCOUNT_SID=${TWILIO_ACCOUNT_SID}
+      - TWILIO_AUTH_TOKEN=${TWILIO_AUTH_TOKEN}
+      - TWILIO_PHONE_NUMBER=${TWILIO_PHONE_NUMBER}
+      - ALLOWED_ORIGINS=${ALLOWED_ORIGINS:-http://localhost:5173,http://localhost:8000,https://electrolytically-deprived-eldon.ngrok-free.dev}
+      - REDIS_URL=redis://redis:6379/0
+      - LLM_PROVIDER=${LLM_PROVIDER:-ollama}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      - ANTHROPIC_MODEL=${ANTHROPIC_MODEL:-claude-3-5-sonnet-20241022}
+      - OLLAMA_HOST=${OLLAMA_HOST:-http://ollama:11434}
+      - OLLAMA_MODEL=${OLLAMA_MODEL:-smollm2:135m}
+    volumes:
+      - ./python-backend/data:/app/data
+      - ./python-backend:/app
+    # No host port mapping here to allow multiple replicas
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.api.rule=PathPrefix(`/api`)"
+      - "traefik.http.routers.api.entrypoints=web"
+      - "traefik.http.services.api.loadbalancer.server.port=8000"
+    networks:
+      - lb-automotive-network
+    depends_on:
+      - redis
+
+  # Traefik Reverse Proxy
+  traefik:
+    image: traefik:v2.10
+    container_name: lb-automotive-traefik
+    restart: unless-stopped
+    command:
+      - "--api.insecure=false"  # Disable insecure API access
+      - "--api.dashboard=true"
+      - "--providers.docker=true"
+      - "--providers.docker.exposedbydefault=false"
+      - "--entrypoints.web.address=:80"
+      - "--providers.file.directory=/etc/traefik/dynamic"
+      - "--providers.file.watch=true"
+    ports:
+      - "80:80"
+      # Dashboard port removed from public access - access via internal network only if needed
+      # For local development, uncomment and access via localhost only
+      # - "127.0.0.1:8080:8080"  # Bind to localhost only
+    volumes:
+      - //var/run/docker.sock:/var/run/docker.sock:ro
+      - ./traefik/dynamic:/etc/traefik/dynamic:ro
+    networks:
+      - lb-automotive-network
+
+  # Redis for Session/Rate-Limit State (Single Instance instance)
+  redis:
+    image: redis:7-alpine
+    container_name: lb-automotive-redis
+    restart: unless-stopped
+    volumes:
+      - redis-data:/data
+    networks:
+      - lb-automotive-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  # Frontend Service
+  lb-automotive-frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: lb-automotive-frontend
+    restart: unless-stopped
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+    environment:
+      - VITE_API_URL=https://electrolytically-deprived-eldon.ngrok-free.dev/api
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.frontend.rule=PathPrefix(`/`)"
+      - "traefik.http.routers.frontend.entrypoints=web"
+      - "traefik.http.services.frontend.loadbalancer.server.port=5173"
+    networks:
+      - lb-automotive-network
+
+  # Ngrok Tunnel
+  ngrok:
+    image: ngrok/ngrok:latest
+    container_name: ngrok
+    restart: unless-stopped
+    command:
+      - "http"
+      - "--domain=electrolytically-deprived-eldon.ngrok-free.dev"
+      - "traefik:80"
+    environment:
+      - NGROK_AUTHTOKEN=${NGROK_AUTHTOKEN}
+    networks:
+      - lb-automotive-network
+    depends_on:
+      - traefik
+
+networks:
+  lb-automotive-network:
+    driver: bridge
+
+volumes:
+  redis-data:

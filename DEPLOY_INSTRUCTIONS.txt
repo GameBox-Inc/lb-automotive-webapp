@@ -1,0 +1,247 @@
+================================================================================
+DEPLOYMENT INSTRUCTIONS FOR 2GB SERVER OPTIMIZATION
+================================================================================
+
+CRITICAL: Your server is experiencing Out of Memory (OOM) errors.
+Follow these steps IMMEDIATELY to fix the frontend crash issue.
+
+================================================================================
+STEP 1: COMMIT AND PUSH CHANGES
+================================================================================
+
+On your local machine (Windows):
+
+1. Review changes:
+   git status
+   git diff
+
+2. Commit optimizations:
+   git add deployment/k8s/*.yaml
+   git add deployment/scripts/*.sh
+   git add python-backend/database_archiving.py
+   git add *.md
+   git commit -m "Optimize for 2GB server: remove Ollama/ArgoCD, add log rotation and DB archiving"
+
+3. Push to server:
+   git push origin release/v0.1
+
+================================================================================
+STEP 2: SSH INTO SERVER AND APPLY FIXES
+================================================================================
+
+ssh lb-admin@178.156.223.196
+
+# Navigate to repo
+cd /opt/lb-automotive-dashboard
+
+# Pull latest changes
+git fetch origin
+git checkout release/v0.1
+git pull origin release/v0.1
+
+# Make scripts executable
+chmod +x deployment/scripts/*.sh
+chmod +x python-backend/database_archiving.py
+
+================================================================================
+STEP 3: REMOVE MEMORY HOGS (CRITICAL!)
+================================================================================
+
+# This frees up ~2GB RAM immediately
+./deployment/scripts/remove_memory_hogs.sh
+
+# Expected output:
+# ✓ Ollama removed
+# ✓ ArgoCD removed (if installed)
+# ✓ Cleanup complete
+
+================================================================================
+STEP 4: SETUP LOG ROTATION
+================================================================================
+
+# Prevents logs from filling 40GB disk
+sudo ./deployment/scripts/setup_log_rotation.sh
+
+# Expected output:
+# ✓ Container log rotation configured
+# ✓ K3s log rotation configured
+# ✓ Journald limits configured (500MB max)
+# ✓ Large logs truncated
+# ✓ Daily cleanup cron job created
+
+================================================================================
+STEP 5: APPLY OPTIMIZED KUBERNETES CONFIGS
+================================================================================
+
+# Apply memory-optimized deployments
+kubectl apply -f deployment/k8s/redis.yaml
+kubectl apply -f deployment/k8s/backend.yaml
+kubectl apply -f deployment/k8s/frontend.yaml
+
+# Apply monitoring cron jobs
+kubectl apply -f deployment/k8s/disk-monitor-cronjob.yaml
+
+# Restart deployments to apply new limits
+kubectl rollout restart deployment frontend -n lb-automotive
+kubectl rollout restart deployment backend -n lb-automotive
+kubectl rollout restart deployment redis -n lb-automotive
+
+================================================================================
+STEP 6: CONFIGURE ANTHROPIC API (REQUIRED)
+================================================================================
+
+# Since Ollama is removed, backend MUST use Anthropic Claude API
+# Ensure ANTHROPIC_API_KEY is set:
+
+kubectl create secret generic anthropic-secrets -n lb-automotive \
+  --from-literal=ANTHROPIC_API_KEY="YOUR_ANTHROPIC_KEY_HERE" \
+  --from-literal=ANTHROPIC_MODEL="claude-3-5-sonnet-20241022" \
+  --dry-run=client -o yaml | kubectl apply -f -
+
+# Update app secrets to use Anthropic:
+kubectl create secret generic app-secrets -n lb-automotive \
+  --from-literal=LLM_PROVIDER=anthropic \
+  --from-literal=SECRET_KEY="$(kubectl get secret app-secrets -n lb-automotive -o jsonpath='{.data.SECRET_KEY}' | base64 -d)" \
+  --from-literal=ALLOWED_ORIGINS="$(kubectl get secret app-secrets -n lb-automotive -o jsonpath='{.data.ALLOWED_ORIGINS}' | base64 -d)" \
+  --from-literal=DATABASE_URL="sqlite:////app/data/lb_automotive.db" \
+  --from-literal=REDIS_URL="redis://redis:6379/0" \
+  --from-literal=CSP_POLICY="strict" \
+  --dry-run=client -o yaml | kubectl apply -f -
+
+# Restart backend to pick up new config
+kubectl rollout restart deployment backend -n lb-automotive
+
+================================================================================
+STEP 7: VERIFY EVERYTHING IS WORKING
+================================================================================
+
+# 1. Check all pods are running
+kubectl get pods -n lb-automotive -o wide
+
+# Expected: All pods in "Running" state, no CrashLoopBackOff
+
+# 2. Check memory usage
+free -h
+kubectl top nodes
+kubectl top pods -n lb-automotive --sort-by=memory
+
+# Expected:
+# - Free memory: >500MB
+# - Backend: ~200-300MB
+# - Frontend: ~50-80MB
+# - Redis: ~50-70MB
+
+# 3. Check disk usage
+df -h
+
+# Expected: <70% used
+
+# 4. Check pod logs (should not show OOM errors)
+kubectl logs -n lb-automotive deployment/frontend --tail=50
+kubectl logs -n lb-automotive deployment/backend --tail=50
+
+# 5. Check system logs (no more OOM killer messages)
+dmesg | grep -i "out of memory" | tail -5
+
+# Expected: No recent OOM messages (old ones are OK)
+
+# 6. Test the application
+curl -I http://localhost
+
+# Expected: HTTP/1.1 200 OK
+
+================================================================================
+STEP 8: OPTIONAL BUT RECOMMENDED - ADD SWAP SPACE
+================================================================================
+
+# If you still see any memory pressure, add 2GB swap:
+
+sudo fallocate -l 2G /swapfile
+sudo chmod 600 /swapfile
+sudo mkswap /swapfile
+sudo swapon /swapfile
+echo '/swapfile none swap sw 0 0' | sudo tee -a /etc/fstab
+
+# Verify
+free -h
+
+# Expected: Swap: 2.0Gi total
+
+================================================================================
+MONITORING GOING FORWARD
+================================================================================
+
+# Daily checks:
+kubectl get pods -n lb-automotive              # Pods running?
+kubectl top pods -n lb-automotive              # Memory usage OK?
+df -h                                          # Disk space OK?
+
+# Weekly checks:
+dmesg | grep -i "out of memory"               # Any OOM errors?
+kubectl get events -n lb-automotive --sort-by='.lastTimestamp' | tail -20
+
+# Monthly:
+# Database archiving runs automatically on 1st of month at 2 AM
+# Check archives:
+kubectl exec -n lb-automotive deployment/backend -- ls -lh /app/data/archives/
+
+================================================================================
+TROUBLESHOOTING
+================================================================================
+
+If frontend still won't start:
+1. kubectl describe pod <frontend-pod> -n lb-automotive
+2. kubectl logs <frontend-pod> -n lb-automotive --previous
+3. kubectl delete pod <frontend-pod> -n lb-automotive
+
+If memory is still tight:
+1. Check for rogue processes: ps aux --sort=-%mem | head -20
+2. Check Redis: kubectl exec -n lb-automotive deployment/redis -- redis-cli info memory
+3. Add swap space (see Step 8)
+
+If disk is full:
+1. sudo /etc/cron.daily/disk-cleanup
+2. sudo docker system prune -af --volumes
+3. sudo journalctl --vacuum-size=100M
+
+================================================================================
+DOCUMENTATION
+================================================================================
+
+Detailed guides:
+- QUICK_FIX_2GB_SERVER.md       - Emergency fixes
+- DEPLOYMENT_2GB_SERVER.md      - Complete deployment guide  
+- README_2GB_OPTIMIZATION.md    - Optimization summary
+- CLAUDE.md                     - Updated project documentation
+
+================================================================================
+EXPECTED RESULTS
+================================================================================
+
+After deployment:
+✓ Frontend accessible and stable
+✓ No more OOM crashes
+✓ Free memory: 500-800MB
+✓ Disk usage: <70%
+✓ All pods in "Running" state
+✓ Logs automatically managed
+✓ Database automatically archived monthly
+✓ System stable for 10-50 concurrent users
+
+================================================================================
+NEXT STEPS
+================================================================================
+
+If issues persist after optimization:
+→ Upgrade to 4GB RAM server (~$9-12/mo)
+
+If you need high availability or >50 users:
+→ Upgrade to 8GB RAM server (~$18-24/mo)
+
+Current setup works for:
+✓ 10-50 concurrent users
+✓ 1,000-5,000 appointments/month
+✓ 500-1,000 IVR calls/month
+✓ Small to medium business
+
+================================================================================

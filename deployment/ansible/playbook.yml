@@ -1,0 +1,72 @@
+---
+- name: Setup Hetzner Server for LB Automotive Dashboard
+  hosts: hetzner_server
+  become: true
+  vars:
+    project_root: /opt/lb-automotive-dashboard
+    docker_compose_version: "v2.24.0"
+
+  tasks:
+    - name: Update apt cache and install dependencies
+      apt:
+        name:
+          - apt-transport-https
+          - ca-certificates
+          - curl
+          - software-properties-common
+          - git
+          - ufw
+        state: present
+        update_cache: yes
+
+    - name: Install Docker
+      shell: |
+        curl -fsSL https://get.docker.com -o get-docker.sh
+        sh get-docker.sh
+      args:
+        creates: /usr/bin/docker
+
+    - name: Install Docker Compose
+      get_url:
+        url: "https://github.com/docker/compose/releases/download/{{ docker_compose_version }}/docker-compose-linux-x86_64"
+        dest: /usr/local/bin/docker-compose
+        mode: '0755'
+
+    - name: Configure UFW Firewall
+      ufw:
+        rule: allow
+        port: "{{ item }}"
+        proto: tcp
+      loop:
+        - '22'
+        - '80'
+        - '443'
+        - '51820'  # WireGuard
+        - '11434' # Ollama (Restrict this in production via VPN)
+
+    - name: Enable UFW
+      ufw:
+        state: enabled
+        policy: deny
+
+    - name: Create Project Directory
+      file:
+        path: "{{ project_root }}"
+        state: directory
+        mode: '0755'
+
+    # Note: In a real scenario, you might use the git module or rsync.
+    # For now, we assume we copy files manually or via a separate step.
+    
+    - name: Ensure Docker Service is running
+      service:
+        name: docker
+        state: started
+        enabled: yes
+
+    - name: Create Docker Network
+      docker_network:
+        name: app-network
+
+    # Cloudflare Tunnel Setup (Placeholder - requires auth)
+    # You would typically run 'cloudflared login' manually or pass token via ENV variables

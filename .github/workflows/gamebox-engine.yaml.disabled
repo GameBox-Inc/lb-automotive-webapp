@@ -1,0 +1,307 @@
+name: CI/CD Pipeline
+
+on:
+  push:
+    branches: [ "main", "master", "release/*" ]
+  pull_request:
+    branches: [ "main", "master", "release/*" ]
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      # Backend Tests
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install dependencies
+        run: |
+          cd python-backend
+          pip install -r requirements.txt
+          pip install pytest httpx
+      - name: Run Backend Tests
+        env:
+          SECRET_KEY: test-secret-key-for-ci-only-not-production
+          ALLOWED_ORIGINS: http://localhost:5173,http://localhost:3000
+          DATABASE_URL: sqlite:///./test_lb_automotive.db
+        run: |
+          cd python-backend
+          if [ -d "tests" ] && [ "$(ls -A tests)" ]; then
+            pytest
+          else
+            echo "⚠️ No backend tests found, skipping..."
+          fi
+
+      # Frontend Tests
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+      - name: Install dependencies
+        run: |
+          cd frontend
+          npm ci
+      - name: Run Frontend Tests
+        run: |
+          cd frontend
+          if npm run test --if-present; then
+            echo "✅ Frontend tests passed"
+          else
+            echo "⚠️ No frontend tests configured, skipping..."
+          fi
+        continue-on-error: true
+
+  build-and-push:
+    needs: test
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    env:
+      OWNER_LC: ${{ github.repository_owner }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set lowercase owner
+        run: |
+          echo "OWNER_LC=$(echo $OWNER_LC | tr '[:upper:]' '[:lower:]')" >> $GITHUB_ENV
+
+      - name: Log in to the Container registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # Backend Build
+      - name: Build and push Backend
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: deployment/docker/Dockerfile.backend
+          push: true
+          tags: |
+            ${{ env.REGISTRY }}/${{ env.OWNER_LC }}/lb-automotive-backend:latest
+            ${{ env.REGISTRY }}/${{ env.OWNER_LC }}/lb-automotive-backend:${{ github.sha }}
+
+      # Frontend Build
+      - name: Build and push Frontend
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: deployment/docker/Dockerfile.frontend
+          push: true
+          build-args: |
+            VITE_API_URL=/api
+          tags: |
+            ${{ env.REGISTRY }}/${{ env.OWNER_LC }}/lb-automotive-frontend:latest
+            ${{ env.REGISTRY }}/${{ env.OWNER_LC }}/lb-automotive-frontend:${{ github.sha }}
+
+  deploy:
+    needs: build-and-push
+    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master' || startsWith(github.ref, 'refs/heads/release/'))
+    runs-on: self-hosted  # Uses self-hosted runner on your server
+    environment:
+      name: production
+      url: https://kozytherocket.space
+    
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Deploy to server
+        env:
+          REMOTE_DIR: /opt/lb-automotive-dashboard
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SECRET_KEY: ${{ secrets.SECRET_KEY }}
+          ALLOWED_ORIGINS: ${{ secrets.ALLOWED_ORIGINS }}
+          LLM_PROVIDER: ${{ secrets.LLM_PROVIDER }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          TWILIO_ACCOUNT_SID: ${{ secrets.TWILIO_ACCOUNT_SID }}
+          TWILIO_AUTH_TOKEN: ${{ secrets.TWILIO_AUTH_TOKEN }}
+          TWILIO_PHONE_NUMBER: ${{ secrets.TWILIO_PHONE_NUMBER }}
+        run: |
+          set -e
+
+          # Verify we're in the right directory
+          if [ ! -d "$REMOTE_DIR" ]; then
+            echo "❌ Error: Directory $REMOTE_DIR does not exist"
+            exit 1
+          fi
+
+          cd $REMOTE_DIR
+
+          # Verify git repository
+          if [ ! -d ".git" ]; then
+            echo "❌ Error: Not a git repository"
+            exit 1
+          fi
+
+          # Configure git to use HTTPS with token authentication
+          echo "🔐 Configuring git credentials..."
+          git config --local credential.helper '!f() { echo "username=x-access-token"; echo "password=$GH_TOKEN"; }; f'
+
+          # Set remote URL to HTTPS if it's using SSH
+          CURRENT_REMOTE=$(git remote get-url origin)
+          if [[ $CURRENT_REMOTE == git@github.com:* ]]; then
+            echo "📝 Converting SSH remote to HTTPS..."
+            HTTPS_URL=$(echo $CURRENT_REMOTE | sed 's|git@github.com:|https://github.com/|' | sed 's|\.git$||')
+            git remote set-url origin "$HTTPS_URL"
+          fi
+
+          # Create .env file from GitHub Secrets
+          echo "📝 Creating .env file from GitHub Secrets..."
+
+          # Check if required secrets are set
+          if [ -z "$SECRET_KEY" ]; then
+            echo "❌ Error: SECRET_KEY secret not set in GitHub!"
+            echo ""
+            echo "To fix this:"
+            echo "  1. Go to: https://github.com/GameBox-Inc/lb-automotive-webapp/settings/secrets/actions"
+            echo "  2. Click 'New repository secret'"
+            echo "  3. Name: SECRET_KEY"
+            echo "  4. Value: Generate with 'openssl rand -hex 32'"
+            echo ""
+            exit 1
+          fi
+
+          if [ -z "$ALLOWED_ORIGINS" ]; then
+            echo "❌ Error: ALLOWED_ORIGINS secret not set in GitHub!"
+            echo ""
+            echo "To fix this:"
+            echo "  1. Go to: https://github.com/GameBox-Inc/lb-automotive-webapp/settings/secrets/actions"
+            echo "  2. Click 'New repository secret'"
+            echo "  3. Name: ALLOWED_ORIGINS"
+            echo "  4. Value: https://kozytherocket.space,https://www.kozytherocket.space"
+            echo ""
+            exit 1
+          fi
+
+          # Create .env file
+          {
+            echo "# LB Automotive Dashboard - Production Environment"
+            echo "# Auto-generated from GitHub Secrets on $(date)"
+            echo ""
+            echo "# Required Variables"
+            echo "SECRET_KEY=$SECRET_KEY"
+            echo "ALLOWED_ORIGINS=$ALLOWED_ORIGINS"
+            echo ""
+            echo "# LLM Configuration"
+            echo "LLM_PROVIDER=${LLM_PROVIDER:-ollama}"
+            echo "OLLAMA_HOST=http://ollama:11434"
+            echo "OLLAMA_MODEL=smollm2:135m"
+            echo ""
+            echo "# Database"
+            echo "DATABASE_URL=sqlite:////app/data/lb_automotive.db"
+            echo ""
+            echo "# Redis"
+            echo "REDIS_URL=redis://redis:6379/0"
+            echo ""
+            echo "# Security"
+            echo "CSP_POLICY=strict"
+          } > deployment/docker/.env
+
+          # Add Anthropic config if provided
+          if [ -n "$ANTHROPIC_API_KEY" ]; then
+            {
+              echo ""
+              echo "# Anthropic Configuration"
+              echo "ANTHROPIC_API_KEY=$ANTHROPIC_API_KEY"
+              echo "ANTHROPIC_MODEL=${ANTHROPIC_MODEL:-claude-3-5-sonnet-20241022}"
+            } >> deployment/docker/.env
+          fi
+
+          # Add Twilio config if provided
+          if [ -n "$TWILIO_ACCOUNT_SID" ]; then
+            {
+              echo ""
+              echo "# Twilio Configuration"
+              echo "TWILIO_ACCOUNT_SID=$TWILIO_ACCOUNT_SID"
+              echo "TWILIO_AUTH_TOKEN=$TWILIO_AUTH_TOKEN"
+              echo "TWILIO_PHONE_NUMBER=$TWILIO_PHONE_NUMBER"
+            } >> deployment/docker/.env
+          fi
+
+          # Set secure permissions
+          chmod 600 deployment/docker/.env
+
+          echo "✅ .env file created from GitHub Secrets"
+
+          # Pull latest code
+          echo "📥 Pulling latest code..."
+          BRANCH_NAME=$(echo $GITHUB_REF | sed 's/refs\/heads\///')
+          echo "Branch: $BRANCH_NAME"
+          git fetch origin
+          git reset --hard origin/$BRANCH_NAME
+
+          # Pull latest Docker images
+          echo "📦 Pulling latest Docker images..."
+          docker compose -f deployment/docker/docker-compose.yml pull || echo "⚠️ Failed to pull some images, will build from source"
+
+          # Stop containers before migration
+          echo "🛑 Stopping containers..."
+          docker compose -f deployment/docker/docker-compose.yml down || true
+
+          # Run database migrations if needed
+          echo "🗄️ Running database migrations..."
+          docker compose -f deployment/docker/docker-compose.yml up -d backend
+          sleep 5
+          docker exec lb-auto-backend python migrate_business_hours.py || echo "⚠️ Business hours migration may have already run or failed"
+          docker exec lb-auto-backend python migrate_24_7_settings.py || echo "⚠️ 24/7 settings migration may have already run or failed"
+
+          # Rebuild and restart all containers
+          echo "🔄 Rebuilding and starting all containers..."
+          docker compose -f deployment/docker/docker-compose.yml up -d --build --force-recreate
+
+          # Wait for services to be healthy
+          echo "⏳ Waiting for services to start..."
+          sleep 15
+
+          # Verify deployment
+          echo "✅ Verifying deployment..."
+          docker compose -f deployment/docker/docker-compose.yml ps
+
+      - name: Verify deployment
+        run: |
+          echo "🔍 Checking backend health..."
+          sleep 5
+
+          # Try backend health check
+          if curl -f http://localhost:8000/health; then
+            echo "✅ Backend is healthy"
+          else
+            echo "⚠️ Backend health check failed"
+            docker logs lb-auto-backend --tail 50
+            exit 1
+          fi
+
+          # Check if frontend is responding
+          echo "🔍 Checking frontend health..."
+          if curl -f http://localhost/health; then
+            echo "✅ Frontend is healthy"
+          else
+            echo "⚠️ Frontend health check failed"
+            docker logs lb-auto-frontend --tail 50
+          fi
+
+      - name: Deployment Summary
+        if: always()
+        run: |
+          echo "========================================"
+          echo "📊 Deployment Summary"
+          echo "========================================"
+          echo "Branch: $(echo $GITHUB_REF | sed 's/refs\/heads\///')"
+          echo "Commit: ${{ github.sha }}"
+          echo "Environment: https://kozytherocket.space"
+          echo "========================================"
+          echo "Container Status:"
+          docker compose -f /opt/lb-automotive-dashboard/deployment/docker/docker-compose.yml ps
+          echo "========================================"

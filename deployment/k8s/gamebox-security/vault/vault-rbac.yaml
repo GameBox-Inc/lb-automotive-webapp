@@ -1,0 +1,93 @@
+# =============================================================================
+# vault-rbac.yaml — Vault ServiceAccount + ClusterRole for Kubernetes Auth
+# =============================================================================
+# The Vault server needs permission to call TokenReview (validate SA tokens)
+# and to read ServiceAccounts — this is how Kubernetes auth works.
+# =============================================================================
+
+# ── Vault Server ServiceAccount ───────────────────────────────────────────────
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: vault
+  namespace: gamebox-security
+  labels:
+    app: vault
+    component: server
+
+---
+# ── ClusterRole: allows Vault to validate Pod identities ──────────────────────
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: vault-auth-delegator
+  labels:
+    app: vault
+rules:
+  # Required for Kubernetes auth method — verifies the SA JWT from incoming pods
+  - apiGroups: [""]
+    resources: ["tokenreviews"]
+    verbs: ["create"]
+  # Required to look up SA details
+  - apiGroups: [""]
+    resources: ["serviceaccounts"]
+    verbs: ["get"]
+  # Required for pod identity validation
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["get"]
+  # Required for the injector mutating webhook
+  - apiGroups: ["admissionregistration.k8s.io"]
+    resources: ["mutatingwebhookconfigurations"]
+    verbs: ["get", "list", "patch", "update"]
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: vault-auth-delegator
+  labels:
+    app: vault
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: vault-auth-delegator
+subjects:
+  - kind: ServiceAccount
+    name: vault
+    namespace: gamebox-security
+
+---
+# ── Standard auth-delegator binding (required by Kubernetes auth method) ──────
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: vault-cluster-auth-delegator
+  labels:
+    app: vault
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: system:auth-delegator
+subjects:
+  - kind: ServiceAccount
+    name: vault
+    namespace: gamebox-security
+
+---
+# =============================================================================
+# lb-automotive Application ServiceAccount
+# Every app that uses Vault runs as its own named ServiceAccount.
+# The SA name is what authenticates the pod to Vault.
+# =============================================================================
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: lb-automotive-backend
+  namespace: lb-automotive
+  labels:
+    app: backend
+    vault-auth: "true"
+    gamebox-app: "lb-automotive"
+  annotations:
+    vault.hashicorp.com/role: "lb-automotive-role"

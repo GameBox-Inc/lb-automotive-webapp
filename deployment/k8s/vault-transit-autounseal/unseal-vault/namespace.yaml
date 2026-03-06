@@ -1,0 +1,18 @@
+# =============================================================================
+# namespace.yaml — vault-unseal namespace
+#
+# Runs a dedicated Vault CE instance whose sole job is to hold the
+# Transit key used to auto-unseal the Main Vault in gamebox-security.
+#
+# Segmentation rationale:
+#   - vault-unseal  : Unseal Vault (Transit engine only, no app secrets)
+#   - gamebox-security: Main Vault + Traefik + Cloudflared
+#   - lb-automotive : Application workloads
+# =============================================================================
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: vault-unseal
+  labels:
+    name: vault-unseal
+    purpose: vault-transit-autounseal

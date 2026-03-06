@@ -1,0 +1,2 @@
+# Shell scripts: LF on checkout (so they run on Linux server)
+*.sh text eol=lf

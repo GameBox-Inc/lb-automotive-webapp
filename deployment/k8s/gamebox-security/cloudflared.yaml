@@ -1,0 +1,137 @@
+# =============================================================================
+# cloudflared.yaml — Cloudflare Tunnel Deployment in gamebox-security
+#
+# Replaces the systemd cloudflared service with a K8s Deployment.
+# Benefits: auto-restart, ArgoCD GitOps management, internal service DNS
+# instead of localhost NodePorts.
+#
+# Before applying:
+#   1. Run create-cloudflare-secret.sh to create the credentials secret
+#   2. kubectl apply -f cloudflared.yaml
+#   3. sudo systemctl stop cloudflared && sudo systemctl disable cloudflared
+# =============================================================================
+
+# ── ConfigMap: tunnel routing config ─────────────────────────────────────────
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: cloudflared-config
+  namespace: gamebox-security
+  labels:
+    app: cloudflared
+data:
+  config.yml: |
+    tunnel: f768b4de-f9d2-4717-a4d2-c5c87af60d78
+    credentials-file: /etc/cloudflared/credentials.json
+
+    # Metrics endpoint for health probes
+    metrics: 0.0.0.0:2000
+
+    ingress:
+      # ONLY the Twilio webhook subdomain is tunneled.
+      # The app frontend/API is NOT publicly accessible — VPN only (10.100.0.1:30080).
+      - hostname: twilio.kozytherocket.space
+        service: http://traefik.gamebox-security.svc.cluster.local:80
+        originRequest:
+          noTLSVerify: false
+          connectTimeout: 30s
+
+      # Catch-all (required by cloudflared)
+      - service: http_status:404
+
+---
+# ── Deployment ────────────────────────────────────────────────────────────────
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: cloudflared
+  namespace: gamebox-security
+  labels:
+    app: cloudflared
+spec:
+  # Two replicas for redundancy — cloudflared handles active-active fine
+  replicas: 2
+  selector:
+    matchLabels:
+      app: cloudflared
+  template:
+    metadata:
+      labels:
+        app: cloudflared
+    spec:
+      # Spread replicas across nodes if available
+      topologySpreadConstraints:
+      - maxSkew: 1
+        topologyKey: kubernetes.io/hostname
+        whenUnsatisfiable: DoNotSchedule
+        labelSelector:
+          matchLabels:
+            app: cloudflared
+
+      containers:
+      - name: cloudflared
+        image: cloudflare/cloudflared:latest
+        args:
+        - tunnel
+        - --config
+        - /etc/cloudflared/config.yml
+        - run
+
+        ports:
+        - containerPort: 2000
+          name: metrics
+          protocol: TCP
+
+        # Liveness: cloudflared metrics endpoint
+        livenessProbe:
+          httpGet:
+            path: /ready
+            port: 2000
+          initialDelaySeconds: 10
+          periodSeconds: 10
+          failureThreshold: 3
+
+        readinessProbe:
+          httpGet:
+            path: /ready
+            port: 2000
+          initialDelaySeconds: 5
+          periodSeconds: 5
+
+        volumeMounts:
+        # Tunnel config from ConfigMap
+        - name: config
+          mountPath: /etc/cloudflared/config.yml
+          subPath: config.yml
+
+        # Tunnel credentials from Secret (create with create-cloudflare-secret.sh)
+        - name: credentials
+          mountPath: /etc/cloudflared/credentials.json
+          subPath: credentials.json
+          readOnly: true
+
+        resources:
+          requests:
+            memory: "64Mi"
+            cpu: "50m"
+          limits:
+            memory: "128Mi"
+            cpu: "200m"
+
+        securityContext:
+          runAsNonRoot: true
+          runAsUser: 65532  # cloudflared's non-root user
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          capabilities:
+            drop:
+            - ALL
+
+      volumes:
+      - name: config
+        configMap:
+          name: cloudflared-config
+
+      - name: credentials
+        secret:
+          secretName: cloudflare-tunnel-credentials
