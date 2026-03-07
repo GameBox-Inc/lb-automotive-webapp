@@ -1,9 +1,7 @@
 pipeline {
     agent any
     
-    tools {
-        nodejs "NodeJS 20"
-    }
+
 
     environment {
         // Docker Registry (using GitHub Container Registry)
@@ -91,25 +89,19 @@ pipeline {
 
         stage('Setup Node Environment') {
             steps {
-                echo '📦 Setting up Node environment...'
-                sh '''
-                    cd frontend
-                    npm ci
-                '''
+                echo '📦 Setting up Node environment (Node 20)...'
+                sh """
+                    docker run --rm -v \$(pwd):/app -w /app/frontend node:20-alpine npm ci
+                """
             }
         }
 
         stage('Frontend Tests') {
             steps {
-                echo '🧪 Running frontend tests...'
-                sh '''
-                    cd frontend
-                    if npm run test --if-present; then
-                        echo "✅ Frontend tests passed"
-                    else
-                        echo "⚠️ No frontend tests configured, skipping..."
-                    fi
-                '''
+                echo '🧪 Running frontend tests (Node 20)...'
+                sh """
+                    docker run --rm -v \$(pwd):/app -w /app/frontend node:20-alpine npm run test --if-present -- --run
+                """
             }
         }
 
