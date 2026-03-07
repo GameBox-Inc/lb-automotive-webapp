@@ -1,5 +1,9 @@
 pipeline {
     agent any
+    
+    tools {
+        nodejs "NodeJS 20"
+    }
 
     environment {
         // Docker Registry (using GitHub Container Registry)
