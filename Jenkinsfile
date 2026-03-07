@@ -23,7 +23,7 @@ pipeline {
         PYTHON_VERSION = '3.11'
 
         // Node version
-        NODE_VERSION = '18'
+        NODE_VERSION = '20'
     }
 
     options {
@@ -114,7 +114,7 @@ pipeline {
                 anyOf {
                     branch 'main'
                     branch 'master'
-                    expression { env.GIT_BRANCH ==~ /.*release\/.*/ }
+                    expression { env.BRANCH_NAME ==~ /.*release\/.*/ || env.GIT_BRANCH ==~ /.*release\/.*/ }
                 }
             }
             steps {
@@ -140,7 +140,7 @@ pipeline {
                 anyOf {
                     branch 'main'
                     branch 'master'
-                    expression { env.GIT_BRANCH ==~ /.*release\/.*/ }
+                    expression { env.BRANCH_NAME ==~ /.*release\/.*/ || env.GIT_BRANCH ==~ /.*release\/.*/ }
                 }
             }
             steps {
@@ -172,7 +172,7 @@ pipeline {
                 anyOf {
                     branch 'main'
                     branch 'master'
-                    expression { env.GIT_BRANCH ==~ /.*release\/.*/ }
+                    expression { env.BRANCH_NAME ==~ /.*release\/.*/ || env.GIT_BRANCH ==~ /.*release\/.*/ }
                 }
             }
             steps {
@@ -184,10 +184,15 @@ pipeline {
                             ssh -o StrictHostKeyChecking=no ${DEPLOY_USER}@${DEPLOY_HOST} \
                                 'mkdir -p ${MANIFEST_DIR}'
                         """
+                        // Inject dynamic image tags before copying to server
+                        sh """
+                            sed -i "s|ghcr.io/gamebox-inc/lb-automotive-frontend:.*|${FRONTEND_IMAGE}:${BUILD_TAG}|g" deployment/k8s/frontend.yaml
+                            sed -i "s|ghcr.io/gamebox-inc/lb-automotive-backend:.*|${BACKEND_IMAGE}:${BUILD_TAG}|g" deployment/k8s/backend.yaml
+                        """
                         // Copy all manifests to server
                         sh """
-                            scp -o StrictHostKeyChecking=no -r \
-                                deployment/k8s/ \
+                            scp -o StrictHostKeyChecking=no -r \\
+                                deployment/k8s/ \\
                                 ${DEPLOY_USER}@${DEPLOY_HOST}:${MANIFEST_DIR}/
                         """
                         // Apply all K8s manifests in a single SSH session to avoid connection rate limits
@@ -246,7 +251,7 @@ pipeline {
                 anyOf {
                     branch 'main'
                     branch 'master'
-                    expression { env.GIT_BRANCH ==~ /.*release\/.*/ }
+                    expression { env.BRANCH_NAME ==~ /.*release\/.*/ || env.GIT_BRANCH ==~ /.*release\/.*/ }
                 }
             }
             steps {
@@ -298,7 +303,7 @@ pipeline {
                 anyOf {
                     branch 'main'
                     branch 'master'
-                    expression { env.BRANCH_NAME ==~ /.*release\/.*/ }
+                    expression { env.BRANCH_NAME ==~ /.*release\/.*/ || env.GIT_BRANCH ==~ /.*release\/.*/ }
                 }
             }
             steps {
