@@ -256,11 +256,11 @@ pipeline {
                     withCredentials([string(credentialsId: 'vault-transit-token', variable: 'TRANSIT_TOKEN')]) {
                         sshagent(credentials: ['lb-server-ssh']) {
                             sh """
-                                ssh -o StrictHostKeyChecking=no ${DEPLOY_USER}@${DEPLOY_HOST} '
+                                ssh -o StrictHostKeyChecking=no ${DEPLOY_USER}@${DEPLOY_HOST} /bin/bash <<EOF
                                     set -e
                                     NS=gamebox-security
                                     CM=vault
-                                    TOKEN="${TRANSIT_TOKEN}"
+                                    TOKEN="\$TRANSIT_TOKEN"
 
                                     echo "▶ Reading current ConfigMap..."
                                     CURRENT=\$(sudo k3s kubectl get configmap "\$CM" -n "\$NS" \
@@ -272,7 +272,7 @@ pipeline {
                                         NEW=\$(echo "\$CURRENT" | sed "s|PLACEHOLDER_TRANSIT_TOKEN|\$TOKEN|g")
                                         sudo k3s kubectl patch configmap "\$CM" -n "\$NS" \
                                             --type merge \
-                                            -p "{\"data\":{\"extraconfig-from-values.hcl\":\"\$NEW\"}}"
+                                            -p "{\\"data\\":{\\"extraconfig-from-values.hcl\\":\\"\$NEW\\"}}"
                                         echo "▶ ConfigMap patched — deleting vault-0 to pick up new config..."
                                         sudo k3s kubectl delete pod vault-0 -n "\$NS" --ignore-not-found
                                         echo "▶ Waiting for vault-0 to become ready..."
@@ -286,7 +286,7 @@ pipeline {
                                     sudo k3s kubectl exec -n "\$NS" vault-0 -c vault -- \
                                         env VAULT_SKIP_VERIFY=true vault status -format=json | \
                                         grep -E "\\\"sealed\\\":|\\\"type\\\":"
-                                '
+EOF
                             """
                         }
                     }
