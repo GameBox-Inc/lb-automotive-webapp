@@ -17,11 +17,11 @@ pipeline {
         // Build info
         BUILD_TAG = "${env.BUILD_NUMBER}-${env.GIT_COMMIT.take(7)}"
 
-        // Deployment
-        DEPLOY_USER = 'lb-admin'
-        DEPLOY_HOST = '178.156.223.196'
-        DEPLOY_DIR = '/opt/lb-automotive-dashboard'
-        MANIFEST_DIR = '~/k8s-manifests'
+        // Deployment (Values provided via Jenkins Global Environment Variables)
+        DEPLOY_USER    = "${env.DEPLOY_USER}"
+        DEPLOY_HOST    = "${env.DEPLOY_HOST}"
+        DEPLOY_DIR     = "${env.DEPLOY_DIR}"
+        MANIFEST_DIR   = "${env.MANIFEST_DIR}"
 
         // Python version
         PYTHON_VERSION = '3.11'
