@@ -144,31 +144,41 @@ pipeline {
                         sh """
                             ssh -o StrictHostKeyChecking=no ${DEPLOY_USER}@${DEPLOY_HOST} '
                                 set -e
-                                echo "▶ Applying namespace..."
-                                sudo k3s kubectl apply -f ${MANIFEST_DIR}/k8s/namespace.yaml
+                                 echo "▶ Applying K8s manifests (Validation disabled for speed/stability)..."
+                                 # We disable validation because the 2GB server often times out during OpenAPI discovery.
+                                 # We use a retry loop to handle transient API server unresponsiveness.
+                                 RETRY_COUNT=0
+                                 MAX_RETRIES=3
+                                 until [ \$RETRY_COUNT -ge \$MAX_RETRIES ]
+                                 do
+                                     echo "▶ Attempt \$((RETRY_COUNT+1)) of \$MAX_RETRIES..."
+                                     sudo k3s kubectl apply --validate=false \
+                                         -f ~/k8s-manifests/k8s/namespace.yaml \
+                                         -f ~/k8s-manifests/k8s/gamebox-security/ \
+                                         -f ~/k8s-manifests/k8s/gamebox-security/traefik/gateway.yaml \
+                                         -f ~/k8s-manifests/k8s/gamebox-security/traefik/middlewares.yaml \
+                                         -f ~/k8s-manifests/k8s/gamebox-security/traefik/lb-automotive-routes.yaml \
+                                         -f ~/k8s-manifests/k8s/pvc.yaml \
+                                         -f ~/k8s-manifests/k8s/redis.yaml \
+                                         -f ~/k8s-manifests/k8s/backend.yaml \
+                                         -f ~/k8s-manifests/k8s/frontend.yaml && break
+                                     
+                                     RETRY_COUNT=\$((RETRY_COUNT+1))
+                                     echo "⚠️ API server unresponsive, retrying in 10s..."
+                                     sleep 10
+                                 done
 
-                                echo "▶ Applying gamebox-security..."
-                                sudo k3s kubectl apply -f ${MANIFEST_DIR}/k8s/gamebox-security/
+                                 if [ \$RETRY_COUNT -eq \$MAX_RETRIES ]; then
+                                     echo "❌ Failed to apply manifests after \$MAX_RETRIES attempts."
+                                     exit 1
+                                 fi
 
-                                echo "▶ Applying Traefik routes..."
-                                sudo k3s kubectl apply \
-                                    -f ${MANIFEST_DIR}/k8s/gamebox-security/traefik/gateway.yaml \
-                                    -f ${MANIFEST_DIR}/k8s/gamebox-security/traefik/middlewares.yaml \
-                                    -f ${MANIFEST_DIR}/k8s/gamebox-security/traefik/lb-automotive-routes.yaml
+                                 echo "▶ Applying lb-automotive namespace resources..."
+                                 sudo k3s kubectl apply --validate=false -f ~/k8s-manifests/k8s/lb-automotive/ || true
 
-                                echo "▶ Applying lb-automotive workloads..."
-                                sudo k3s kubectl apply \
-                                    -f ${MANIFEST_DIR}/k8s/pvc.yaml \
-                                    -f ${MANIFEST_DIR}/k8s/redis.yaml \
-                                    -f ${MANIFEST_DIR}/k8s/backend.yaml \
-                                    -f ${MANIFEST_DIR}/k8s/frontend.yaml
-
-                                echo "▶ Applying lb-automotive namespace resources..."
-                                sudo k3s kubectl apply -f ${MANIFEST_DIR}/k8s/lb-automotive/ || true
-
-                                echo "▶ Removing legacy Ingress objects..."
-                                sudo k3s kubectl delete ingress lb-automotive-ingress -n lb-automotive --ignore-not-found
-                                sudo k3s kubectl delete ingress twilio-webhook-ingress -n lb-automotive --ignore-not-found
+                                 echo "▶ Removing legacy Ingress objects..."
+                                 sudo k3s kubectl delete ingress lb-automotive-ingress -n lb-automotive --ignore-not-found
+                                 sudo k3s kubectl delete ingress twilio-webhook-ingress -n lb-automotive --ignore-not-found
                             '
                         """
                         echo '✅ Manifests applied successfully'
