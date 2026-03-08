@@ -58,26 +58,33 @@ pipeline {
                 DATABASE_URL = 'sqlite:///./test_lb_automotive.db'
             }
             steps {
-                echo '🧪 Running backend tests in Docker...'
+                echo '🧪 Running backend tests in Docker (Least Privilege)...'
                 sh """
                     docker run --rm \
+                        -u 1000 \
                         -e SECRET_KEY -e ALLOWED_ORIGINS -e DATABASE_URL \
                         -v \$(pwd):/app -w /app/python-backend \
-                        python:3.11-slim /bin/bash -c "pip install -r requirements.txt pytest httpx && pytest --verbose" || true
+                        python:3.11-slim /bin/bash -c "
+                            python -m venv /tmp/venv && \
+                            . /tmp/venv/bin/activate && \
+                            pip install --no-cache-dir -r requirements.txt pytest httpx && \
+                            pytest --verbose
+                        " || true
                 """
             }
         }
 
         // Optimized: Setup Node removed. npm ci is handled inside the Docker build.
 
-        stage('Frontend Tests') {
             steps {
-                echo '🧪 Running frontend tests (Node 20)...'
+                echo '🧪 Running frontend tests (Node 20 - Least Privilege)...'
                 sh """
-                    docker run --rm -v \$(pwd):/app -w /app/frontend node:20-alpine npm run test --if-present -- --run
+                    docker run --rm \
+                        -u 1000 \
+                        -v \$(pwd):/app -w /app/frontend \
+                        node:20-alpine npm run test --if-present -- --run
                 """
             }
-        }
 
         stage('Build Docker Images') {
             when {
