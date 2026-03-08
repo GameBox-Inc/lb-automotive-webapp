@@ -76,6 +76,7 @@ pipeline {
 
         // Optimized: Setup Node removed. npm ci is handled inside the Docker build.
 
+        stage('Frontend Tests') {
             steps {
                 echo '🧪 Running frontend tests (Node 20 - Least Privilege)...'
                 sh """
@@ -85,6 +86,7 @@ pipeline {
                         node:20-alpine npm run test --if-present -- --run
                 """
             }
+        }
 
         stage('Build Docker Images') {
             when {
