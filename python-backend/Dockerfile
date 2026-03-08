@@ -31,11 +31,13 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy application code
 COPY --chown=appuser:appuser python-backend/ .
 
+# Ensure data directory exists and is writable (for tests and prod)
+USER root
+RUN mkdir -p /app/data && chown -R appuser:appuser /app
+USER appuser
+
 # Run tests (integrated into build stage)
 RUN if [ -d "tests" ]; then pip install pytest httpx && pytest --verbose; fi
-
-# Create directory for SQLite database
-RUN mkdir -p /app/data
 
 # Expose port
 EXPOSE 8000
