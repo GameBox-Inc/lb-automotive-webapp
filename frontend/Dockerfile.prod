@@ -12,6 +12,11 @@ COPY --chown=node:node frontend/package*.json ./
 RUN npm ci
 
 COPY --chown=node:node frontend/ .
+
+# Run tests (integrated into build stage)
+RUN npm run test --if-present -- --run
+
+# Build the app
 RUN npm run build
 
 # Production stage

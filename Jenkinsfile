@@ -51,42 +51,8 @@ pipeline {
         // Optimized: Removing host-side dependency setup to save CPU/RAM.
         // Docker build will handle dependency installation and caching.
 
-        stage('Backend Tests') {
-            environment {
-                SECRET_KEY = 'test-secret-key-for-ci-only-not-production'
-                ALLOWED_ORIGINS = 'http://localhost:5173,http://localhost:3000'
-                DATABASE_URL = 'sqlite:///./test_lb_automotive.db'
-            }
-            steps {
-                echo '🧪 Running backend tests in Docker (Least Privilege)...'
-                sh """
-                    docker run --rm \
-                        -u 1000 \
-                        -e SECRET_KEY -e ALLOWED_ORIGINS -e DATABASE_URL \
-                        -v \$(pwd):/app -w /app/python-backend \
-                        python:3.11-slim /bin/bash -c "
-                            python -m venv /tmp/venv && \
-                            . /tmp/venv/bin/activate && \
-                            pip install --no-cache-dir -r requirements.txt pytest httpx && \
-                            pytest --verbose
-                        " || true
-                """
-            }
-        }
-
-        // Optimized: Setup Node removed. npm ci is handled inside the Docker build.
-
-        stage('Frontend Tests') {
-            steps {
-                echo '🧪 Running frontend tests (Node 20 - Least Privilege)...'
-                sh """
-                    docker run --rm \
-                        -u 1000 \
-                        -v \$(pwd):/app -w /app/frontend \
-                        node:20-alpine npm run test --if-present -- --run
-                """
-            }
-        }
+        // Optimized: Tests and Setup are now handled inside the 'Build Docker Images' stage
+        // using non-root multi-stage Docker builds.
 
         stage('Build Docker Images') {
             when {
