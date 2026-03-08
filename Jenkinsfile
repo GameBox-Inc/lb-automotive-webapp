@@ -48,19 +48,8 @@ pipeline {
             }
         }
 
-        stage('Setup Python Environment') {
-            steps {
-                echo '🐍 Setting up Python environment...'
-                sh '''
-                    cd python-backend
-                    python3 -m venv venv || true
-                    . venv/bin/activate
-                    pip install --upgrade pip
-                    pip install -r requirements.txt
-                    pip install pytest httpx
-                '''
-            }
-        }
+        // Optimized: Removing host-side dependency setup to save CPU/RAM.
+        // Docker build will handle dependency installation and caching.
 
         stage('Backend Tests') {
             environment {
@@ -69,32 +58,17 @@ pipeline {
                 DATABASE_URL = 'sqlite:///./test_lb_automotive.db'
             }
             steps {
-                echo '🧪 Running backend tests...'
-                sh '''
-                    cd python-backend
-                    . venv/bin/activate
-                    if [ -d "tests" ] && [ "$(ls -A tests)" ]; then
-                        pytest --verbose --color=yes || true
-                    else
-                        echo "⚠️ No backend tests found, skipping..."
-                    fi
-                '''
-            }
-            post {
-                always {
-                    sh 'rm -f python-backend/test_lb_automotive.db || true'
-                }
-            }
-        }
-
-        stage('Setup Node Environment') {
-            steps {
-                echo '📦 Setting up Node environment (Node 20)...'
+                echo '🧪 Running backend tests in Docker...'
                 sh """
-                    docker run --rm -v \$(pwd):/app -w /app/frontend node:20-alpine npm ci
+                    docker run --rm \
+                        -e SECRET_KEY -e ALLOWED_ORIGINS -e DATABASE_URL \
+                        -v \$(pwd):/app -w /app/python-backend \
+                        python:3.11-slim /bin/bash -c "pip install -r requirements.txt pytest httpx && pytest --verbose" || true
                 """
             }
         }
+
+        // Optimized: Setup Node removed. npm ci is handled inside the Docker build.
 
         stage('Frontend Tests') {
             steps {
@@ -122,9 +96,9 @@ pipeline {
                         docker tag ${BACKEND_IMAGE}:${BUILD_TAG} ${BACKEND_IMAGE}:latest
                     """
                     
-                    // Build frontend
+                    // Build frontend (Optimized: Using layer cache)
                     sh """
-                        docker build --no-cache -t ${FRONTEND_IMAGE}:${BUILD_TAG} -f frontend/Dockerfile.prod .
+                        docker build -t ${FRONTEND_IMAGE}:${BUILD_TAG} -f frontend/Dockerfile.prod .
                         docker tag ${FRONTEND_IMAGE}:${BUILD_TAG} ${FRONTEND_IMAGE}:latest
                     """
                 }
@@ -381,6 +355,11 @@ EOF
             }
         }
 
+        always {
+            echo '🧹 Cleaning up workspace...'
+            // Prune unused docker data to keep the 2GB node healthy
+            sh 'docker image prune -f || true'
+        }
         failure {
             echo '❌ Pipeline failed! Check logs for details.'
         }
