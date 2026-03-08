@@ -216,37 +216,29 @@ pipeline {
                     withCredentials([string(credentialsId: 'vault-transit-token', variable: 'TRANSIT_TOKEN')]) {
                         sshagent(credentials: ['lb-server-ssh']) {
                             sh """
-                                ssh -o StrictHostKeyChecking=no ${DEPLOY_USER}@${DEPLOY_HOST} <<'REMOTEOF'
+                                # Pass the sensitive token as a positional argument to the remote shell
+                                # to avoid insecure Groovy interpolation and leaking secrets in process trees.
+                                ssh -o StrictHostKeyChecking=no ${DEPLOY_USER}@${DEPLOY_HOST} "bash -s -- \$TRANSIT_TOKEN" <<'REMOTEOF'
                                     set -e
+                                    TOKEN="\$1"
                                     NS="gamebox-security"
                                     CM="vault"
-                                    TOKEN="${TRANSIT_TOKEN}"
 
                                     echo "▶ Reading current ConfigMap..."
-                                    # We use plain \$ here because we are in a 'REMOTEOF' heredoc, 
-                                    # but we are also in a Groovy double-quoted string.
-                                    # However, <<'REMOTEOF' prevents the LOCAL shell from interpolating.
-                                    # But Groovy STILL interpolates before it reaches the local shell.
-                                    # So we MUST escape \$ for Groovy if we want it to reach the remote shell.
-                                    
                                     CURRENT=\$(sudo k3s kubectl get configmap "\$CM" -n "\$NS" \
                                         -o jsonpath="{.data.extraconfig-from-values\\\\.hcl}" 2>/dev/null || echo "")
 
                                     if echo "\$CURRENT" | grep -q "PLACEHOLDER_TRANSIT_TOKEN"; then
                                         echo "▶ PLACEHOLDER found — patching token into ConfigMap..."
-                                        # Use sed to replace the placeholder with the actual token
                                         NEW=\$(echo "\$CURRENT" | sed "s|PLACEHOLDER_TRANSIT_TOKEN|\$TOKEN|g")
-                                        # Patch the ConfigMap with the new content
                                         sudo k3s kubectl patch configmap "\$CM" -n "\$NS" \
                                             --type merge \
                                             -p "{\\"data\\":{\\"extraconfig-from-values.hcl\\":\\"\$NEW\\"}}"
                                         
                                         echo "▶ ConfigMap patched — deleting vault-0 to pick up new config..."
-                                        # Delete vault-0 pod to force it to restart and pick up the new ConfigMap
                                         sudo k3s kubectl delete pod vault-0 -n "\$NS" --ignore-not-found
                                         
                                         echo "▶ Waiting for vault-0 to become ready..."
-                                        # Wait for the new vault-0 pod to be ready
                                         sudo k3s kubectl wait pod vault-0 -n "\$NS" \
                                             --for=condition=Ready --timeout=120s
                                     else
@@ -254,7 +246,6 @@ pipeline {
                                     fi
 
                                     echo "▶ Verifying Vault seal status..."
-                                    # Wait a few seconds for vault status to be available
                                     sleep 5
                                     sudo k3s kubectl exec -n "\$NS" vault-0 -c vault -- \
                                         env VAULT_SKIP_VERIFY=true vault status -format=json | \
