@@ -158,6 +158,7 @@ pipeline {
 
                                 echo "▶ Applying lb-automotive workloads..."
                                 sudo k3s kubectl apply \
+                                    -f ${MANIFEST_DIR}/k8s/pvc.yaml \
                                     -f ${MANIFEST_DIR}/k8s/redis.yaml \
                                     -f ${MANIFEST_DIR}/k8s/backend.yaml \
                                     -f ${MANIFEST_DIR}/k8s/frontend.yaml

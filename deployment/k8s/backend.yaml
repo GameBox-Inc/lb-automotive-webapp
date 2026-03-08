@@ -102,11 +102,11 @@ spec:
 
         resources:
           limits:
-            memory: "384Mi"
-            cpu: "400m"
-          requests:
             memory: "256Mi"
-            cpu: "200m"
+            cpu: "300m"
+          requests:
+            memory: "128Mi"
+            cpu: "100m"
 
       volumes:
       - name: app-data
