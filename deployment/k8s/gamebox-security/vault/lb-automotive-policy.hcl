@@ -18,6 +18,10 @@ path "secret/data/lb-automotive/*" {
   capabilities = ["read", "list"]
 }
 
+path "gamebox/data/clients/lb-autorepair/*" {
+  capabilities = ["read", "list"]
+}
+
 # Allow the agent to renew its own token
 path "auth/token/renew-self" {
   capabilities = ["update"]
