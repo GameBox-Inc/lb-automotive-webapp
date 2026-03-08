@@ -9,30 +9,54 @@ from contextvars import ContextVar
 current_user_context: ContextVar[Optional[Dict[str, Any]]] = ContextVar('current_user', default=None)
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+# Priority 1: Environment variable (usually for Local Dev or Docker overrides)
+# Priority 2: Vault injected secret at /vault/secrets/supabase.env
+# Priority 3: Fallback to SQLite
 DATABASE_URL = os.getenv("DATABASE_URL")
 
+# Check for Vault-injected Supabase secret
+SUPABASE_ENV = "/vault/secrets/supabase.env"
+if not DATABASE_URL and os.path.exists(SUPABASE_ENV):
+    with open(SUPABASE_ENV, "r") as f:
+        # Expected format: export DATABASE_URL="..."
+        for line in f:
+            if line.startswith("export DATABASE_URL="):
+                DATABASE_URL = line.split("=", 1)[1].strip().strip('"')
+                break
+
 if DATABASE_URL:
-    DB_PATH = DATABASE_URL.replace("sqlite:///", "").replace("sqlite://", "")
+    if DATABASE_URL.startswith("postgresql"):
+        DB_TYPE = "postgresql"
+        DB_PATH = DATABASE_URL
+    else:
+        DB_TYPE = "sqlite"
+        DB_PATH = DATABASE_URL.replace("sqlite:///", "").replace("sqlite://", "")
 else:
+    DB_TYPE = "sqlite"
     # Try data folder first (Docker/Production)
     DB_PATH = os.path.join(BASE_DIR, "data", "lb_automotive.db")
     if not os.path.exists(os.path.dirname(DB_PATH)):
         # Fallback to current dir (Local Dev)
         DB_PATH = os.path.join(BASE_DIR, "lb_automotive.db")
 
-print(f"DATABASE PATH: {os.path.abspath(DB_PATH)}")
+print(f"DATABASE TYPE: {DB_TYPE}")
+print(f"DATABASE PATH/URL: {DB_PATH}")
 
 
 def get_db_connection():
     """
-    Get a database connection.
-    
-    Note: In production with multiple instances, consider using connection pooling
-    or migrating to PostgreSQL. SQLite has limitations with concurrent writes.
+    Get a database connection (SQLite or PostgreSQL).
     """
-    conn = sqlite3.connect(DB_PATH, timeout=20.0, check_same_thread=False) # Increased timeout, allow async
-    conn.execute("PRAGMA journal_mode=WAL") # Enable Write-Ahead Logging
-    conn.execute("PRAGMA foreign_keys=ON") # Enable foreign key constraints
+    if DB_TYPE == "postgresql":
+        import psycopg2
+        from psycopg2.extras import RealDictCursor
+        # Use a connection string/url for PG
+        conn = psycopg2.connect(DB_PATH, cursor_factory=RealDictCursor)
+        return conn
+    
+    conn = sqlite3.connect(DB_PATH, timeout=20.0, check_same_thread=False)
+    conn.execute("PRAGMA journal_mode=WAL") 
+    conn.execute("PRAGMA foreign_keys=ON") 
     conn.row_factory = sqlite3.Row
     return conn
 
@@ -66,6 +90,17 @@ def init_db():
     """Initialize the database with schema."""
     conn = get_db_connection()
     cursor = conn.cursor()
+
+    # Create staff table first (for foreign keys)
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS staff (
+            id TEXT PRIMARY KEY,
+            name TEXT NOT NULL,
+            role TEXT DEFAULT 'mechanic',
+            active INTEGER DEFAULT 1,
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
 
     # Create users table
     cursor.execute("""
@@ -198,9 +233,9 @@ def init_db():
         CREATE TABLE IF NOT EXISTS staff_schedules (
             id TEXT PRIMARY KEY,
             staff_id TEXT NOT NULL,
-            day_of_week INTEGER NOT NULL, -- 0=Monday, 6=Sunday
-            start_time TEXT NOT NULL, -- HH:MM
-            end_time TEXT NOT NULL, -- HH:MM
+            day_of_week INTEGER NOT NULL, 
+            start_time TEXT NOT NULL,
+            end_time TEXT NOT NULL,
             is_off INTEGER DEFAULT 0,
             created_at TEXT DEFAULT CURRENT_TIMESTAMP,
             updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
@@ -209,8 +244,6 @@ def init_db():
         )
     """)
 
-    conn.commit()
-    conn.commit()
     # Create settings table
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS settings (
@@ -222,17 +255,19 @@ def init_db():
         )
     """)
 
-    # Create business_hours table for per-day hours configuration
+    # Create business_hours table 
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS business_hours (
-            day_of_week INTEGER PRIMARY KEY, -- 0=Monday, 6=Sunday
-            opening_time TEXT, -- HH:MM format, NULL if closed
-            closing_time TEXT, -- HH:MM format, NULL if closed
-            is_closed INTEGER DEFAULT 0, -- 1 if closed all day
+            day_of_week INTEGER PRIMARY KEY,
+            opening_time TEXT,
+            closing_time TEXT,
+            is_closed INTEGER DEFAULT 0,
             updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
             updated_by TEXT
         )
     """)
+
+    conn.commit()
 
     conn.commit()
     conn.close()
@@ -268,8 +303,10 @@ def seed_data():
     """)
 
     # Check if services already exist
-    cursor.execute("SELECT COUNT(*) FROM services")
-    if cursor.fetchone()[0] == 0:
+    cursor.execute("SELECT COUNT(*) as count FROM services")
+    row = cursor.fetchone()
+    count = row['count'] if isinstance(row, dict) else row[0]
+    if count == 0:
         # Insert sample services
         services = [
             ('srv_oil_change', 'Oil Change', 'Standard oil change and filter replacement', 60, 49.99, 0, 'Maintenance'),
@@ -280,25 +317,39 @@ def seed_data():
             ('srv_battery', 'Battery Replacement', 'Car battery replacement', 45, 79.99, 1, 'Emergency'),
         ]
 
-        cursor.executemany("""
-            INSERT INTO services (id, name, description, duration, price, is_emergency, category)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
-        """, services)
+        for s in services:
+            if DB_TYPE == "postgresql":
+                cursor.execute("""
+                    INSERT INTO services (id, name, description, duration, price, is_emergency, category)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s) ON CONFLICT DO NOTHING
+                """, s)
+            else:
+                cursor.execute("""
+                    INSERT OR IGNORE INTO services (id, name, description, duration, price, is_emergency, category)
+                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                """, s)
 
     # Seed initial staff if empty
-    cursor.execute("SELECT COUNT(*) FROM staff")
-    if cursor.fetchone()[0] == 0:
+    cursor.execute("SELECT COUNT(*) as count FROM staff")
+    row = cursor.fetchone()
+    count = row['count'] if isinstance(row, dict) else row[0]
+    if count == 0:
         import uuid
         staff_members = [
             (str(uuid.uuid4()), 'John Mechanic', 'mechanic', 1),
             (str(uuid.uuid4()), 'Sarah Advisor', 'advisor', 1),
             (str(uuid.uuid4()), 'Mike Tech', 'mechanic', 1)
         ]
-        cursor.executemany("INSERT INTO staff (id, name, role, active) VALUES (?, ?, ?, ?)", staff_members)
+        if DB_TYPE == "postgresql":
+            cursor.executemany("INSERT INTO staff (id, name, role, active) VALUES (%s, %s, %s, %s)", staff_members)
+        else:
+            cursor.executemany("INSERT INTO staff (id, name, role, active) VALUES (?, ?, ?, ?)", staff_members)
 
     # Check if admin user exists
-    cursor.execute("SELECT COUNT(*) FROM users WHERE username = 'admin'")
-    if cursor.fetchone()[0] == 0:
+    cursor.execute("SELECT COUNT(*) as count FROM users WHERE username = 'admin'")
+    row = cursor.fetchone()
+    count = row['count'] if isinstance(row, dict) else row[0]
+    if count == 0:
         # Insert default admin user (password: admin123)
         # WARNING: This is a weak default password. User should change it immediately.
         # In production, consider generating a random password or requiring setup.
@@ -316,10 +367,16 @@ def seed_data():
         admin_id = str(uuid.uuid4())
         admin_password = pwd_context.hash("admin123")
         
-        cursor.execute("""
-            INSERT INTO users (id, username, email, hashed_password, is_admin)
-            VALUES (?, ?, ?, ?, ?)
-        """, (admin_id, "admin", "admin@lbautomotive.com", admin_password, 1))
+        if DB_TYPE == "postgresql":
+            cursor.execute("""
+                INSERT INTO users (id, username, email, hashed_password, is_admin)
+                VALUES (%s, %s, %s, %s, %s)
+            """, (admin_id, "admin", "admin@lbautomotive.com", admin_password, 1))
+        else:
+            cursor.execute("""
+                INSERT INTO users (id, username, email, hashed_password, is_admin)
+                VALUES (?, ?, ?, ?, ?)
+            """, (admin_id, "admin", "admin@lbautomotive.com", admin_password, 1))
 
     # Seed default settings if they don't exist
     default_settings = [
@@ -334,7 +391,13 @@ def seed_data():
     ]
 
     for key, value, desc in default_settings:
-        cursor.execute("INSERT OR IGNORE INTO settings (key, value, description) VALUES (?, ?, ?)", (key, value, desc))
+        if DB_TYPE == "postgresql":
+            cursor.execute("""
+                INSERT INTO settings (key, value, description) 
+                VALUES (%s, %s, %s) ON CONFLICT DO NOTHING
+            """, (key, value, desc))
+        else:
+            cursor.execute("INSERT OR IGNORE INTO settings (key, value, description) VALUES (?, ?, ?)", (key, value, desc))
 
     # Seed default business hours (Monday-Friday: 8 AM - 6 PM, Saturday-Sunday: Closed)
     default_business_hours = [
@@ -348,10 +411,16 @@ def seed_data():
     ]
     
     for day, open_time, close_time, is_closed in default_business_hours:
-        cursor.execute("""
-            INSERT OR IGNORE INTO business_hours (day_of_week, opening_time, closing_time, is_closed)
-            VALUES (?, ?, ?, ?)
-        """, (day, open_time, close_time, is_closed))
+        if DB_TYPE == "postgresql":
+            cursor.execute("""
+                INSERT INTO business_hours (day_of_week, opening_time, closing_time, is_closed)
+                VALUES (%s, %s, %s, %s) ON CONFLICT DO NOTHING
+            """, (day, open_time, close_time, is_closed))
+        else:
+            cursor.execute("""
+                INSERT OR IGNORE INTO business_hours (day_of_week, opening_time, closing_time, is_closed)
+                VALUES (?, ?, ?, ?)
+            """, (day, open_time, close_time, is_closed))
 
     conn.commit()
     conn.close()
@@ -435,32 +504,40 @@ def migrate_schema():
     # Migration 1: Add decision_path to call_states
     try:
         cursor.execute("ALTER TABLE call_states ADD COLUMN decision_path TEXT DEFAULT '[]'")
-        print("✓ Added decision_path column to call_states")
-    except sqlite3.OperationalError as e:
-        if "duplicate column" not in str(e).lower():
-            print(f"  Note: decision_path column may already exist: {e}")
+        print("- Added decision_path column to call_states")
+        conn.commit()
+    except Exception as e:
+        conn.rollback()
+        if "already exists" not in str(e).lower() and "duplicate column" not in str(e).lower():
+            print(f"  Note: decision_path column issue: {e}")
     
     # Migration 2: Add time slot columns to appointments
     try:
         cursor.execute("ALTER TABLE appointments ADD COLUMN time_slot_start TEXT")
-        print("✓ Added time_slot_start column to appointments")
-    except sqlite3.OperationalError as e:
-        if "duplicate column" not in str(e).lower():
-            print(f"  Note: time_slot_start column may already exist: {e}")
+        print("- Added time_slot_start column to appointments")
+        conn.commit()
+    except Exception as e:
+        conn.rollback()
+        if "already exists" not in str(e).lower() and "duplicate column" not in str(e).lower():
+            print(f"  Note: time_slot_start column issue: {e}")
     
     try:
         cursor.execute("ALTER TABLE appointments ADD COLUMN time_slot_end TEXT")
-        print("✓ Added time_slot_end column to appointments")
-    except sqlite3.OperationalError as e:
-        if "duplicate column" not in str(e).lower():
-            print(f"  Note: time_slot_end column may already exist: {e}")
+        print("- Added time_slot_end column to appointments")
+        conn.commit()
+    except Exception as e:
+        conn.rollback()
+        if "already exists" not in str(e).lower() and "duplicate column" not in str(e).lower():
+            print(f"  Note: time_slot_end column issue: {e}")
     
     try:
         cursor.execute("ALTER TABLE appointments ADD COLUMN slot_duration_minutes INTEGER DEFAULT 30")
-        print("✓ Added slot_duration_minutes column to appointments")
-    except sqlite3.OperationalError as e:
-        if "duplicate column" not in str(e).lower():
-            print(f"  Note: slot_duration_minutes column may already exist: {e}")
+        print("- Added slot_duration_minutes column to appointments")
+        conn.commit()
+    except Exception as e:
+        conn.rollback()
+        if "already exists" not in str(e).lower() and "duplicate column" not in str(e).lower():
+            print(f"  Note: slot_duration_minutes column issue: {e}")
     
     # Migration 3: Create ivr_analytics table
     cursor.execute("""
@@ -474,17 +551,17 @@ def migrate_schema():
             FOREIGN KEY (call_sid) REFERENCES call_states (call_sid)
         )
     """)
-    print("✓ Created ivr_analytics table")
+    print("- Created ivr_analytics table")
     
     # Create indexes for IVR analytics
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_ivr_analytics_call_sid ON ivr_analytics(call_sid)")
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_ivr_analytics_node ON ivr_analytics(node_name)")
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_ivr_analytics_timestamp ON ivr_analytics(timestamp)")
-    print("✓ Created indexes for ivr_analytics")
+    print("- Created indexes for ivr_analytics")
     
     conn.commit()
     conn.close()
-    print("Schema migrations completed successfully!")
+    print("Schema migrations completed!")
 
 
 if __name__ == "__main__":
