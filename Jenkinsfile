@@ -346,9 +346,20 @@ REMOTEOF
         }
 
         always {
-            echo '🧹 Cleaning up workspace...'
-            // Prune unused docker data to keep the 2GB node healthy
+            echo '🧹 Cleaning up workspace and remote node...'
             sh 'docker image prune -f || true'
+            sshagent(credentials: ['lb-server-ssh']) {
+                sh """
+                    ssh -o StrictHostKeyChecking=no ${DEPLOY_USER}@${DEPLOY_HOST} '
+                        echo "▶ Pruning remote images..."
+                        sudo k3s crictl rmi --prune || true
+                        
+                        echo "▶ Cleaning up completed/failed pods..."
+                        sudo k3s kubectl delete pods --all-namespaces --field-selector=status.phase==Succeeded --ignore-not-found || true
+                        sudo k3s kubectl delete pods --all-namespaces --field-selector=status.phase==Failed --ignore-not-found || true
+                    '
+                """
+            }
         }
         failure {
             echo '❌ Pipeline failed! Check logs for details.'
