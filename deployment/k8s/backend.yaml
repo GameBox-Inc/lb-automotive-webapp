@@ -57,9 +57,9 @@ spec:
           {{- end }}
 
         # ── Secret: supabase ────────────────────────────────────────────────
-        vault.hashicorp.com/agent-inject-secret-supabase.env: "gamebox/clients/lb-autorepair/database"
+        vault.hashicorp.com/agent-inject-secret-supabase.env: "gamebox/data/clients/lb-autorepair/database"
         vault.hashicorp.com/agent-inject-template-supabase.env: |
-          {{- with secret "gamebox/clients/lb-autorepair/database" -}}
+          {{- with secret "gamebox/data/clients/lb-autorepair/database" -}}
           export DATABASE_URL="{{ .Data.data.url }}"
           {{- end }}
 
