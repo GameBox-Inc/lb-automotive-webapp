@@ -110,7 +110,8 @@ def register(user: UserCreate):
     # Check if username already exists
     conn = get_db_connection()
     cursor = conn.cursor()
-    cursor.execute("SELECT id FROM users WHERE username = ?", (user.username,))
+    from database import fmt_query
+    cursor.execute(fmt_query("SELECT id FROM users WHERE username = ?"), (user.username,))
     existing = cursor.fetchone()
     conn.close()
     

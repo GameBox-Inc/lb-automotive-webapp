@@ -1,6 +1,6 @@
 from typing import List, Dict, Any
 from fastapi import APIRouter, Depends, HTTPException, status
-from database import get_db_connection
+from database import get_db_connection, fmt_query
 from models import StaffSchedule, StaffScheduleUpdate, StaffCreate, StaffUpdate
 from auth import get_current_active_user
 import uuid
@@ -15,7 +15,7 @@ def list_staff(current_user: Dict[str, Any] = Depends(get_current_active_user)):
     """List all staff members."""
     conn = get_db_connection()
     cursor = conn.cursor()
-    cursor.execute("SELECT * FROM staff ORDER BY name")
+    cursor.execute(fmt_query("SELECT * FROM staff ORDER BY name"))
     rows = cursor.fetchall()
     conn.close()
     return [dict(row) for row in rows]
@@ -29,8 +29,8 @@ def create_staff(staff: StaffCreate, current_user: Dict[str, Any] = Depends(get_
     conn = get_db_connection()
     cursor = conn.cursor()
     staff_id = str(uuid.uuid4())
-    cursor.execute(
-        "INSERT INTO staff (id, name, role, active) VALUES (?, ?, ?, ?)",
+    cursor.execute(fmt_query(
+        "INSERT INTO staff (id, name, role, active) VALUES (?, ?, ?, ?)"),
         (staff_id, staff.name, staff.role, int(staff.active))
     )
     conn.commit()
@@ -65,7 +65,7 @@ def update_staff(staff_id: str, staff: StaffUpdate, current_user: Dict[str, Any]
         params.append(staff_id)
         # Use parameterized query with safe column names
         query = f"UPDATE staff SET {', '.join(updates)} WHERE id = ?"  # nosec B608
-        cursor.execute(query, params)
+        cursor.execute(fmt_query(query), params)
         conn.commit()
         
     conn.close()
@@ -79,7 +79,7 @@ def delete_staff(staff_id: str, current_user: Dict[str, Any] = Depends(get_curre
         
     conn = get_db_connection()
     cursor = conn.cursor()
-    cursor.execute("DELETE FROM staff WHERE id = ?", (staff_id,))
+    cursor.execute(fmt_query("DELETE FROM staff WHERE id = ?"), (staff_id,))
     conn.commit()
     conn.close()
 
@@ -90,7 +90,7 @@ def get_staff_schedule(staff_id: str, current_user: Dict[str, Any] = Depends(get
     """Get weekly schedule for a staff member."""
     conn = get_db_connection()
     cursor = conn.cursor()
-    cursor.execute("SELECT * FROM staff_schedules WHERE staff_id = ? ORDER BY day_of_week", (staff_id,))
+    cursor.execute(fmt_query("SELECT * FROM staff_schedules WHERE staff_id = ? ORDER BY day_of_week"), (staff_id,))
     rows = cursor.fetchall()
     conn.close()
     
@@ -122,7 +122,7 @@ def update_staff_schedule(
     cursor = conn.cursor()
     
     # Verify staff exists
-    cursor.execute("SELECT id FROM staff WHERE id = ?", (staff_id,))
+    cursor.execute(fmt_query("SELECT id FROM staff WHERE id = ?"), (staff_id,))
     if not cursor.fetchone():
         conn.close()
         raise HTTPException(status_code=404, detail="Staff not found")
@@ -131,7 +131,7 @@ def update_staff_schedule(
         # Weupsert logic: unique constraint on (staff_id, day_of_week)
         for schedule in schedules:
             schedule_id = str(uuid.uuid4())
-            cursor.execute("""
+            cursor.execute(fmt_query("""
                 INSERT INTO staff_schedules (id, staff_id, day_of_week, start_time, end_time, is_off, updated_at)
                 VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
                 ON CONFLICT(staff_id, day_of_week) DO UPDATE SET
@@ -139,7 +139,7 @@ def update_staff_schedule(
                     end_time=excluded.end_time,
                     is_off=excluded.is_off,
                     updated_at=CURRENT_TIMESTAMP
-            """, (
+            """), (
                 schedule_id, 
                 staff_id, 
                 schedule.day_of_week, 
@@ -168,7 +168,7 @@ def get_staff_credentials(staff_id: str, current_user: Dict[str, Any] = Depends(
     conn = get_db_connection()
     cursor = conn.cursor()
     
-    cursor.execute("SELECT id, username, is_admin FROM users WHERE staff_id = ?", (staff_id,))
+    cursor.execute(fmt_query("SELECT id, username, is_admin FROM users WHERE staff_id = ?"), (staff_id,))
     user = cursor.fetchone()
     conn.close()
     
@@ -201,7 +201,7 @@ def update_staff_credentials(
     cursor = conn.cursor()
     
     # Check if username exists for OTHER user
-    cursor.execute("SELECT id FROM users WHERE username = ? AND staff_id != ?", (username, staff_id))
+    cursor.execute(fmt_query("SELECT id FROM users WHERE username = ? AND staff_id != ?"), (username, staff_id))
     if cursor.fetchone():
         conn.close()
         raise HTTPException(status_code=400, detail="Username already taken")
@@ -211,7 +211,7 @@ def update_staff_credentials(
     pwd_context = CryptContext(schemes=["argon2", "sha256_crypt"], deprecated=["sha256_crypt"])
     
     # Check existing user for this staff
-    cursor.execute("SELECT id FROM users WHERE staff_id = ?", (staff_id,))
+    cursor.execute(fmt_query("SELECT id FROM users WHERE staff_id = ?"), (staff_id,))
     existing_user = cursor.fetchone()
     
     import uuid
@@ -228,7 +228,7 @@ def update_staff_credentials(
         params.append(existing_user["id"])
         # Use parameterized query with safe column names
         query = f"UPDATE users SET {', '.join(updates)} WHERE id = ?"  # nosec B608
-        cursor.execute(query, params)
+        cursor.execute(fmt_query(query), params)
     else:
         if not password:
              conn.close()
@@ -236,10 +236,10 @@ def update_staff_credentials(
              
         user_id = str(uuid.uuid4())
         hashed = pwd_context.hash(password)
-        cursor.execute("""
+        cursor.execute(fmt_query("""
             INSERT INTO users (id, username, hashed_password, is_admin, staff_id)
             VALUES (?, ?, ?, ?, ?)
-        """, (user_id, username, hashed, int(is_admin), staff_id))
+        """), (user_id, username, hashed, int(is_admin), staff_id))
         
     conn.commit()
     conn.close()

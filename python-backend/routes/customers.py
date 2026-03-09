@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
 from typing import List, Optional
 from pydantic import BaseModel, field_validator
-from database import get_db_connection
+from database import get_db_connection, fmt_query
 from auth import get_current_active_user
 from security import sanitize_input
 import uuid
@@ -75,11 +75,11 @@ def search_customers(q: str = Query(..., min_length=3, max_length=50), current_u
     
     # Search by name or phone (handling partially formatted phone numbers)
     # Using parameterized queries to prevent SQL injection
-    cursor.execute("""
+    cursor.execute(fmt_query("""
         SELECT * FROM customers 
         WHERE name LIKE ? OR phone LIKE ? OR phone LIKE ?
         LIMIT 10
-    """, (f"%{sanitized_query}%", f"%{q}%", f"%{normalized_query}%"))
+    """), (f"%{sanitized_query}%", f"%{q}%", f"%{normalized_query}%"))
     
     rows = cursor.fetchall()
     conn.close()
@@ -98,8 +98,8 @@ def create_customer(customer: CustomerCreate, current_user: dict = Depends(get_c
     cursor = conn.cursor()
     
     try:
-        cursor.execute(
-            "INSERT INTO customers (id, name, phone, email) VALUES (?, ?, ?, ?)",
+        cursor.execute(fmt_query(
+            "INSERT INTO customers (id, name, phone, email) VALUES (?, ?, ?, ?)"),
             (customer_id, customer.name, clean_phone, customer.email)
         )
         conn.commit()
@@ -109,7 +109,7 @@ def create_customer(customer: CustomerCreate, current_user: dict = Depends(get_c
              raise HTTPException(status_code=400, detail="Customer with this phone number already exists")
         raise e
     
-    cursor.execute("SELECT * FROM customers WHERE id = ?", (customer_id,))
+    cursor.execute(fmt_query("SELECT * FROM customers WHERE id = ?"), (customer_id,))
     new_customer = dict(cursor.fetchone())
     conn.close()
     
@@ -120,7 +120,7 @@ def list_customers(skip: int = Query(0, ge=0), limit: int = Query(100, ge=1, le=
     """List all customers with pagination. Maximum 500 per request."""
     conn = get_db_connection()
     cursor = conn.cursor()
-    cursor.execute("SELECT * FROM customers ORDER BY created_at DESC LIMIT ? OFFSET ?", (limit, skip))
+    cursor.execute(fmt_query("SELECT * FROM customers ORDER BY created_at DESC LIMIT ? OFFSET ?"), (limit, skip))
     rows = cursor.fetchall()
     conn.close()
     
@@ -131,7 +131,7 @@ def get_customer(customer_id: str, current_user: dict = Depends(get_current_acti
     """Get customer by ID."""
     conn = get_db_connection()
     cursor = conn.cursor()
-    cursor.execute("SELECT * FROM customers WHERE id = ?", (customer_id,))
+    cursor.execute(fmt_query("SELECT * FROM customers WHERE id = ?"), (customer_id,))
     row = cursor.fetchone()
     conn.close()
     
@@ -147,7 +147,7 @@ def get_customer_history(customer_id: str, current_user: dict = Depends(get_curr
     cursor = conn.cursor()
     
     # First check if customer exists
-    cursor.execute("SELECT phone FROM customers WHERE id = ?", (customer_id,))
+    cursor.execute(fmt_query("SELECT phone FROM customers WHERE id = ?"), (customer_id,))
     customer = cursor.fetchone()
     
     if not customer:
@@ -155,11 +155,11 @@ def get_customer_history(customer_id: str, current_user: dict = Depends(get_curr
         raise HTTPException(status_code=404, detail="Customer not found")
     
     # Get appointments by phone number
-    cursor.execute("""
+    cursor.execute(fmt_query("""
         SELECT * FROM appointments 
         WHERE phone_number = ?
         ORDER BY appointment_time DESC
-    """, (customer["phone"],))
+    """), (customer["phone"],))
     
     rows = cursor.fetchall()
     conn.close()
@@ -177,17 +177,17 @@ def update_customer(customer_id: str, customer: CustomerCreate, current_user: di
     cursor = conn.cursor()
     
     # Check if customer exists
-    cursor.execute("SELECT * FROM customers WHERE id = ?", (customer_id,))
+    cursor.execute(fmt_query("SELECT * FROM customers WHERE id = ?"), (customer_id,))
     if not cursor.fetchone():
         conn.close()
         raise HTTPException(status_code=404, detail="Customer not found")
     
     try:
-        cursor.execute("""
+        cursor.execute(fmt_query("""
             UPDATE customers 
             SET name = ?, phone = ?, email = ?, updated_at = CURRENT_TIMESTAMP
             WHERE id = ?
-        """, (customer.name, clean_phone, customer.email, customer_id))
+        """), (customer.name, clean_phone, customer.email, customer_id))
         conn.commit()
     except Exception as e:
         conn.close()
@@ -196,7 +196,7 @@ def update_customer(customer_id: str, customer: CustomerCreate, current_user: di
         raise e
     
     # Return updated customer
-    cursor.execute("SELECT * FROM customers WHERE id = ?", (customer_id,))
+    cursor.execute(fmt_query("SELECT * FROM customers WHERE id = ?"), (customer_id,))
     updated_customer = dict(cursor.fetchone())
     conn.close()
     
@@ -209,12 +209,12 @@ def delete_customer(customer_id: str, current_user: dict = Depends(get_current_a
     cursor = conn.cursor()
     
     # Check if customer exists
-    cursor.execute("SELECT * FROM customers WHERE id = ?", (customer_id,))
+    cursor.execute(fmt_query("SELECT * FROM customers WHERE id = ?"), (customer_id,))
     if not cursor.fetchone():
         conn.close()
         raise HTTPException(status_code=404, detail="Customer not found")
     
-    cursor.execute("DELETE FROM customers WHERE id = ?", (customer_id,))
+    cursor.execute(fmt_query("DELETE FROM customers WHERE id = ?"), (customer_id,))
     conn.commit()
     conn.close()
     

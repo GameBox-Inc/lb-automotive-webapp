@@ -3,7 +3,7 @@ import uuid
 from typing import List, Optional, Dict, Any
 from datetime import datetime
 from models import Appointment, AppointmentCreate, AppointmentUpdate
-from database import get_db_connection
+from database import get_db_connection, fmt_query
 
 class AppointmentRepository:
     def __init__(self, db_connection=None):
@@ -48,7 +48,7 @@ class AppointmentRepository:
         
         query += " ORDER BY a.appointment_time ASC"
         
-        self.cursor.execute(query, params)
+        self.cursor.execute(fmt_query(query), params)
         rows = self.cursor.fetchall()
         
         appointments = []
@@ -78,7 +78,7 @@ class AppointmentRepository:
             LEFT JOIN services s ON a.service_type = s.id
             WHERE a.id = ?
         """
-        self.cursor.execute(query, (appointment_id,))
+        self.cursor.execute(fmt_query(query), (appointment_id,))
         row = self.cursor.fetchone()
         
         if not row:
@@ -109,12 +109,12 @@ class AppointmentRepository:
     def create_appointment(self, appointment_data: Dict[str, Any], user_id: Optional[str] = None) -> Appointment:
         appointment_id = str(uuid.uuid4())
         
-        self.cursor.execute("""
+        self.cursor.execute(fmt_query("""
             INSERT INTO appointments (
                 id, customer_name, phone_number, appointment_time,
                 service_type, notes, emergency_request, user_id, assigned_staff_id
             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """, (
+        """), (
             appointment_id,
             appointment_data["customer_name"],
             appointment_data["phone_number"],
@@ -164,11 +164,11 @@ class AppointmentRepository:
             # I will keep the side effect here for parity with existing logic for now, 
             # or move it to explicit 'update_status' method.
             if updates.status == 'in_progress':
-                self.cursor.execute("""
+                self.cursor.execute(fmt_query("""
                     UPDATE cases 
                     SET started_at = CURRENT_TIMESTAMP 
                     WHERE appointment_id = ? AND started_at IS NULL
-                """, (appointment_id,))
+                """), (appointment_id,))
         
         if updates.emergency_request is not None:
             update_fields.append("emergency_request = ?")
@@ -181,12 +181,12 @@ class AppointmentRepository:
         params.append(appointment_id)
         
         query = f"UPDATE appointments SET {', '.join(update_fields)} WHERE id = ?"  # nosec B608
-        self.cursor.execute(query, params)
+        self.cursor.execute(fmt_query(query), params)
         self.conn.commit()
         
         return self.get_appointment(appointment_id)
 
     def delete_appointment(self, appointment_id: str) -> bool:
-        self.cursor.execute("DELETE FROM appointments WHERE id = ?", (appointment_id,))
+        self.cursor.execute(fmt_query("DELETE FROM appointments WHERE id = ?"), (appointment_id,))
         self.conn.commit()
         return self.cursor.rowcount > 0

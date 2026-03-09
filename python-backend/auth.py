@@ -6,7 +6,7 @@ from jose import JWTError, jwt
 from passlib.context import CryptContext
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
-from database import get_db_connection, current_user_context
+from database import get_db_connection, current_user_context, fmt_query
 from models import User, UserCreate, Token, TokenData
 from cache import get_cached, set_cached, TTL_USER
 
@@ -53,10 +53,10 @@ def get_user_by_username(username: str) -> Optional[Dict[str, Any]]:
     """Get user by username from database."""
     conn = get_db_connection()
     cursor = conn.cursor()
-    cursor.execute("""
+    cursor.execute(fmt_query("""
         SELECT id, username, email, hashed_password, is_admin, staff_id, created_at
         FROM users WHERE username = ?
-    """, (username,))
+    """), (username,))
     row = cursor.fetchone()
     conn.close()
     
@@ -77,10 +77,10 @@ def get_user_by_id(user_id: str) -> Optional[Dict[str, Any]]:
     """Get user by ID from database."""
     conn = get_db_connection()
     cursor = conn.cursor()
-    cursor.execute("""
+    cursor.execute(fmt_query("""
         SELECT id, username, email, is_admin, staff_id, created_at
         FROM users WHERE id = ?
-    """, (user_id,))
+    """), (user_id,))
     row = cursor.fetchone()
     conn.close()
     
@@ -114,10 +114,10 @@ def create_user(user: UserCreate) -> Dict[str, Any]:
     user_id = str(uuid.uuid4())
     hashed_password = get_password_hash(user.password)
     
-    cursor.execute("""
+    cursor.execute(fmt_query("""
         INSERT INTO users (id, username, email, hashed_password, is_admin, staff_id)
         VALUES (?, ?, ?, ?, ?, ?)
-    """, (user_id, user.username, user.email, hashed_password, int(user.is_admin), user.staff_id))
+    """), (user_id, user.username, user.email, hashed_password, int(user.is_admin), user.staff_id))
     
     conn.commit()
     conn.close()

@@ -3,7 +3,7 @@ from typing import List, Optional, Dict, Any
 from fastapi import APIRouter, Depends, HTTPException, status
 from models import Appointment, AppointmentCreate, AppointmentUpdate
 from auth import get_current_active_user, get_optional_user
-from database import get_db_connection, current_user_context
+from database import get_db_connection, current_user_context, fmt_query
 from security import sanitize_input, validate_appointment_data
 from repositories.appointment_repository import AppointmentRepository
 from utils.time_utils import get_current_business_time, get_business_timezone
@@ -48,7 +48,7 @@ def get_available_slots(
         raise HTTPException(status_code=400, detail="Invalid date format. Use YYYY-MM-DD")
 
     # 1. Get Service Duration
-    cursor.execute("SELECT duration FROM services WHERE id = ?", (service_id,))
+    cursor.execute(fmt_query("SELECT duration FROM services WHERE id = ?"), (service_id,))
     service_row = cursor.fetchone()
     if not service_row:
         conn.close()
@@ -59,12 +59,12 @@ def get_available_slots(
     # day_of_week: 0=Monday, 6=Sunday
     day_of_week = target_date.weekday()
     
-    cursor.execute("""
+    cursor.execute(fmt_query("""
         SELECT s.id as staff_id, s.name, ss.start_time, ss.end_time 
         FROM staff s
         JOIN staff_schedules ss ON s.id = ss.staff_id
         WHERE s.active = 1 AND ss.day_of_week = ? AND ss.is_off = 0
-    """, (day_of_week,))
+    """), (day_of_week,))
     
     staff_schedules = cursor.fetchall()
     
@@ -75,12 +75,14 @@ def get_available_slots(
 
     # 3. Get existing appointments for this date
     # We fetch all appointments that overlap with the day
-    cursor.execute("""
+    # Note: date() is SQLite, we use a more generic approach or cast for PG
+    date_fn = "DATE" if os.getenv("DATABASE_URL", "").startswith("postgres") else "date"
+    cursor.execute(fmt_query(f"""
         SELECT appointment_time, service_type, duration 
         FROM appointments a
         JOIN services s ON a.service_type = s.id
-        WHERE date(appointment_time) = ? AND status != 'cancelled'
-    """, (date,))
+        WHERE {date_fn}(appointment_time) = ? AND status != 'cancelled'
+    """), (date,))
     
     existing_appointments = cursor.fetchall()
     conn.close()

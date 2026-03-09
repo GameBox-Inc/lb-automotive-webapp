@@ -1,6 +1,7 @@
 from datetime import datetime, timedelta, time
 from typing import Optional
-from database import get_db_connection
+from database import get_db_connection, fmt_query
+import os
 
 def get_business_hours_for_day(day_of_week: int) -> tuple[Optional[time], Optional[time], bool]:
     """
@@ -16,11 +17,11 @@ def get_business_hours_for_day(day_of_week: int) -> tuple[Optional[time], Option
     conn = get_db_connection()
     cursor = conn.cursor()
     
-    cursor.execute("""
+    cursor.execute(fmt_query("""
         SELECT opening_time, closing_time, is_closed
         FROM business_hours
         WHERE day_of_week = ?
-    """, (day_of_week,))
+    """), (day_of_week,))
     
     row = cursor.fetchone()
     conn.close()
@@ -53,7 +54,7 @@ def get_available_slots_logic(date_str: str, service_id: str):
     cursor = conn.cursor()
 
     # 1. Get Service Duration
-    cursor.execute("SELECT duration FROM services WHERE id = ?", (service_id,))
+    cursor.execute(fmt_query("SELECT duration FROM services WHERE id = ?"), (service_id,))
     service_row = cursor.fetchone()
     if not service_row:
         conn.close()
@@ -68,12 +69,12 @@ def get_available_slots_logic(date_str: str, service_id: str):
         conn.close()
         return []  # Business is closed on this day
     
-    cursor.execute("""
+    cursor.execute(fmt_query("""
         SELECT s.id as staff_id, s.name, ss.start_time, ss.end_time 
         FROM staff s
         JOIN staff_schedules ss ON s.id = ss.staff_id
         WHERE s.active = 1 AND ss.day_of_week = ? AND ss.is_off = 0
-    """, (day_of_week,))
+    """), (day_of_week,))
     
     staff_schedules = cursor.fetchall()
     
@@ -82,12 +83,13 @@ def get_available_slots_logic(date_str: str, service_id: str):
         return []
 
     # 3. Get existing appointments
-    cursor.execute("""
+    date_fn = "DATE" if os.getenv("DATABASE_URL", "").startswith("postgres") else "date"
+    cursor.execute(fmt_query(f"""
         SELECT a.appointment_time, a.service_type, a.duration 
         FROM appointments a
         LEFT JOIN services s ON a.service_type = s.id OR a.service_type = s.name
-        WHERE date(a.appointment_time) = ? AND a.status != 'cancelled'
-    """, (date_str,))
+        WHERE {date_fn}(a.appointment_time) = ? AND a.status != 'cancelled'
+    """), (date_str,))
     
     existing_appointments = cursor.fetchall()
     conn.close()

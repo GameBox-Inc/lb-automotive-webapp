@@ -7,7 +7,7 @@ from typing import List, Optional, Dict, Any
 from fastapi import APIRouter, Depends, HTTPException, status
 from models import Case, CaseCreate, CaseUpdate, CaseNote, CaseNoteCreate, CasePart, CasePartCreate
 from auth import get_current_active_user
-from database import get_db_connection
+from database import get_db_connection, fmt_query
 
 router = APIRouter(prefix="/api/cases", tags=["cases"])
 
@@ -21,14 +21,14 @@ def create_case(
     cursor = conn.cursor()
 
     # Verify appointment exists
-    cursor.execute("SELECT * FROM appointments WHERE id = ?", (case_data.appointment_id,))
+    cursor.execute(fmt_query("SELECT * FROM appointments WHERE id = ?"), (case_data.appointment_id,))
     appointment = cursor.fetchone()
     if not appointment:
         conn.close()
         raise HTTPException(status_code=404, detail="Appointment not found")
 
     # Check if case already exists for this appointment
-    cursor.execute("SELECT * FROM cases WHERE appointment_id = ?", (case_data.appointment_id,))
+    cursor.execute(fmt_query("SELECT * FROM cases WHERE appointment_id = ?"), (case_data.appointment_id,))
     existing_case = cursor.fetchone()
     if existing_case:
         conn.close()
@@ -39,21 +39,21 @@ def create_case(
     # Generate simple case number (auto-increment simulation or random)
     # For SQLite simplicity, we'll just use a random int or timestamp based
     # Better approach: SELECT MAX(case_number) + 1
-    cursor.execute("SELECT MAX(case_number) FROM cases")
+    cursor.execute(fmt_query("SELECT MAX(case_number) FROM cases"))
     max_num = cursor.fetchone()[0]
     case_number = (max_num or 1000) + 1
 
     metadata_json = json.dumps(case_data.metadata or {})
 
-    cursor.execute("""
+    cursor.execute(fmt_query("""
         INSERT INTO cases (id, case_number, appointment_id, status, metadata)
         VALUES (?, ?, ?, 'open', ?)
-    """, (case_id, case_number, case_data.appointment_id, metadata_json))
+    """), (case_id, case_number, case_data.appointment_id, metadata_json))
     
     conn.commit()
     
     # Fetch created case
-    cursor.execute("SELECT * FROM cases WHERE id = ?", (case_id,))
+    cursor.execute(fmt_query("SELECT * FROM cases WHERE id = ?"), (case_id,))
     row = cursor.fetchone()
     conn.close()
 
@@ -113,7 +113,7 @@ def list_cases(
     
     query += " ORDER BY c.created_at DESC"
 
-    cursor.execute(query, params)
+    cursor.execute(fmt_query(query), params)
     rows = cursor.fetchall()
     conn.close()
 
@@ -140,7 +140,7 @@ def get_case(
     conn = get_db_connection()
     cursor = conn.cursor()
 
-    cursor.execute("SELECT * FROM cases WHERE id = ?", (case_id,))
+    cursor.execute(fmt_query("SELECT * FROM cases WHERE id = ?"), (case_id,))
     case_row = cursor.fetchone()
     
     if not case_row:
@@ -148,7 +148,7 @@ def get_case(
         raise HTTPException(status_code=404, detail="Case not found")
 
     # Fetch Notes
-    cursor.execute("SELECT * FROM case_notes WHERE case_id = ? ORDER BY created_at ASC", (case_id,))
+    cursor.execute(fmt_query("SELECT * FROM case_notes WHERE case_id = ? ORDER BY created_at ASC"), (case_id,))
     note_rows = cursor.fetchall()
     notes = [
         CaseNote(
@@ -158,7 +158,7 @@ def get_case(
     ]
 
     # Fetch Parts
-    cursor.execute("SELECT * FROM case_parts WHERE case_id = ? ORDER BY created_at ASC", (case_id,))
+    cursor.execute(fmt_query("SELECT * FROM case_parts WHERE case_id = ? ORDER BY created_at ASC"), (case_id,))
     part_rows = cursor.fetchall()
     parts = [
         CasePart(
@@ -200,7 +200,7 @@ def add_case_note(
         conn = get_db_connection()
         try:
             cursor = conn.cursor()
-            cursor.execute("SELECT id FROM staff WHERE name = 'System Admin'")
+            cursor.execute(fmt_query("SELECT id FROM staff WHERE name = ?"), ('System Admin',))
             row = cursor.fetchone()
             
             if row:
@@ -208,10 +208,10 @@ def add_case_note(
             else:
                 # Create System Admin staff
                 new_staff_id = str(uuid.uuid4())
-                cursor.execute("""
+                cursor.execute(fmt_query("""
                     INSERT INTO staff (id, name, role, active) 
                     VALUES (?, 'System Admin', 'admin', 1)
-                """, (new_staff_id,))
+                """), (new_staff_id,))
                 conn.commit()
                 staff_id = new_staff_id
         finally:
@@ -224,14 +224,14 @@ def add_case_note(
     cursor = conn.cursor()
 
     note_id = str(uuid.uuid4())
-    cursor.execute("""
+    cursor.execute(fmt_query("""
         INSERT INTO case_notes (id, case_id, staff_id, note, is_internal)
         VALUES (?, ?, ?, ?, ?)
-    """, (note_id, case_id, staff_id, note_data.note, int(note_data.is_internal)))
+    """), (note_id, case_id, staff_id, note_data.note, int(note_data.is_internal)))
     
     conn.commit()
     
-    cursor.execute("SELECT * FROM case_notes WHERE id = ?", (note_id,))
+    cursor.execute(fmt_query("SELECT * FROM case_notes WHERE id = ?"), (note_id,))
     row = cursor.fetchone()
     conn.close()
 
@@ -272,7 +272,7 @@ def update_case(
     query = f"UPDATE cases SET {', '.join(updates)} WHERE id = ?"  # nosec B608
     params.append(case_id)
     
-    cursor.execute(query, params)
+    cursor.execute(fmt_query(query), params)
     conn.commit()
     
     conn.close()
@@ -289,14 +289,14 @@ def add_case_part(
     cursor = conn.cursor()
 
     part_id = str(uuid.uuid4())
-    cursor.execute("""
+    cursor.execute(fmt_query("""
         INSERT INTO case_parts (id, case_id, part_name, quantity, price, status)
         VALUES (?, ?, ?, ?, ?, ?)
-    """, (part_id, case_id, part_data.part_name, part_data.quantity, part_data.price, 'pending'))
+    """), (part_id, case_id, part_data.part_name, part_data.quantity, part_data.price, 'pending'))
     
     conn.commit()
     
-    cursor.execute("SELECT * FROM case_parts WHERE id = ?", (part_id,))
+    cursor.execute(fmt_query("SELECT * FROM case_parts WHERE id = ?"), (part_id,))
     row = cursor.fetchone()
     conn.close()
 
@@ -333,13 +333,13 @@ def sign_and_close_case(
     query = f"UPDATE cases SET {', '.join(updates)} WHERE id = ?"  # nosec B608
     params.append(case_id)
     
-    cursor.execute(query, params)
+    cursor.execute(fmt_query(query), params)
     conn.commit()
     
     # Send email (mock)
     # In a real app, trigger email task here
     
-    cursor.execute("SELECT * FROM cases WHERE id = ?", (case_id,))
+    cursor.execute(fmt_query("SELECT * FROM cases WHERE id = ?"), (case_id,))
     row = cursor.fetchone()
     conn.close()
 

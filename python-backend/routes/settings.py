@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from typing import List, Dict, Any
-from database import get_db_connection
+from database import get_db_connection, fmt_query
 from auth import get_current_active_user
 from models import Setting, SettingUpdate
 from security import sanitize_input
@@ -20,7 +20,7 @@ def get_settings(current_user: Dict[str, Any] = Depends(get_current_active_user)
     
     conn = get_db_connection()
     cursor = conn.cursor()
-    cursor.execute("SELECT * FROM settings ORDER BY key")
+    cursor.execute(fmt_query("SELECT * FROM settings ORDER BY key"))
     rows = cursor.fetchall()
     conn.close()
     
@@ -58,7 +58,7 @@ def update_setting(
     cursor = conn.cursor()
     
     # Check if setting exists
-    cursor.execute("SELECT * FROM settings WHERE key = ?", (key,))
+    cursor.execute(fmt_query("SELECT * FROM settings WHERE key = ?"), (key,))
     if not cursor.fetchone():
         conn.close()
         raise HTTPException(
@@ -67,16 +67,16 @@ def update_setting(
         )
     
     # Update setting
-    cursor.execute("""
+    cursor.execute(fmt_query("""
         UPDATE settings 
         SET value = ?, updated_at = CURRENT_TIMESTAMP, updated_by = ?
         WHERE key = ?
-    """, (sanitized_value, current_user["username"], key))
+    """), (sanitized_value, current_user["username"], key))
     
     conn.commit()
     
     # Fetch updated
-    cursor.execute("SELECT * FROM settings WHERE key = ?", (key,))
+    cursor.execute(fmt_query("SELECT * FROM settings WHERE key = ?"), (key,))
     row = cursor.fetchone()
     conn.close()
     

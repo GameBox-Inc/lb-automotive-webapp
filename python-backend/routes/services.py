@@ -1,6 +1,6 @@
 from typing import List, Optional
 from fastapi import APIRouter, HTTPException
-from database import get_db_connection
+from database import get_db_connection, fmt_query
 from models import Service, ServiceCreate
 from cache import get_cached, set_cached, TTL_SERVICES, TTL_CATEGORIES, cache_key
 from monitoring import db_query_duration_seconds
@@ -32,7 +32,7 @@ def list_services(category: str = None, is_emergency: bool = None):
     
     query += " ORDER BY category, name"
     
-    cursor.execute(query, params)
+    cursor.execute(fmt_query(query), params)
     rows = cursor.fetchall()
     conn.close()
     
@@ -69,7 +69,7 @@ async def get_service_categories():
     def fetch_categories():
         conn = get_db_connection()
         cursor = conn.cursor()
-        cursor.execute("SELECT DISTINCT category FROM services ORDER BY category")
+        cursor.execute(fmt_query("SELECT DISTINCT category FROM services ORDER BY category"))
         rows = cursor.fetchall()
         conn.close()
         return [row["category"] for row in rows]
@@ -91,7 +91,7 @@ def list_emergency_services():
     conn = get_db_connection()
     cursor = conn.cursor()
     
-    cursor.execute("SELECT * FROM services WHERE is_emergency = 1 ORDER BY name")
+    cursor.execute(fmt_query("SELECT * FROM services WHERE is_emergency = 1 ORDER BY name"))
     rows = cursor.fetchall()
     conn.close()
     
@@ -118,7 +118,7 @@ def get_service(service_id: str):
     conn = get_db_connection()
     cursor = conn.cursor()
     
-    cursor.execute("SELECT * FROM services WHERE id = ?", (service_id,))
+    cursor.execute(fmt_query("SELECT * FROM services WHERE id = ?"), (service_id,))
     row = cursor.fetchone()
     conn.close()
     
@@ -172,10 +172,10 @@ def create_service(
     import uuid
     service_id = str(uuid.uuid4())
     
-    cursor.execute("""
+    cursor.execute(fmt_query("""
         INSERT INTO services (id, name, description, duration, price, is_emergency, category)
         VALUES (?, ?, ?, ?, ?, ?, ?)
-    """, (
+    """), (
         service_id,
         service.name,
         service.description,
@@ -187,7 +187,7 @@ def create_service(
     
     conn.commit()
     
-    cursor.execute("SELECT * FROM services WHERE id = ?", (service_id,))
+    cursor.execute(fmt_query("SELECT * FROM services WHERE id = ?"), (service_id,))
     row = cursor.fetchone()
     conn.close()
     
@@ -229,7 +229,7 @@ def update_service(
     cursor = conn.cursor()
     
     # Check existence
-    cursor.execute("SELECT * FROM services WHERE id = ?", (service_id,))
+    cursor.execute(fmt_query("SELECT * FROM services WHERE id = ?"), (service_id,))
     if not cursor.fetchone():
         conn.close()
         raise HTTPException(status_code=404, detail="Service not found")
@@ -265,12 +265,12 @@ def update_service(
     params.append(service_id)
     
     query = f"UPDATE services SET {', '.join(updates)} WHERE id = ?"  # nosec B608
-    cursor.execute(query, params)
+    cursor.execute(fmt_query(query), params)
     
     conn.commit()
     
     # Fetch updated
-    cursor.execute("SELECT * FROM services WHERE id = ?", (service_id,))
+    cursor.execute(fmt_query("SELECT * FROM services WHERE id = ?"), (service_id,))
     row = cursor.fetchone()
     conn.close()
     
@@ -305,11 +305,11 @@ def delete_service(
     cursor = conn.cursor()
     
     # Check existence
-    cursor.execute("SELECT id FROM services WHERE id = ?", (service_id,))
+    cursor.execute(fmt_query("SELECT id FROM services WHERE id = ?"), (service_id,))
     if not cursor.fetchone():
         conn.close()
         raise HTTPException(status_code=404, detail="Service not found")
     
-    cursor.execute("DELETE FROM services WHERE id = ?", (service_id,))
+    cursor.execute(fmt_query("DELETE FROM services WHERE id = ?"), (service_id,))
     conn.commit()
     conn.close()

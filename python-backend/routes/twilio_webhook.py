@@ -10,7 +10,7 @@ from fastapi import APIRouter, Request, Form, Response, Depends
 from twilio.twiml.voice_response import VoiceResponse, Gather
 from twilio.rest import Client
 import os
-from database import get_db_connection, upsert_call_state, update_appointment_status
+from database import get_db_connection, upsert_call_state, update_appointment_status, fmt_query
 from models import CallState, IVRLog
 from twilio.request_validator import RequestValidator
 from fastapi import HTTPException, Header
@@ -125,7 +125,7 @@ def check_rate_limit(phone_number: str) -> bool:
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
-        cursor.execute("SELECT COUNT(*) as count FROM appointments WHERE phone_number = ? AND status = 'pending'", (phone_number,))
+        cursor.execute(fmt_query("SELECT COUNT(*) as count FROM appointments WHERE phone_number = ? AND status = 'pending'"), (phone_number,))
         row = cursor.fetchone()
         conn.close()
         
@@ -145,11 +145,11 @@ def get_call_state(call_sid: str) -> Optional[dict]:
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
-        cursor.execute("""
+        cursor.execute(fmt_query("""
             SELECT id, call_sid, current_step, language, metadata, appointment_id, 
                    last_response_time, created_at, updated_at
             FROM call_states WHERE call_sid = ?
-        """, (call_sid,))
+        """), (call_sid,))
         row = cursor.fetchone()
         conn.close()
         
@@ -175,7 +175,7 @@ def get_setting(key: str, default: str) -> str:
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
-        cursor.execute("SELECT value FROM settings WHERE key = ?", (key,))
+        cursor.execute(fmt_query("SELECT value FROM settings WHERE key = ?"), (key,))
         row = cursor.fetchone()
         conn.close()
         return row['value'] if row else default
@@ -193,10 +193,10 @@ def log_ivr_interaction(call_sid: str, step: str, input_data: str = None):
         cursor = conn.cursor()
         
         log_id = str(uuid.uuid4())
-        cursor.execute("""
+        cursor.execute(fmt_query("""
             INSERT INTO ivr_logs (id, call_sid, step, input)
             VALUES (?, ?, ?, ?)
-        """, (log_id, call_sid, step, input_data))
+        """), (log_id, call_sid, step, input_data))
         
         conn.commit()
         conn.close()
@@ -211,10 +211,10 @@ def track_decision(call_sid: str, node_name: str, decision_taken: str = None, du
         cursor = conn.cursor()
         
         analytics_id = str(uuid.uuid4())
-        cursor.execute("""
+        cursor.execute(fmt_query("""
             INSERT INTO ivr_analytics (id, call_sid, node_name, decision_taken, duration_seconds)
             VALUES (?, ?, ?, ?, ?)
-        """, (analytics_id, call_sid, node_name, decision_taken, duration_seconds))
+        """), (analytics_id, call_sid, node_name, decision_taken, duration_seconds))
         
         conn.commit()
         conn.close()
@@ -229,18 +229,18 @@ def update_decision_path(call_sid: str, node_name: str):
         cursor = conn.cursor()
         
         # Get current decision path
-        cursor.execute("SELECT decision_path FROM call_states WHERE call_sid = ?", (call_sid,))
+        cursor.execute(fmt_query("SELECT decision_path FROM call_states WHERE call_sid = ?"), (call_sid,))
         row = cursor.fetchone()
         
         if row:
             current_path = json.loads(row["decision_path"]) if row["decision_path"] else []
             current_path.append(node_name)
             
-            cursor.execute("""
+            cursor.execute(fmt_query("""
                 UPDATE call_states 
                 SET decision_path = ?
                 WHERE call_sid = ?
-            """, (json.dumps(current_path), call_sid))
+            """), (json.dumps(current_path), call_sid))
             
             conn.commit()
         
@@ -421,7 +421,7 @@ def process_smart_jump(intent, llm_result, CallSid, metadata, response, language
             # Try to match service name to DB
             conn = get_db_connection()
             cursor = conn.cursor()
-            cursor.execute("SELECT id, name, category, duration FROM services")
+            cursor.execute(fmt_query("SELECT id, name, category, duration FROM services"))
             all_services = cursor.fetchall()
             conn.close()
             
@@ -555,7 +555,7 @@ def twilio_webhook(
             # Normalize 'From' number (e.g., +1845...)
             clean_from = From.replace("+", "").replace("-", "").strip()
             # Try exact match or match specific substring if needed
-            cursor.execute("SELECT name FROM customers WHERE replace(replace(phone, '-', ''), '+', '') LIKE ?", (f"%{clean_from}%",))
+            cursor.execute(fmt_query("SELECT name FROM customers WHERE replace(replace(phone, '-', ''), '+', '') LIKE ?"), (f"%{clean_from}%",))
             row = cursor.fetchone()
             conn.close()
             
@@ -650,10 +650,10 @@ def twilio_webhook(
                 # Route to emergency services
                 conn = get_db_connection()
                 cursor = conn.cursor()
-                cursor.execute("""
+                cursor.execute(fmt_query("""
                     SELECT id, name, description, duration, price, category
                     FROM services WHERE is_emergency = 1 ORDER BY name
-                """)
+                """))
                 services = [dict(row) for row in cursor.fetchall()]
                 conn.close()
                 
@@ -725,10 +725,10 @@ def twilio_webhook(
             
             if is_emergency:
                 # Emergency services
-                cursor.execute("""
+                cursor.execute(fmt_query("""
                     SELECT id, name, description, duration, price, category
                     FROM services WHERE is_emergency = 1 ORDER BY name
-                """)
+                """))
                 services = [dict(row) for row in cursor.fetchall()]
                 metadata["services"] = services
                 next_step = "select_emergency"
@@ -740,7 +740,7 @@ def twilio_webhook(
                 )
             else:
                 # Regular categories
-                cursor.execute("SELECT DISTINCT category FROM services ORDER BY category")
+                cursor.execute(fmt_query("SELECT DISTINCT category FROM services ORDER BY category"))
                 categories = [row["category"] for row in cursor.fetchall()]
                 metadata["categories"] = categories
                 next_step = "select_category"
@@ -796,7 +796,7 @@ def twilio_webhook(
                 selected_cat = categories[idx]
                 conn = get_db_connection()
                 cursor = conn.cursor()
-                cursor.execute("SELECT * FROM services WHERE category = ?", (selected_cat,))
+                cursor.execute(fmt_query("SELECT * FROM services WHERE category = ?"), (selected_cat,))
                 services = [dict(row) for row in cursor.fetchall()]
                 conn.close()
                 
@@ -1086,10 +1086,10 @@ def twilio_webhook(
 
                     # Insert with notes!
                     logger.info(f"Booking Appointment: Name='{customer_name}', Notes='{symptoms_desc}'")
-                    cursor.execute("""
+                    cursor.execute(fmt_query("""
                         INSERT INTO appointments (id, customer_name, phone_number, appointment_time, service_type, status, notes)
                         VALUES (?, ?, ?, ?, ?, ?, ?)
-                    """, (aid, customer_name, From, appt_time, service_name, 'pending', symptoms_desc)) 
+                    """), (aid, customer_name, From, appt_time, service_name, 'pending', symptoms_desc)) 
                     conn.commit()
                     conn.close()
                     
@@ -1119,10 +1119,10 @@ def twilio_webhook(
                    conn = get_db_connection()
                    cursor = conn.cursor()
                    aid = str(uuid.uuid4())
-                   cursor.execute("""
+                   cursor.execute(fmt_query("""
                        INSERT INTO appointments (id, customer_name, phone_number, appointment_time, service_type, status, emergency_request)
                        VALUES (?, ?, ?, ?, ?, ?, 1)
-                   """, (aid, "Emergency Caller", From, datetime.now().isoformat(), svc.get('name'), 'pending'))
+                   """), (aid, "Emergency Caller", From, datetime.now().isoformat(), svc.get('name'), 'pending'))
                    conn.commit()
                    conn.close()
                    

@@ -45,6 +45,9 @@ else:
         # Fallback to current dir (Local Dev)
         DB_PATH = os.path.join(BASE_DIR, "lb_automotive.db")
 
+# Standardize placeholders: %s for PostgreSQL, ? for SQLite
+SQL_PARAM = "%s" if DB_TYPE == "postgresql" else "?"
+
 print(f"DATABASE TYPE: {DB_TYPE}")
 # Mask credentials for security
 if DB_TYPE == "postgresql" and "@" in DB_PATH:
@@ -52,6 +55,16 @@ if DB_TYPE == "postgresql" and "@" in DB_PATH:
     print(f"DATABASE PATH/URL: postgresql://*****@{masked_path}")
 else:
     print(f"DATABASE PATH/URL: {DB_PATH}")
+
+
+def fmt_query(query: str) -> str:
+    """
+    Format query placeholders based on database type.
+    Replaces all '?' with '%s' if using PostgreSQL.
+    """
+    if DB_TYPE == "postgresql":
+        return query.replace("?", "%s")
+    return query
 
 
 def get_db_connection():
@@ -445,11 +458,11 @@ def get_call_state(call_sid: str) -> Optional[dict]:
     """Get call state from database."""
     conn = get_db_connection()
     cursor = conn.cursor()
-    cursor.execute("""
+    cursor.execute(fmt_query("""
         SELECT id, call_sid, current_step, language, metadata, appointment_id, 
                last_response_time, created_at, updated_at
         FROM call_states WHERE call_sid = ?
-    """, (call_sid,))
+    """), (call_sid,))
     row = cursor.fetchone()
     conn.close()
     
@@ -479,18 +492,18 @@ def upsert_call_state(call_sid: str, current_step: str, language: str = "en",
     
     import uuid
     if existing:
-        cursor.execute("""
+        cursor.execute(fmt_query("""
             UPDATE call_states 
             SET current_step = ?, language = ?, metadata = ?, appointment_id = ?,
                 last_response_time = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
             WHERE call_sid = ?
-        """, (current_step, language, metadata_json, appointment_id, call_sid))
+        """), (current_step, language, metadata_json, appointment_id, call_sid))
     else:
         state_id = str(uuid.uuid4())
-        cursor.execute("""
+        cursor.execute(fmt_query("""
             INSERT INTO call_states (id, call_sid, current_step, language, metadata, appointment_id)
             VALUES (?, ?, ?, ?, ?, ?)
-        """, (state_id, call_sid, current_step, language, metadata_json, appointment_id))
+        """), (state_id, call_sid, current_step, language, metadata_json, appointment_id))
     
     conn.commit()
     conn.close()
@@ -500,7 +513,7 @@ def update_appointment_status(appointment_id: str, status: str):
     """Update appointment status."""
     conn = get_db_connection()
     cursor = conn.cursor()
-    cursor.execute("UPDATE appointments SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?", (status, appointment_id))
+    cursor.execute(fmt_query("UPDATE appointments SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?"), (status, appointment_id))
     conn.commit()
     conn.close()
 
