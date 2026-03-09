@@ -27,7 +27,7 @@ VAULT_POD="vault-0"
 VAULT_ADDR="https://vault.${NAMESPACE}.svc.cluster.local:8200"
 
 # Use kubectl exec to run vault commands inside the pod
-VAULT_EXEC="kubectl exec -n $NAMESPACE $VAULT_POD -- vault"
+VAULT_EXEC="sudo k3s kubectl exec -n $NAMESPACE $VAULT_POD -- vault"
 
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
@@ -42,7 +42,7 @@ echo ""
 
 # ─── Wait for Vault pod to be ready ──────────────────────────────────────────
 echo "▶ Waiting for Vault pod to be Running..."
-kubectl wait pod/$VAULT_POD \
+sudo k3s kubectl wait pod/$VAULT_POD \
   --namespace=$NAMESPACE \
   --for=condition=Ready \
   --timeout=120s
@@ -52,7 +52,7 @@ echo -e "${GREEN}  ✅ Vault pod is Ready${NC}"
 echo ""
 echo "▶ Initializing Vault (5 keys, threshold 3)..."
 
-INIT_OUTPUT=$(kubectl exec -n $NAMESPACE $VAULT_POD -- \
+INIT_OUTPUT=$(sudo k3s kubectl exec -n $NAMESPACE $VAULT_POD -- \
   vault operator init \
     -key-shares=5 \
     -key-threshold=3 \
@@ -99,14 +99,14 @@ for KEY_VAR in UNSEAL_KEY_1 UNSEAL_KEY_2 UNSEAL_KEY_3; do
   if [[ -z "$KEY_VALUE" ]]; then
     read -sp "  Enter unseal key ($KEY_VAR): " KEY_VALUE; echo ""
   fi
-  kubectl exec -n $NAMESPACE $VAULT_POD -- \
+  sudo k3s kubectl exec -n $NAMESPACE $VAULT_POD -- \
     vault operator unseal "$KEY_VALUE" > /dev/null
 done
 
 echo -e "${GREEN}  ✅ Vault unsealed${NC}"
 
-# ─── Set Vault CLI env (for remaining commands via kubectl exec) ───────────────
-VAULT_CMD="kubectl exec -n $NAMESPACE $VAULT_POD -- env VAULT_TOKEN=$VAULT_TOKEN VAULT_ADDR=https://127.0.0.1:8200 VAULT_SKIP_VERIFY=true vault"
+# ─── Set Vault CLI env (for remaining commands via sudo k3s kubectl exec) ───────────────
+VAULT_CMD="sudo k3s kubectl exec -n $NAMESPACE $VAULT_POD -- env VAULT_TOKEN=$VAULT_TOKEN VAULT_ADDR=https://127.0.0.1:8200 VAULT_SKIP_VERIFY=true vault"
 
 # ─── 3. Enable KV v2 Secrets Engine ─────────────────────────────────────────
 echo ""
@@ -121,18 +121,18 @@ $VAULT_CMD auth enable kubernetes 2>/dev/null || echo "  (already enabled)"
 
 echo "▶ Configuring Kubernetes auth (using in-cluster API server)..."
 K8S_HOST="https://kubernetes.default.svc"
-K8S_CA=$(kubectl config view --raw --minify --flatten -o jsonpath='{.clusters[0].cluster.certificate-authority-data}' | base64 -d)
+K8S_CA=$(sudo k3s kubectl config view --raw --minify --flatten -o jsonpath='{.clusters[0].cluster.certificate-authority-data}' | base64 -d)
 
 # Use the Vault SA token for the auth backend configuration
-VAULT_SA_SECRET=$(kubectl get secret -n $NAMESPACE \
+VAULT_SA_SECRET=$(sudo k3s kubectl get secret -n $NAMESPACE \
   -l app=vault -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || echo "")
 
 if [[ -n "$VAULT_SA_SECRET" ]]; then
-  VAULT_SA_JWT=$(kubectl get secret -n $NAMESPACE "$VAULT_SA_SECRET" \
+  VAULT_SA_JWT=$(sudo k3s kubectl get secret -n $NAMESPACE "$VAULT_SA_SECRET" \
     -o jsonpath='{.data.token}' | base64 -d)
 else
   # K8s 1.24+ — generate token directly
-  VAULT_SA_JWT=$(kubectl create token vault -n $NAMESPACE --duration=8760h)
+  VAULT_SA_JWT=$(sudo k3s kubectl create token vault -n $NAMESPACE --duration=8760h)
 fi
 
 $VAULT_CMD write auth/kubernetes/config \
@@ -152,7 +152,7 @@ echo "  (Reading from existing K8s secrets in lb-automotive namespace)"
 read_k8s_secret() {
   local SECRET_NAME=$1
   local FIELD=$2
-  kubectl get secret -n lb-automotive "$SECRET_NAME" \
+  sudo k3s kubectl get secret -n lb-automotive "$SECRET_NAME" \
     -o jsonpath="{.data.$FIELD}" 2>/dev/null | base64 -d || echo ""
 }
 
@@ -233,7 +233,7 @@ $VAULT_CMD write auth/kubernetes/role/lb-automotive-role \
 echo -e "${GREEN}  ✅ Vault role 'lb-automotive-role' created${NC}"
 
 # Label namespace for injector webhook
-kubectl label namespace lb-automotive vault-injection=enabled --overwrite
+sudo k3s kubectl label namespace lb-automotive vault-injection=enabled --overwrite
 echo -e "${GREEN}  ✅ lb-automotive namespace labeled for injector${NC}"
 
 # ─── Summary ─────────────────────────────────────────────────────────────────
@@ -247,6 +247,6 @@ echo ""
 echo "Next steps:"
 echo "  1. Store unseal keys and root token securely (offline)"
 echo "  2. Delete /tmp/vault-init-output.json from the server"
-echo "  3. Restart the backend pod: kubectl rollout restart deploy/backend -n lb-automotive"
+echo "  3. Restart the backend pod: sudo k3s kubectl rollout restart deploy/backend -n lb-automotive"
 echo "  4. To register a new app: bash register-app.sh --namespace <ns> --app <app> --sa <sa>"
 echo "================================================"

@@ -18,6 +18,17 @@ path "secret/data/lb-automotive/*" {
   capabilities = ["read", "list"]
 }
 
+# Access to Supabase/Gamebox secrets
+# broad permissions for the mount to satisfy preflight/metadata/data checks
+path "gamebox/*" {
+  capabilities = ["read", "list"]
+}
+
+# Preflight check path used by newer Vault Agents for KV version detection
+path "sys/internal/ui/mounts/*" {
+  capabilities = ["read"]
+}
+
 # Allow the agent to renew its own token
 path "auth/token/renew-self" {
   capabilities = ["update"]

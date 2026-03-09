@@ -7,6 +7,7 @@ metadata:
     app: backend
 spec:
   replicas: 1
+  revisionHistoryLimit: 3
   selector:
     matchLabels:
       app: backend
@@ -55,6 +56,13 @@ spec:
           {{- end }}
           {{- end }}
 
+        # ── Secret: supabase ────────────────────────────────────────────────
+        vault.hashicorp.com/agent-inject-secret-supabase.env: "gamebox/data/clients/lb-autorepair/database"
+        vault.hashicorp.com/agent-inject-template-supabase.env: |
+          {{- with secret "gamebox/data/clients/lb-autorepair/database" -}}
+          export DATABASE_URL="{{ .Data.data.url }}"
+          {{- end }}
+
         # Token lifetime — renew after 30m, re-auth after 24h
         vault.hashicorp.com/agent-inject-token: "false"
 
@@ -74,7 +82,7 @@ spec:
       containers:
       - name: backend
         # Image updated by Jenkins CI pipeline
-        image: ghcr.io/gamebox-inc/lb-automotive-backend:22-228e05d
+        image: ghcr.io/gamebox-inc/lb-automotive-backend:latest
         imagePullPolicy: Always
         ports:
         - containerPort: 8000
@@ -90,6 +98,7 @@ spec:
           [ -f /vault/secrets/app.env ]       && . /vault/secrets/app.env
           [ -f /vault/secrets/twilio.env ]    && . /vault/secrets/twilio.env
           [ -f /vault/secrets/anthropic.env ] && . /vault/secrets/anthropic.env
+          [ -f /vault/secrets/supabase.env ]  && . /vault/secrets/supabase.env
           exec uvicorn main:app --host 0.0.0.0 --port 8000
 
         env:
@@ -102,11 +111,11 @@ spec:
 
         resources:
           limits:
-            memory: "384Mi"
-            cpu: "400m"
-          requests:
             memory: "256Mi"
-            cpu: "200m"
+            cpu: "300m"
+          requests:
+            memory: "128Mi"
+            cpu: "100m"
 
       volumes:
       - name: app-data

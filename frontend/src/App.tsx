@@ -3,7 +3,7 @@ import { Routes, Route, Link, useLocation, Navigate, useNavigate } from 'react-r
 import { LayoutDashboard, Calendar, Settings, LogOut, Wrench, PenTool as Tool, Phone, Users } from 'lucide-react'
 import { Toaster } from 'react-hot-toast'
 import { useAppDispatch, useAppSelector } from './store/hooks'
-import { checkAuth, logoutUser } from './store/slices/authSlice'
+import { checkAuth, logoutUser, setLoading } from './store/slices/authSlice'
 
 // Lazy load pages for performance
 const Dashboard = lazy(() => import('./pages/Dashboard').then(module => ({ default: module.Dashboard })))
@@ -34,9 +34,12 @@ function App() {
 
   useEffect(() => {
     // Check if user is authenticated via Redux
-    // Skip auth check if we're on the login page to prevent redirect loops
-    if (location.pathname !== '/login') {
+    // Only skip auth check if we're on the login page AND have no token to verify
+    if (location.pathname !== '/login' || !!localStorage.getItem('auth_token')) {
       dispatch(checkAuth())
+    } else {
+      // If we are on /login and have no token, stop loading to show the login form
+      dispatch(setLoading(false))
     }
   }, [dispatch, location.pathname])
 

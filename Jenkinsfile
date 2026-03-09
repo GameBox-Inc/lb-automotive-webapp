@@ -1,5 +1,7 @@
 pipeline {
     agent any
+    
+
 
     environment {
         // Docker Registry (using GitHub Container Registry)
@@ -13,17 +15,17 @@ pipeline {
         // Build info
         BUILD_TAG = "${env.BUILD_NUMBER}-${env.GIT_COMMIT.take(7)}"
 
-        // Deployment
-        DEPLOY_USER = 'lb-admin'
-        DEPLOY_HOST = '178.156.223.196'
-        DEPLOY_DIR = '/opt/lb-automotive-dashboard'
-        MANIFEST_DIR = '~/k8s-manifests'
+        // Deployment (Values provided via Jenkins Global Environment Variables)
+        DEPLOY_USER    = "${env.DEPLOY_USER}"
+        DEPLOY_HOST    = "${env.DEPLOY_HOST}"
+        DEPLOY_DIR     = "${env.DEPLOY_DIR}"
+        MANIFEST_DIR   = "${env.MANIFEST_DIR}"
 
         // Python version
         PYTHON_VERSION = '3.11'
 
         // Node version
-        NODE_VERSION = '18'
+        NODE_VERSION = '20'
     }
 
     options {
@@ -46,75 +48,18 @@ pipeline {
             }
         }
 
-        stage('Setup Python Environment') {
-            steps {
-                echo '🐍 Setting up Python environment...'
-                sh '''
-                    cd python-backend
-                    python3 -m venv venv || true
-                    . venv/bin/activate
-                    pip install --upgrade pip
-                    pip install -r requirements.txt
-                    pip install pytest httpx
-                '''
-            }
-        }
+        // Optimized: Removing host-side dependency setup to save CPU/RAM.
+        // Docker build will handle dependency installation and caching.
 
-        stage('Backend Tests') {
-            environment {
-                SECRET_KEY = 'test-secret-key-for-ci-only-not-production'
-                ALLOWED_ORIGINS = 'http://localhost:5173,http://localhost:3000'
-                DATABASE_URL = 'sqlite:///./test_lb_automotive.db'
-            }
-            steps {
-                echo '🧪 Running backend tests...'
-                sh '''
-                    cd python-backend
-                    . venv/bin/activate
-                    if [ -d "tests" ] && [ "$(ls -A tests)" ]; then
-                        pytest --verbose --color=yes || true
-                    else
-                        echo "⚠️ No backend tests found, skipping..."
-                    fi
-                '''
-            }
-            post {
-                always {
-                    sh 'rm -f python-backend/test_lb_automotive.db || true'
-                }
-            }
-        }
-
-        stage('Setup Node Environment') {
-            steps {
-                echo '📦 Setting up Node environment...'
-                sh '''
-                    cd frontend
-                    npm ci
-                '''
-            }
-        }
-
-        stage('Frontend Tests') {
-            steps {
-                echo '🧪 Running frontend tests...'
-                sh '''
-                    cd frontend
-                    if npm run test --if-present; then
-                        echo "✅ Frontend tests passed"
-                    else
-                        echo "⚠️ No frontend tests configured, skipping..."
-                    fi
-                '''
-            }
-        }
+        // Optimized: Tests and Setup are now handled inside the 'Build Docker Images' stage
+        // using non-root multi-stage Docker builds.
 
         stage('Build Docker Images') {
             when {
                 anyOf {
                     branch 'main'
                     branch 'master'
-                    expression { env.GIT_BRANCH ==~ /.*release\/.*/ }
+                    expression { env.BRANCH_NAME ==~ /.*release\/.*/ || env.GIT_BRANCH ==~ /.*release\/.*/ }
                 }
             }
             steps {
@@ -126,9 +71,9 @@ pipeline {
                         docker tag ${BACKEND_IMAGE}:${BUILD_TAG} ${BACKEND_IMAGE}:latest
                     """
                     
-                    // Build frontend
+                    // Build frontend (Optimized: Using layer cache)
                     sh """
-                        docker build --no-cache -t ${FRONTEND_IMAGE}:${BUILD_TAG} -f frontend/Dockerfile.prod .
+                        docker build -t ${FRONTEND_IMAGE}:${BUILD_TAG} -f frontend/Dockerfile.prod .
                         docker tag ${FRONTEND_IMAGE}:${BUILD_TAG} ${FRONTEND_IMAGE}:latest
                     """
                 }
@@ -140,7 +85,7 @@ pipeline {
                 anyOf {
                     branch 'main'
                     branch 'master'
-                    expression { env.GIT_BRANCH ==~ /.*release\/.*/ }
+                    expression { env.BRANCH_NAME ==~ /.*release\/.*/ || env.GIT_BRANCH ==~ /.*release\/.*/ }
                 }
             }
             steps {
@@ -172,7 +117,7 @@ pipeline {
                 anyOf {
                     branch 'main'
                     branch 'master'
-                    expression { env.GIT_BRANCH ==~ /.*release\/.*/ }
+                    expression { env.BRANCH_NAME ==~ /.*release\/.*/ || env.GIT_BRANCH ==~ /.*release\/.*/ }
                 }
             }
             steps {
@@ -184,40 +129,56 @@ pipeline {
                             ssh -o StrictHostKeyChecking=no ${DEPLOY_USER}@${DEPLOY_HOST} \
                                 'mkdir -p ${MANIFEST_DIR}'
                         """
+                        // Inject dynamic image tags before copying to server
+                        sh """
+                            sed -i "s|ghcr.io/gamebox-inc/lb-automotive-frontend:.*|${FRONTEND_IMAGE}:${BUILD_TAG}|g" deployment/k8s/frontend.yaml
+                            sed -i "s|ghcr.io/gamebox-inc/lb-automotive-backend:.*|${BACKEND_IMAGE}:${BUILD_TAG}|g" deployment/k8s/backend.yaml
+                        """
                         // Copy all manifests to server
                         sh """
-                            scp -o StrictHostKeyChecking=no -r \
-                                deployment/k8s/ \
+                            scp -o StrictHostKeyChecking=no -r \\
+                                deployment/k8s/ \\
                                 ${DEPLOY_USER}@${DEPLOY_HOST}:${MANIFEST_DIR}/
                         """
                         // Apply all K8s manifests in a single SSH session to avoid connection rate limits
                         sh """
                             ssh -o StrictHostKeyChecking=no ${DEPLOY_USER}@${DEPLOY_HOST} '
                                 set -e
-                                echo "▶ Applying namespace..."
-                                sudo k3s kubectl apply -f ${MANIFEST_DIR}/k8s/namespace.yaml
+                                 echo "▶ Applying K8s manifests (Validation disabled for speed/stability)..."
+                                 # We disable validation because the 2GB server often times out during OpenAPI discovery.
+                                 # We use a retry loop to handle transient API server unresponsiveness.
+                                 RETRY_COUNT=0
+                                 MAX_RETRIES=3
+                                 until [ \$RETRY_COUNT -ge \$MAX_RETRIES ]
+                                 do
+                                     echo "▶ Attempt \$((RETRY_COUNT+1)) of \$MAX_RETRIES..."
+                                     sudo k3s kubectl apply --validate=false \
+                                         -f ~/k8s-manifests/k8s/namespace.yaml \
+                                         -f ~/k8s-manifests/k8s/gamebox-security/ \
+                                         -f ~/k8s-manifests/k8s/gamebox-security/traefik/gateway.yaml \
+                                         -f ~/k8s-manifests/k8s/gamebox-security/traefik/middlewares.yaml \
+                                         -f ~/k8s-manifests/k8s/gamebox-security/traefik/lb-automotive-routes.yaml \
+                                         -f ~/k8s-manifests/k8s/pvc.yaml \
+                                         -f ~/k8s-manifests/k8s/redis.yaml \
+                                         -f ~/k8s-manifests/k8s/backend.yaml \
+                                         -f ~/k8s-manifests/k8s/frontend.yaml && break
+                                     
+                                     RETRY_COUNT=\$((RETRY_COUNT+1))
+                                     echo "⚠️ API server unresponsive, retrying in 10s..."
+                                     sleep 10
+                                 done
 
-                                echo "▶ Applying gamebox-security..."
-                                sudo k3s kubectl apply -f ${MANIFEST_DIR}/k8s/gamebox-security/
+                                 if [ \$RETRY_COUNT -eq \$MAX_RETRIES ]; then
+                                     echo "❌ Failed to apply manifests after \$MAX_RETRIES attempts."
+                                     exit 1
+                                 fi
 
-                                echo "▶ Applying Traefik routes..."
-                                sudo k3s kubectl apply \
-                                    -f ${MANIFEST_DIR}/k8s/gamebox-security/traefik/gateway.yaml \
-                                    -f ${MANIFEST_DIR}/k8s/gamebox-security/traefik/middlewares.yaml \
-                                    -f ${MANIFEST_DIR}/k8s/gamebox-security/traefik/lb-automotive-routes.yaml
+                                 echo "▶ Applying lb-automotive namespace resources..."
+                                 sudo k3s kubectl apply --validate=false -f ~/k8s-manifests/k8s/lb-automotive/ || true
 
-                                echo "▶ Applying lb-automotive workloads..."
-                                sudo k3s kubectl apply \
-                                    -f ${MANIFEST_DIR}/k8s/redis.yaml \
-                                    -f ${MANIFEST_DIR}/k8s/backend.yaml \
-                                    -f ${MANIFEST_DIR}/k8s/frontend.yaml
-
-                                echo "▶ Applying lb-automotive namespace resources..."
-                                sudo k3s kubectl apply -f ${MANIFEST_DIR}/k8s/lb-automotive/ || true
-
-                                echo "▶ Removing legacy Ingress objects..."
-                                sudo k3s kubectl delete ingress lb-automotive-ingress -n lb-automotive --ignore-not-found
-                                sudo k3s kubectl delete ingress twilio-webhook-ingress -n lb-automotive --ignore-not-found
+                                 echo "▶ Removing legacy Ingress objects..."
+                                 sudo k3s kubectl delete ingress lb-automotive-ingress -n lb-automotive --ignore-not-found
+                                 sudo k3s kubectl delete ingress twilio-webhook-ingress -n lb-automotive --ignore-not-found
                             '
                         """
                         echo '✅ Manifests applied successfully'
@@ -246,7 +207,7 @@ pipeline {
                 anyOf {
                     branch 'main'
                     branch 'master'
-                    expression { env.GIT_BRANCH ==~ /.*release\/.*/ }
+                    expression { env.BRANCH_NAME ==~ /.*release\/.*/ || env.GIT_BRANCH ==~ /.*release\/.*/ }
                 }
             }
             steps {
@@ -255,25 +216,28 @@ pipeline {
                     withCredentials([string(credentialsId: 'vault-transit-token', variable: 'TRANSIT_TOKEN')]) {
                         sshagent(credentials: ['lb-server-ssh']) {
                             sh """
-                                ssh -o StrictHostKeyChecking=no ${DEPLOY_USER}@${DEPLOY_HOST} '
+                                # Pass the sensitive token as a positional argument to the remote shell
+                                # to avoid insecure Groovy interpolation and leaking secrets in process trees.
+                                ssh -o StrictHostKeyChecking=no ${DEPLOY_USER}@${DEPLOY_HOST} "bash -s -- \$TRANSIT_TOKEN" <<'REMOTEOF'
                                     set -e
-                                    NS=gamebox-security
-                                    CM=vault
-                                    TOKEN="${TRANSIT_TOKEN}"
+                                    TOKEN="\$1"
+                                    NS="gamebox-security"
+                                    CM="vault"
 
                                     echo "▶ Reading current ConfigMap..."
                                     CURRENT=\$(sudo k3s kubectl get configmap "\$CM" -n "\$NS" \
                                         -o jsonpath="{.data.extraconfig-from-values\\\\.hcl}" 2>/dev/null || echo "")
 
-                                    # Check whether PLACEHOLDER is still present
                                     if echo "\$CURRENT" | grep -q "PLACEHOLDER_TRANSIT_TOKEN"; then
                                         echo "▶ PLACEHOLDER found — patching token into ConfigMap..."
                                         NEW=\$(echo "\$CURRENT" | sed "s|PLACEHOLDER_TRANSIT_TOKEN|\$TOKEN|g")
                                         sudo k3s kubectl patch configmap "\$CM" -n "\$NS" \
                                             --type merge \
-                                            -p "{\"data\":{\"extraconfig-from-values.hcl\":\"\$NEW\"}}"
+                                            -p "{\\"data\\":{\\"extraconfig-from-values.hcl\\":\\"\$NEW\\"}}"
+                                        
                                         echo "▶ ConfigMap patched — deleting vault-0 to pick up new config..."
                                         sudo k3s kubectl delete pod vault-0 -n "\$NS" --ignore-not-found
+                                        
                                         echo "▶ Waiting for vault-0 to become ready..."
                                         sudo k3s kubectl wait pod vault-0 -n "\$NS" \
                                             --for=condition=Ready --timeout=120s
@@ -282,10 +246,11 @@ pipeline {
                                     fi
 
                                     echo "▶ Verifying Vault seal status..."
+                                    sleep 5
                                     sudo k3s kubectl exec -n "\$NS" vault-0 -c vault -- \
                                         env VAULT_SKIP_VERIFY=true vault status -format=json | \
                                         grep -E "\\\"sealed\\\":|\\\"type\\\":"
-                                '
+REMOTEOF
                             """
                         }
                     }
@@ -298,7 +263,7 @@ pipeline {
                 anyOf {
                     branch 'main'
                     branch 'master'
-                    expression { env.GIT_BRANCH ==~ /.*release\/.*/ }
+                    expression { env.BRANCH_NAME ==~ /.*release\/.*/ || env.GIT_BRANCH ==~ /.*release\/.*/ }
                 }
             }
             steps {
@@ -380,6 +345,22 @@ pipeline {
             }
         }
 
+        always {
+            echo '🧹 Cleaning up workspace and remote node...'
+            sh 'docker image prune -f || true'
+            sshagent(credentials: ['lb-server-ssh']) {
+                sh """
+                    ssh -o StrictHostKeyChecking=no ${DEPLOY_USER}@${DEPLOY_HOST} '
+                        echo "▶ Pruning remote images..."
+                        sudo k3s crictl rmi --prune || true
+                        
+                        echo "▶ Cleaning up completed/failed pods..."
+                        sudo k3s kubectl delete pods --all-namespaces --field-selector=status.phase==Succeeded --ignore-not-found || true
+                        sudo k3s kubectl delete pods --all-namespaces --field-selector=status.phase==Failed --ignore-not-found || true
+                    '
+                """
+            }
+        }
         failure {
             echo '❌ Pipeline failed! Check logs for details.'
         }

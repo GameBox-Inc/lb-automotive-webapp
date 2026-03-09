@@ -10,9 +10,9 @@ echo "=========================================="
 echo ""
 
 # Create namespace if it doesn't exist
-if ! kubectl get namespace lb-automotive &>/dev/null; then
+if ! sudo k3s kubectl get namespace lb-automotive &>/dev/null; then
     echo "Creating namespace lb-automotive..."
-    kubectl create namespace lb-automotive
+    sudo k3s kubectl create namespace lb-automotive
     echo "✅ Namespace created"
 else
     echo "✅ Namespace lb-automotive exists"
@@ -27,12 +27,12 @@ GITHUB_USER=${GITHUB_USER:-gamebox-inc}
 read -sp "   Enter GitHub token (for GHCR): " GITHUB_TOKEN
 echo ""
 
-kubectl create secret docker-registry ghcr-secret \
+sudo k3s kubectl create secret docker-registry ghcr-secret \
   --docker-server=ghcr.io \
   --docker-username=$GITHUB_USER \
   --docker-password=$GITHUB_TOKEN \
   --namespace=lb-automotive \
-  --dry-run=client -o yaml | kubectl apply -f -
+  --dry-run=client -o yaml | sudo k3s kubectl apply -f -
 
 echo "   ✅ GHCR secret created"
 echo ""
@@ -69,7 +69,7 @@ if [ "$LLM_PROVIDER" = "anthropic" ]; then
 fi
 
 # Create application secret
-kubectl create secret generic app-secrets \
+sudo k3s kubectl create secret generic app-secrets \
   --from-literal=SECRET_KEY="$SECRET_KEY" \
   --from-literal=ALLOWED_ORIGINS="$ALLOWED_ORIGINS" \
   --from-literal=LLM_PROVIDER="$LLM_PROVIDER" \
@@ -77,29 +77,29 @@ kubectl create secret generic app-secrets \
   --from-literal=REDIS_URL="redis://redis:6379/0" \
   --from-literal=CSP_POLICY="strict" \
   --namespace=lb-automotive \
-  --dry-run=client -o yaml | kubectl apply -f -
+  --dry-run=client -o yaml | sudo k3s kubectl apply -f -
 
 echo "   ✅ Application secrets created"
 echo ""
 
 # Create Twilio secret if provided
 if [ -n "$TWILIO_ACCOUNT_SID" ]; then
-    kubectl create secret generic twilio-secrets \
+    sudo k3s kubectl create secret generic twilio-secrets \
       --from-literal=TWILIO_ACCOUNT_SID="$TWILIO_ACCOUNT_SID" \
       --from-literal=TWILIO_AUTH_TOKEN="$TWILIO_AUTH_TOKEN" \
       --from-literal=TWILIO_PHONE_NUMBER="$TWILIO_PHONE_NUMBER" \
       --namespace=lb-automotive \
-      --dry-run=client -o yaml | kubectl apply -f -
+      --dry-run=client -o yaml | sudo k3s kubectl apply -f -
     echo "   ✅ Twilio secrets created"
 fi
 
 # Create Anthropic secret if using Anthropic
 if [ "$LLM_PROVIDER" = "anthropic" ] && [ -n "$ANTHROPIC_API_KEY" ]; then
-    kubectl create secret generic anthropic-secrets \
+    sudo k3s kubectl create secret generic anthropic-secrets \
       --from-literal=ANTHROPIC_API_KEY="$ANTHROPIC_API_KEY" \
       --from-literal=ANTHROPIC_MODEL="$ANTHROPIC_MODEL" \
       --namespace=lb-automotive \
-      --dry-run=client -o yaml | kubectl apply -f -
+      --dry-run=client -o yaml | sudo k3s kubectl apply -f -
     echo "   ✅ Anthropic secrets created"
 fi
 

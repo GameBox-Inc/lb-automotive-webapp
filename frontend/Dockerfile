@@ -1,12 +1,17 @@
 FROM node:20-alpine
 
+# Set working directory and non-root user
 WORKDIR /app
+RUN chown node:node /app
 
-COPY package*.json ./
+# Switch to non-root user
+USER node
+
+COPY --chown=node:node package*.json ./
 
 RUN npm install
 
-COPY . .
+COPY --chown=node:node . .
 
 EXPOSE 5173
 
