@@ -17,15 +17,21 @@ DATABASE_URL = os.getenv("DATABASE_URL")
 # Check for Vault-injected Supabase secret
 SUPABASE_ENV = "/vault/secrets/supabase.env"
 if not DATABASE_URL and os.path.exists(SUPABASE_ENV):
-    with open(SUPABASE_ENV, "r") as f:
-        # Expected format: export DATABASE_URL="..."
-        for line in f:
-            if line.startswith("export DATABASE_URL="):
-                DATABASE_URL = line.split("=", 1)[1].strip().strip('"')
-                break
+    try:
+        with open(SUPABASE_ENV, "r") as f:
+            for line in f:
+                if "DATABASE_URL=" in line:
+                    # Handle export DATABASE_URL="..." or just DATABASE_URL="..."
+                    val = line.split("=", 1)[1].strip().strip('"').strip("'")
+                    if val:
+                        DATABASE_URL = val
+                        break
+    except Exception as e:
+        print(f"Error reading Vault secret: {e}")
 
 if DATABASE_URL:
-    if DATABASE_URL.startswith("postgresql"):
+    # Robust check for PostgreSQL protocols (Supabase uses both postgres:// and postgresql://)
+    if DATABASE_URL.startswith("postgres"):
         DB_TYPE = "postgresql"
         DB_PATH = DATABASE_URL
     else:
@@ -40,7 +46,12 @@ else:
         DB_PATH = os.path.join(BASE_DIR, "lb_automotive.db")
 
 print(f"DATABASE TYPE: {DB_TYPE}")
-print(f"DATABASE PATH/URL: {DB_PATH}")
+# Mask credentials for security
+if DB_TYPE == "postgresql" and "@" in DB_PATH:
+    masked_path = DB_PATH.split("@")[-1]
+    print(f"DATABASE PATH/URL: postgresql://*****@{masked_path}")
+else:
+    print(f"DATABASE PATH/URL: {DB_PATH}")
 
 
 def get_db_connection():
