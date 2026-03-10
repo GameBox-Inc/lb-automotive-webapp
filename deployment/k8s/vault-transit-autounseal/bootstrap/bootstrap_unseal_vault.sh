@@ -34,7 +34,7 @@ error() { echo -e "${RED}[ERROR]${NC} $*"; exit 1; }
 # Helper: run vault command inside pod
 vault_exec() {
   kubectl exec -n "$NAMESPACE" "$POD" -c vault -- \
-    env VAULT_SKIP_VERIFY=true VAULT_ADDR=https://127.0.0.1:8200 "$@"
+    env VAULT_ADDR=http://127.0.0.1:8200 "$@"
 }
 
 # ── Step 1: Wait for pod ──────────────────────────────────────────────────────
