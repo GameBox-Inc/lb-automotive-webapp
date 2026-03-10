@@ -514,6 +514,16 @@ def upsert_call_state(call_sid: str, current_step: str, language: str = "en",
     conn.close()
 
 
+def get_setting(key: str, default: str = None) -> str:
+    """Retrieve a setting value from the database."""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute(fmt_query("SELECT value FROM settings WHERE key = ?"), (key,))
+    row = cursor.fetchone()
+    conn.close()
+    return row["value"] if row else default
+
+
 def update_appointment_status(appointment_id: str, status: str):
     """Update appointment status."""
     conn = get_db_connection()
