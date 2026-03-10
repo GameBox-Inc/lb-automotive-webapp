@@ -7,7 +7,7 @@ import os
 logger = logging.getLogger(__name__)
 from datetime import datetime, time, timedelta
 from typing import Optional, Dict, Any
-from fastapi import HTTPException, Header, BackgroundTasks, APIRouter, Request, Response
+from fastapi import HTTPException, Header, BackgroundTasks, APIRouter, Request, Response, Depends
 from database import get_db_connection, upsert_call_state, update_appointment_status, fmt_query, get_setting
 from llm_service import classify_intent, generate_response
 from utils.ivr_helper import get_random_filler, get_redis_result_key, clear_ivr_state
