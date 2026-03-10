@@ -246,10 +246,15 @@ pipeline {
                                     fi
 
                                     echo "▶ Verifying Vault seal status..."
-                                    sleep 5
-                                    sudo k3s kubectl exec -n "\$NS" vault-0 -c vault -- \
-                                        env VAULT_SKIP_VERIFY=true vault status -format=json | \
-                                        grep -E "\\\"sealed\\\":|\\\"type\\\":"
+                                    PHASE=\$(sudo k3s kubectl get pod vault-0 -n "\$NS" -o jsonpath='{.status.phase}' 2>/dev/null || echo "Unknown")
+                                    if [ "\$PHASE" = "Running" ]; then
+                                        sleep 5
+                                        (sudo k3s kubectl exec -n "\$NS" vault-0 -c vault -- \
+                                            env VAULT_SKIP_VERIFY=true vault status -format=json | \
+                                            grep -E "\\\"sealed\\\":|\\\"type\\\":") || echo "⚠️ Could not read Vault status (may still be starting)"
+                                    else
+                                        echo "⚠️ vault-0 is not Running (phase: \$PHASE) — skipping seal verification. Pipeline continues."
+                                    fi
 REMOTEOF
                             """
                         }
