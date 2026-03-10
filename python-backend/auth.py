@@ -6,7 +6,7 @@ from jose import JWTError, jwt
 from passlib.context import CryptContext
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
-from database import get_db_connection, current_user_context, fmt_query
+from database import get_db_connection, current_user_context, fmt_query, DatabaseContextManager
 from models import User, UserCreate, Token, TokenData
 from cache import get_cached, set_cached, TTL_USER
 
