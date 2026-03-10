@@ -1,3 +1,14 @@
+import logging
+import os
+from database import get_db_connection, upsert_call_state
+
+logger = logging.getLogger(__name__)
+
+# Use the same base URL logic as twilio_webhook to avoid circular import if possible
+WEBHOOK_BASE_URL = os.getenv(
+    "TWILIO_WEBHOOK_BASE_URL",
+    "https://twilio.kozytherocket.space/lb-automotive/api/twilio/webhook"
+)
 
 def process_smart_jump(intent, llm_result, CallSid, metadata, response, language):
     """
@@ -8,8 +19,8 @@ def process_smart_jump(intent, llm_result, CallSid, metadata, response, language
         # Check for Spanish intent via LLM
         if intent == "spanish":
             language = "es"
-            upsert_call_state(CallSid, "menu", language)
-            response.redirect("/api/twilio/webhook?step=menu")
+            upsert_call_state(CallSid, "main_menu_es", language)
+            response.redirect(f"{WEBHOOK_BASE_URL}?step=main_menu_es")
             return True
 
         # If entity extraction found a service
@@ -56,10 +67,15 @@ def process_smart_jump(intent, llm_result, CallSid, metadata, response, language
                 }
                 metadata["selected_category"] = matched_service["category"]
                 
-                # Go straight to select_time
-                # We also default language to 'en' if not explicitly spanish
-                upsert_call_state(CallSid, "select_time", "en", metadata)
-                response.redirect("/api/twilio/webhook?step=select_time")
+                # If we also extracted vehicle info, save it
+                if llm_result.get("vehicle"):
+                    metadata["vehicle_info"] = llm_result.get("vehicle")
+                
+                # Determine next step: if we have vehicle info, go to plate, else to vehicle
+                next_step = "collect_plate" if metadata.get("vehicle_info") else "collect_vehicle"
+                
+                upsert_call_state(CallSid, next_step, language, metadata)
+                response.redirect(f"{WEBHOOK_BASE_URL}?step={next_step}")
                 return True
 
     return False

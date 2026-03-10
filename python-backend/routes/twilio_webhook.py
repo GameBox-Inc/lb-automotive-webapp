@@ -10,11 +10,12 @@ logger = logging.getLogger(__name__)
 from datetime import datetime, time, timedelta
 from typing import Optional, Dict, Any
 from fastapi import HTTPException, Header, BackgroundTasks, APIRouter, Request, Response, Depends, Form
-from database import get_db_connection, upsert_call_state, update_appointment_status, fmt_query, get_setting
+from database import get_db_connection, upsert_call_state, update_appointment_status, fmt_query, get_setting, DatabaseContextManager
 from llm_service import classify_intent, generate_response
 from utils.ivr_helper import get_random_filler, get_redis_result_key, clear_ivr_state
 from utils.background_tasks import process_ivr_intent_async
 from security import redis_client
+from routes.smart_jump_helper import process_smart_jump
 
 
 # Security Configuration
@@ -124,11 +125,10 @@ def check_rate_limit(phone_number: str) -> bool:
     Returns True if allowed, False if blocked.
     """
     try:
-        conn = get_db_connection()
-        cursor = conn.cursor()
-        cursor.execute(fmt_query("SELECT COUNT(*) as count FROM appointments WHERE phone_number = ? AND status = 'pending'"), (phone_number,))
-        row = cursor.fetchone()
-        conn.close()
+        with DatabaseContextManager(read_only=True) as conn:
+            cursor = conn.cursor()
+            cursor.execute(fmt_query("SELECT COUNT(*) as count FROM appointments WHERE phone_number = ? AND status = 'pending'"), (phone_number,))
+            row = cursor.fetchone()
         
         if row and row['count'] >= MAX_PENDING_APPOINTMENTS:
             return False
@@ -144,15 +144,14 @@ def check_rate_limit(phone_number: str) -> bool:
 def get_call_state(call_sid: str) -> Optional[dict]:
     """Get call state from database."""
     try:
-        conn = get_db_connection()
-        cursor = conn.cursor()
-        cursor.execute(fmt_query("""
-            SELECT id, call_sid, current_step, language, metadata, appointment_id, 
-                   last_response_time, created_at, updated_at
-            FROM call_states WHERE call_sid = ?
-        """), (call_sid,))
-        row = cursor.fetchone()
-        conn.close()
+        with DatabaseContextManager(read_only=True) as conn:
+            cursor = conn.cursor()
+            cursor.execute(fmt_query("""
+                SELECT id, call_sid, current_step, language, metadata, appointment_id, 
+                       last_response_time, created_at, updated_at
+                FROM call_states WHERE call_sid = ?
+            """), (call_sid,))
+            row = cursor.fetchone()
         
         if row:
             return {
@@ -174,11 +173,10 @@ def get_call_state(call_sid: str) -> Optional[dict]:
 def get_setting(key: str, default: str) -> str:
     """Get a specific setting value from the database."""
     try:
-        conn = get_db_connection()
-        cursor = conn.cursor()
-        cursor.execute(fmt_query("SELECT value FROM settings WHERE key = ?"), (key,))
-        row = cursor.fetchone()
-        conn.close()
+        with DatabaseContextManager(read_only=True) as conn:
+            cursor = conn.cursor()
+            cursor.execute(fmt_query("SELECT value FROM settings WHERE key = ?"), (key,))
+            row = cursor.fetchone()
         return row['value'] if row else default
     except Exception as e:
         logger.error(f"Error fetching setting {key}: {e}")
@@ -281,13 +279,11 @@ DECISION_TREE = {
             "num_digits": 1,
             "timeout": 5,
             "bargein": True,
-            "speech_timeout": "auto",
             "input": "speech dtmf"
         },
         "transitions": {
-            "1": "select_time",
-            "appointment": "select_time",
-            "scheduling": "select_time",
+            "1": "collect_vehicle",
+            "appointment": "collect_vehicle",
             "2": "emergency_services",
             "emergency": "emergency_services",
         },
@@ -301,16 +297,47 @@ DECISION_TREE = {
             "num_digits": 1,
             "timeout": 5,
             "bargein": True,
-            "speech_timeout": "auto",
             "input": "speech dtmf"
         },
         "transitions": {
-            "1": "select_time",
-            "cita": "select_time",
+            "1": "collect_vehicle",
+            "cita": "collect_vehicle",
             "2": "emergency_services",
             "emergencia": "emergency_services",
         },
         "default": "main_menu_es"
+    },
+    
+    "collect_vehicle": {
+        "type": "gather",
+        "prompt_en": "Please describe your vehicle, including the year, make, and model. Or press star to skip.",
+        "prompt_es": "Por favor describa su vehículo, incluyendo el año, marca y modelo. O presione asterisco para saltar.",
+        "gather_config": {
+            "timeout": 5,
+            "input": "speech dtmf"
+        },
+        "transitions": {
+            "*": "collect_plate",
+            "skip": "collect_plate",
+            "default": "collect_plate"
+        },
+        "handler": "handle_vehicle_collection"
+    },
+    
+    "collect_plate": {
+        "type": "gather",
+        "prompt_en": "Please say your license plate number, or press star to skip.",
+        "prompt_es": "Por favor diga su número de placa, o presione asterisco para saltar.",
+        "gather_config": {
+            "timeout": 5,
+            "input": "speech dtmf"
+        },
+        "transitions": {
+            "*": "select_time",
+            "skip": "select_time",
+            "default": "select_time"
+        },
+        "handler": "handle_plate_collection"
     },
     
     "select_service_category": {
@@ -403,11 +430,10 @@ def handle_smart_jump(intent, llm_result, CallSid, metadata, response, language)
 
 def handle_service_category(user_input, language, CallSid, metadata, response):
     """Handler for selecting a service category."""
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    cursor.execute(fmt_query("SELECT DISTINCT category FROM services ORDER BY category"))
-    categories = [row["category"] for row in cursor.fetchall()]
-    conn.close()
+    with DatabaseContextManager(read_only=True) as conn:
+        cursor = conn.cursor()
+        cursor.execute(fmt_query("SELECT DISTINCT category FROM services ORDER BY category"))
+        categories = [row["category"] for row in cursor.fetchall()]
     
     metadata["categories"] = categories
     upsert_call_state(CallSid, "select_service_category", language, metadata)
@@ -423,16 +449,62 @@ def handle_service_category(user_input, language, CallSid, metadata, response):
     response.append(gather)
     return None
 
+def handle_vehicle_collection(user_input, language, CallSid, metadata, response):
+    """Saves vehicle details and moves to next step."""
+    if user_input and user_input not in ["*", "skip"]:
+        metadata["vehicle_info"] = user_input
+    upsert_call_state(CallSid, "collect_plate", language, metadata)
+    return "collect_plate"
+
+def handle_plate_collection(user_input, language, CallSid, metadata, response):
+    """Saves plate number and moves to time selection."""
+    if user_input and user_input not in ["*", "skip"]:
+        metadata["license_plate"] = user_input
+    upsert_call_state(CallSid, "select_time", language, metadata)
+    return "select_time"
+
+def check_shop_bandwidth(date_str, slot_time):
+    """Checks if the shop has capacity for another appointment at this time."""
+    try:
+        # DB Optimization: Use read-only connection
+        with DatabaseContextManager(read_only=True) as conn:
+            cursor = conn.cursor()
+            # Staff count from settings
+            cursor.execute(fmt_query("SELECT value FROM settings WHERE key = 'staff_count'"))
+            staff_row = cursor.fetchone()
+            staff_limit = int(staff_row['value']) if staff_row else 5
+            
+            # Count existing appointments for this slot
+            appt_datetime = f"{date_str}T{slot_time}:00"
+            cursor.execute(fmt_query("SELECT COUNT(*) as count FROM appointments WHERE appointment_time = ? AND status != 'cancelled'"), (appt_datetime,))
+            count_row = cursor.fetchone()
+            current_count = count_row['count'] if count_row else 0
+            
+            return current_count < staff_limit
+    except Exception as e:
+        logger.error(f"Bandwidth check error: {e}")
+        return True # Fallback to allowing
+
 def handle_time_selection(user_input, language, CallSid, metadata, response):
-    """Handler for selecting an appointment time."""
+    """Handler for selecting an appointment time with bandwidth check."""
     from utils_scheduler import get_available_slots_logic
     from llm_service import analyze_schedule
     
     selected_service = metadata.get("selected_service", {"id": "general", "name": "General Service"})
     tomorrow_date = (datetime.now() + timedelta(days=1)).strftime("%Y-%m-%d")
     
-    slots = get_available_slots_logic(tomorrow_date, selected_service.get('id'))
-    slot_summary = analyze_schedule(slots, tomorrow_date, selected_service.get('name'))
+    raw_slots = get_available_slots_logic(tomorrow_date, selected_service.get('id'))
+    
+    # Filter slots based on bandwidth
+    available_slots = [s for s in raw_slots if check_shop_bandwidth(tomorrow_date, s)]
+    
+    if not available_slots:
+        voice = "Polly.Lupe" if language == "es" else "Polly.Matthew"
+        response.say("I'm sorry, we are fully booked for tomorrow. Please try another day online. Goodbye.", voice=voice)
+        response.hangup()
+        return None
+
+    slot_summary = analyze_schedule(available_slots, tomorrow_date, selected_service.get('name'))
     
     voice = "Polly.Lupe" if language == "es" else "Polly.Matthew"
     response.say(slot_summary, voice=voice)
@@ -441,7 +513,7 @@ def handle_time_selection(user_input, language, CallSid, metadata, response):
         response.hangup()
         return None
 
-    metadata["available_slots"] = slots
+    metadata["available_slots"] = available_slots
     metadata["target_date"] = tomorrow_date
     upsert_call_state(CallSid, "select_time", language, metadata)
     
@@ -450,7 +522,7 @@ def handle_time_selection(user_input, language, CallSid, metadata, response):
     return None
 
 def handle_booking(user_input, language, CallSid, metadata, response):
-    """Final booking handler."""
+    """Final booking handler including vehicle details."""
     choice = metadata.get("time_slot_choice")
     slots = metadata.get("available_slots", [])
     target_date = metadata.get("target_date")
@@ -467,14 +539,21 @@ def handle_booking(user_input, language, CallSid, metadata, response):
         appt_time = f"{target_date}T{chosen_slot}:00"
         aid = str(uuid.uuid4())
         
-        conn = get_db_connection()
-        cursor = conn.cursor()
-        cursor.execute(fmt_query("""
-            INSERT INTO appointments (id, customer_name, phone_number, appointment_time, service_type, status, notes)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
-        """), (aid, metadata.get("customer_name", "Voice Customer"), metadata.get("from_phone"), appt_time, svc.get('name', 'General Service'), 'pending', metadata.get("symptoms")))
-        conn.commit()
-        conn.close()
+        # Build comprehensive notes
+        notes_parts = []
+        if metadata.get("vehicle_info"): notes_parts.append(f"Vehicle: {metadata['vehicle_info']}")
+        if metadata.get("license_plate"): notes_parts.append(f"Plate: {metadata['license_plate']}")
+        if metadata.get("symptoms"): notes_parts.append(f"Issue: {metadata['symptoms']}")
+        final_notes = " | ".join(notes_parts)
+        
+        # Use Primary for write
+        with DatabaseContextManager(read_only=False) as conn:
+            cursor = conn.cursor()
+            cursor.execute(fmt_query("""
+                INSERT INTO appointments (id, customer_name, phone_number, appointment_time, service_type, status, notes)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+            """), (aid, metadata.get("customer_name", "Voice Customer"), metadata.get("from_phone"), appt_time, svc.get('name', 'General Service'), 'pending', final_notes))
+            conn.commit()
         
         upsert_call_state(CallSid, "completed", language, metadata, aid)
         response.say(f"Confirmed. See you at {chosen_slot}. Goodbye.", voice=voice)
@@ -504,11 +583,10 @@ def handle_symptoms_processing(user_input, language, CallSid, metadata, response
 
 def handle_emergency(user_input, language, CallSid, metadata, response):
     """Emergency routing handler."""
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    cursor.execute(fmt_query("SELECT * FROM services WHERE is_emergency = 1 ORDER BY name"))
-    services = [dict(row) for row in cursor.fetchall()]
-    conn.close()
+    with DatabaseContextManager(read_only=True) as conn:
+        cursor = conn.cursor()
+        cursor.execute(fmt_query("SELECT * FROM services WHERE is_emergency = 1 ORDER BY name"))
+        services = [dict(row) for row in cursor.fetchall()]
     
     metadata["services"] = services
     upsert_call_state(CallSid, "emergency_services", language, metadata)
@@ -583,11 +661,44 @@ def twilio_webhook(
                 else:
                     intent = "unknown"
         node = get_tree_node(step)
+        
+        # Smart routing for processing state
+        if step == "processing":
+            if intent:
+                # Handle Smart Jump from LLM intent
+                ns = handle_smart_jump(intent, llm_result, CallSid, metadata, response, language)
+                if ns:
+                    response.redirect(f"{WEBHOOK_BASE_URL}?step={ns}")
+                    return Response(content=str(response), media_type="application/xml")
+                else:
+                    # Fallback to menu if jump didn't trigger
+                    response.redirect(f"{WEBHOOK_BASE_URL}?step=main_menu_{language}")
+                    return Response(content=str(response), media_type="application/xml")
+            else:
+                # Still waiting or unknown, repeat current node if we have one, or go to menu
+                response.redirect(f"{WEBHOOK_BASE_URL}?step=main_menu_{language}")
+                return Response(content=str(response), media_type="application/xml")
+
         if node:
             update_decision_path(CallSid, step)
             node_type = node.get("type")
             if node_type == "gather":
                 gc = node.get("gather_config", {})
+                
+                # Check for handler if it's a gather node with logic
+                handler_name = node.get("handler")
+                if input_data:
+                    if handler_name == "handle_vehicle_collection": 
+                        ns = handle_vehicle_collection(input_data, language, CallSid, metadata, response)
+                        if ns: 
+                            response.redirect(f"{WEBHOOK_BASE_URL}?step={ns}")
+                            return Response(content=str(response), media_type="application/xml")
+                    elif handler_name == "handle_plate_collection":
+                        ns = handle_plate_collection(input_data, language, CallSid, metadata, response)
+                        if ns:
+                            response.redirect(f"{WEBHOOK_BASE_URL}?step={ns}")
+                            return Response(content=str(response), media_type="application/xml")
+
                 next_s = node.get("transitions", {}).get(Digits or SpeechResult or "default", node.get("default", step))
                 gather = Gather(num_digits=gc.get("num_digits", 1), timeout=gc.get("timeout", 5), input=gc.get("input", "dtmf"), action=f"{WEBHOOK_BASE_URL}?step={next_s}")
                 gather.say(node.get(f"prompt_{language}", node.get("prompt_en")), voice=voice)

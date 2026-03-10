@@ -13,49 +13,56 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 # Priority 1: Environment variable (usually for Local Dev or Docker overrides)
 # Priority 2: Vault injected secret at /vault/secrets/supabase.env
 # Priority 3: Fallback to SQLite
+# Priority 1: Environment variable 
+# Priority 2: Vault injected secret at /vault/secrets/supabase.env
+# Priority 3: Fallback to SQLite
 DATABASE_URL = os.getenv("DATABASE_URL")
+DATABASE_READ_URL = os.getenv("DATABASE_READ_URL")
 
 # Check for Vault-injected Supabase secret
 SUPABASE_ENV = "/vault/secrets/supabase.env"
-if not DATABASE_URL and os.path.exists(SUPABASE_ENV):
+if os.path.exists(SUPABASE_ENV):
     try:
         with open(SUPABASE_ENV, "r") as f:
             for line in f:
-                if "DATABASE_URL=" in line:
-                    # Handle export DATABASE_URL="..." or just DATABASE_URL="..."
+                if "DATABASE_URL=" in line and not DATABASE_URL:
                     val = line.split("=", 1)[1].strip().strip('"').strip("'")
-                    if val:
-                        DATABASE_URL = val
-                        break
+                    if val: DATABASE_URL = val
+                if "DATABASE_READ_URL=" in line and not DATABASE_READ_URL:
+                    val = line.split("=", 1)[1].strip().strip('"').strip("'")
+                    if val: DATABASE_READ_URL = val
     except Exception as e:
         print(f"Error reading Vault secret: {e}")
 
 if DATABASE_URL:
-    # Robust check for PostgreSQL protocols (Supabase uses both postgres:// and postgresql://)
     if DATABASE_URL.startswith("postgres"):
         DB_TYPE = "postgresql"
         DB_PATH = DATABASE_URL
+        DB_READ_PATH = DATABASE_READ_URL if DATABASE_READ_URL else DATABASE_URL
     else:
         DB_TYPE = "sqlite"
         DB_PATH = DATABASE_URL.replace("sqlite:///", "").replace("sqlite://", "")
+        DB_READ_PATH = None
 else:
     DB_TYPE = "sqlite"
-    # Try data folder first (Docker/Production)
     DB_PATH = os.path.join(BASE_DIR, "data", "lb_automotive.db")
     if not os.path.exists(os.path.dirname(DB_PATH)):
-        # Fallback to current dir (Local Dev)
         DB_PATH = os.path.join(BASE_DIR, "lb_automotive.db")
+    DB_READ_PATH = None
 
 # Standardize placeholders: %s for PostgreSQL, ? for SQLite
 SQL_PARAM = "%s" if DB_TYPE == "postgresql" else "?"
 
 print(f"DATABASE TYPE: {DB_TYPE}")
 # Mask credentials for security
-if DB_TYPE == "postgresql" and "@" in DB_PATH:
-    masked_path = DB_PATH.split("@")[-1]
-    print(f"DATABASE PATH/URL: postgresql://*****@{masked_path}")
-else:
-    print(f"DATABASE PATH/URL: {DB_PATH}")
+def mask_url(url):
+    if url and "@" in url:
+        return "postgresql://*****@" + url.split("@")[-1]
+    return url
+
+print(f"PRIMARY DB: {mask_url(DB_PATH)}")
+if DB_READ_PATH:
+    print(f"READ REPLICA: {mask_url(DB_READ_PATH)}")
 
 
 def fmt_query(query: str) -> str:
@@ -68,15 +75,17 @@ def fmt_query(query: str) -> str:
     return query
 
 
-def get_db_connection():
+def get_db_connection(read_only: bool = False):
     """
     Get a database connection (SQLite or PostgreSQL).
+    If read_only is True and DB_READ_PATH is set, use the replica.
     """
     if DB_TYPE == "postgresql":
         import psycopg2
         from psycopg2.extras import RealDictCursor
-        # Use a connection string/url for PG
-        conn = psycopg2.connect(DB_PATH, cursor_factory=RealDictCursor)
+        
+        target_url = DB_READ_PATH if (read_only and DB_READ_PATH) else DB_PATH
+        conn = psycopg2.connect(target_url, cursor_factory=RealDictCursor)
         return conn
     
     conn = sqlite3.connect(DB_PATH, timeout=20.0, check_same_thread=False)
@@ -94,11 +103,12 @@ class DatabaseContextManager:
             cursor = conn.cursor()
             cursor.execute(...)
     """
-    def __init__(self):
+    def __init__(self, read_only: bool = False):
         self.conn = None
+        self.read_only = read_only
     
     def __enter__(self):
-        self.conn = get_db_connection()
+        self.conn = get_db_connection(read_only=self.read_only)
         return self.conn
     
     def __exit__(self, exc_type, exc_val, exc_tb):
@@ -461,16 +471,15 @@ def seed_data():
 
 
 def get_call_state(call_sid: str) -> Optional[dict]:
-    """Get call state from database."""
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    cursor.execute(fmt_query("""
-        SELECT id, call_sid, current_step, language, metadata, appointment_id, 
-               last_response_time, created_at, updated_at
-        FROM call_states WHERE call_sid = ?
-    """), (call_sid,))
-    row = cursor.fetchone()
-    conn.close()
+    """Get call state from database using Read Replica if available."""
+    with DatabaseContextManager(read_only=True) as conn:
+        cursor = conn.cursor()
+        cursor.execute(fmt_query("""
+            SELECT id, call_sid, current_step, language, metadata, appointment_id, 
+                   last_response_time, created_at, updated_at
+            FROM call_states WHERE call_sid = ?
+        """), (call_sid,))
+        row = cursor.fetchone()
     
     if row:
         return {
@@ -489,49 +498,49 @@ def get_call_state(call_sid: str) -> Optional[dict]:
 
 def upsert_call_state(call_sid: str, current_step: str, language: str = "en", 
                       metadata: dict = None, appointment_id: str = None):
-    """Create or update call state."""
-    conn = get_db_connection()
-    cursor = conn.cursor()
+    """Create or update call state on the Primary DB."""
+    with DatabaseContextManager(read_only=False) as conn:
+        cursor = conn.cursor()
+        
+        # Check existing (Small optimization: we can do this on primary since we're about to write)
+        cursor.execute(fmt_query("SELECT id FROM call_states WHERE call_sid = ?"), (call_sid,))
+        existing = cursor.fetchone()
+        
+        metadata_json = json.dumps(metadata or {})
     
-    existing = get_call_state(call_sid)
-    metadata_json = json.dumps(metadata or {})
-    
-    import uuid
-    if existing:
-        cursor.execute(fmt_query("""
-            UPDATE call_states 
-            SET current_step = ?, language = ?, metadata = ?, appointment_id = ?,
-                last_response_time = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
-            WHERE call_sid = ?
-        """), (current_step, language, metadata_json, appointment_id, call_sid))
-    else:
-        state_id = str(uuid.uuid4())
-        cursor.execute(fmt_query("""
-            INSERT INTO call_states (id, call_sid, current_step, language, metadata, appointment_id)
-            VALUES (?, ?, ?, ?, ?, ?)
-        """), (state_id, call_sid, current_step, language, metadata_json, appointment_id))
-    
-    conn.commit()
-    conn.close()
+        import uuid
+        if existing:
+            cursor.execute(fmt_query("""
+                UPDATE call_states 
+                SET current_step = ?, language = ?, metadata = ?, appointment_id = ?,
+                    last_response_time = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
+                WHERE call_sid = ?
+            """), (current_step, language, metadata_json, appointment_id, call_sid))
+        else:
+            state_id = str(uuid.uuid4())
+            cursor.execute(fmt_query("""
+                INSERT INTO call_states (id, call_sid, current_step, language, metadata, appointment_id)
+                VALUES (?, ?, ?, ?, ?, ?)
+            """), (state_id, call_sid, current_step, language, metadata_json, appointment_id))
+        
+        conn.commit()
 
 
 def get_setting(key: str, default: str = None) -> str:
-    """Retrieve a setting value from the database."""
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    cursor.execute(fmt_query("SELECT value FROM settings WHERE key = ?"), (key,))
-    row = cursor.fetchone()
-    conn.close()
-    return row["value"] if row else default
+    """Retrieve a setting value from the database using Read Replica."""
+    with DatabaseContextManager(read_only=True) as conn:
+        cursor = conn.cursor()
+        cursor.execute(fmt_query("SELECT value FROM settings WHERE key = ?"), (key,))
+        row = cursor.fetchone()
+        return row["value"] if row else default
 
 
 def update_appointment_status(appointment_id: str, status: str):
-    """Update appointment status."""
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    cursor.execute(fmt_query("UPDATE appointments SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?"), (status, appointment_id))
-    conn.commit()
-    conn.close()
+    """Update appointment status on the Primary DB."""
+    with DatabaseContextManager(read_only=False) as conn:
+        cursor = conn.cursor()
+        cursor.execute(fmt_query("UPDATE appointments SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?"), (status, appointment_id))
+        conn.commit()
 
 
 
