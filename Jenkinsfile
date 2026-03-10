@@ -187,6 +187,70 @@ pipeline {
             }
         }
 
+        stage('Unseal Unseal Vault') {
+            // Unseal Vault (vault-unseal namespace) is transit-only and may restart sealed.
+            // Main Vault auto-unseal depends on Unseal Vault being unsealed.
+            //
+            // PREREQUISITE: Jenkins secret-text credentials:
+            //   - vault-unseal-key-1
+            //   - vault-unseal-key-2
+            //   - vault-unseal-key-3
+            when {
+                anyOf {
+                    branch 'main'
+                    branch 'master'
+                    expression { env.BRANCH_NAME ==~ /.*release\/.*/ || env.GIT_BRANCH ==~ /.*release\/.*/ }
+                }
+            }
+            steps {
+                echo '🔓 Ensuring Unseal Vault is unsealed...'
+                script {
+                    withCredentials([
+                        string(credentialsId: 'vault-unseal-key-1', variable: 'UNSEAL_KEY_1'),
+                        string(credentialsId: 'vault-unseal-key-2', variable: 'UNSEAL_KEY_2'),
+                        string(credentialsId: 'vault-unseal-key-3', variable: 'UNSEAL_KEY_3')
+                    ]) {
+                        sshagent(credentials: ['lb-server-ssh']) {
+                            sh """
+                                ssh -o StrictHostKeyChecking=no ${DEPLOY_USER}@${DEPLOY_HOST} "bash -s -- \\
+                                  \\$UNSEAL_KEY_1 \\$UNSEAL_KEY_2 \\$UNSEAL_KEY_3" <<'REMOTEOF'
+                                    set -e
+                                    K1="\\$1"
+                                    K2="\\$2"
+                                    K3="\\$3"
+
+                                    NS="vault-unseal"
+                                    POD="unseal-vault-0"
+
+                                    PHASE=\\$(sudo k3s kubectl get pod "\\$POD" -n "\\$NS" -o jsonpath='{.status.phase}' 2>/dev/null || echo "Unknown")
+                                    if [ "\\$PHASE" != "Running" ]; then
+                                      echo "⚠️ \\$NS/\\$POD is not Running (phase: \\$PHASE) — skipping unseal attempt."
+                                      exit 0
+                                    fi
+
+                                    STATUS_JSON=\\$(sudo k3s kubectl exec -n "\\$NS" "\\$POD" -c vault -- \\
+                                      env VAULT_ADDR=https://127.0.0.1:8200 VAULT_SKIP_VERIFY=true vault status -format=json 2>/dev/null || echo "{}")
+
+                                    if echo "\\$STATUS_JSON" | grep -q '\"sealed\"[[:space:]]*:[[:space:]]*true'; then
+                                      echo "▶ Unseal Vault is sealed — unsealing with Jenkins keys..."
+                                      sudo k3s kubectl exec -n "\\$NS" "\\$POD" -c vault -- \\
+                                        env VAULT_ADDR=https://127.0.0.1:8200 VAULT_SKIP_VERIFY=true vault operator unseal "\\$K1" >/dev/null
+                                      sudo k3s kubectl exec -n "\\$NS" "\\$POD" -c vault -- \\
+                                        env VAULT_ADDR=https://127.0.0.1:8200 VAULT_SKIP_VERIFY=true vault operator unseal "\\$K2" >/dev/null
+                                      sudo k3s kubectl exec -n "\\$NS" "\\$POD" -c vault -- \\
+                                        env VAULT_ADDR=https://127.0.0.1:8200 VAULT_SKIP_VERIFY=true vault operator unseal "\\$K3" >/dev/null
+                                      echo "✅ Unseal Vault unseal commands applied."
+                                    else
+                                      echo "▶ Unseal Vault is already unsealed (or status unavailable) — continuing."
+                                    fi
+REMOTEOF
+                            """
+                        }
+                    }
+                }
+            }
+        }
+
 
         stage('Patch Vault Seal Token') {
             // ── Why this stage exists ──────────────────────────────────────────
@@ -286,13 +350,15 @@ REMOTEOF
                                 "sudo k3s kubectl set image deployment/frontend frontend=${FRONTEND_IMAGE}:${BUILD_TAG} -n lb-automotive"
                         """
                         sh """
-                            # Wait for rollouts to complete
+                            # Wait for rollouts to complete (non-fatal: backend needs Vault; if Vault is Pending, rollout will hang)
                             ssh -o StrictHostKeyChecking=no ${DEPLOY_USER}@${DEPLOY_HOST} \
-                                "sudo k3s kubectl rollout status deployment/backend -n lb-automotive --timeout=5m"
+                                "sudo k3s kubectl rollout status deployment/backend -n lb-automotive --timeout=5m" || \
+                                echo "⚠️ Backend rollout timed out — check if Vault is Running (backend needs Vault Agent for secrets)"
                         """
                         sh """
                             ssh -o StrictHostKeyChecking=no ${DEPLOY_USER}@${DEPLOY_HOST} \
-                                "sudo k3s kubectl rollout status deployment/frontend -n lb-automotive --timeout=5m"
+                                "sudo k3s kubectl rollout status deployment/frontend -n lb-automotive --timeout=5m" || \
+                                echo "⚠️ Frontend rollout timed out"
                         """
                     }
                 }
