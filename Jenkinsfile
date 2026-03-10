@@ -280,48 +280,48 @@ REMOTEOF
                 script {
                     withCredentials([string(credentialsId: 'vault-transit-token', variable: 'TRANSIT_TOKEN')]) {
                         sshagent(credentials: ['lb-server-ssh']) {
-                            sh """
-                                # Pass the sensitive token as a positional argument to the remote shell
-                                # to avoid insecure Groovy interpolation and leaking secrets in process trees.
-                                ssh -o StrictHostKeyChecking=no ${DEPLOY_USER}@${DEPLOY_HOST} "bash -s -- \$TRANSIT_TOKEN" <<'REMOTEOF'
+                            // Use single-quoted Groovy string so heredoc + $() are not parsed by Groovy.
+                            // The token is expanded by the Jenkins agent shell and passed as $1 to remote bash.
+                            sh '''
+                                ssh -o StrictHostKeyChecking=no $DEPLOY_USER@$DEPLOY_HOST "bash -s -- $TRANSIT_TOKEN" <<'REMOTEOF'
                                     set -e
-                                    TOKEN="\$1"
+                                    TOKEN="$1"
                                     NS="gamebox-security"
                                     CM="vault"
 
                                     echo "▶ Reading current ConfigMap..."
-                                    CURRENT=\$(sudo k3s kubectl get configmap "\$CM" -n "\$NS" \
-                                        -o jsonpath="{.data.extraconfig-from-values\\\\.hcl}" 2>/dev/null || echo "")
+                                    CURRENT=$(sudo k3s kubectl get configmap "$CM" -n "$NS" \
+                                        -o jsonpath="{.data.extraconfig-from-values\\.hcl}" 2>/dev/null || echo "")
 
-                                    if echo "\$CURRENT" | grep -q "PLACEHOLDER_TRANSIT_TOKEN"; then
+                                    if echo "$CURRENT" | grep -q "PLACEHOLDER_TRANSIT_TOKEN"; then
                                         echo "▶ PLACEHOLDER found — patching token into ConfigMap..."
-                                        NEW=\$(echo "\$CURRENT" | sed "s|PLACEHOLDER_TRANSIT_TOKEN|\$TOKEN|g")
-                                        sudo k3s kubectl patch configmap "\$CM" -n "\$NS" \
+                                        NEW=$(echo "$CURRENT" | sed "s|PLACEHOLDER_TRANSIT_TOKEN|$TOKEN|g")
+                                        sudo k3s kubectl patch configmap "$CM" -n "$NS" \
                                             --type merge \
-                                            -p "{\\"data\\":{\\"extraconfig-from-values.hcl\\":\\"\$NEW\\"}}"
-                                        
+                                            -p "{\"data\":{\"extraconfig-from-values.hcl\":\"$NEW\"}}"
+
                                         echo "▶ ConfigMap patched — deleting vault-0 to pick up new config..."
-                                        sudo k3s kubectl delete pod vault-0 -n "\$NS" --ignore-not-found
-                                        
+                                        sudo k3s kubectl delete pod vault-0 -n "$NS" --ignore-not-found
+
                                         echo "▶ Waiting for vault-0 to become ready..."
-                                        sudo k3s kubectl wait pod vault-0 -n "\$NS" \
+                                        sudo k3s kubectl wait pod vault-0 -n "$NS" \
                                             --for=condition=Ready --timeout=120s
                                     else
                                         echo "▶ Token already patched — no restart needed"
                                     fi
 
                                     echo "▶ Verifying Vault seal status..."
-                                    PHASE=\$(sudo k3s kubectl get pod vault-0 -n "\$NS" -o jsonpath='{.status.phase}' 2>/dev/null || echo "Unknown")
-                                    if [ "\$PHASE" = "Running" ]; then
+                                    PHASE=$(sudo k3s kubectl get pod vault-0 -n "$NS" -o jsonpath='{.status.phase}' 2>/dev/null || echo "Unknown")
+                                    if [ "$PHASE" = "Running" ]; then
                                         sleep 5
-                                        (sudo k3s kubectl exec -n "\$NS" vault-0 -c vault -- \
+                                        (sudo k3s kubectl exec -n "$NS" vault-0 -c vault -- \
                                             env VAULT_SKIP_VERIFY=true vault status -format=json | \
                                             grep -E "\\\"sealed\\\":|\\\"type\\\":") || echo "⚠️ Could not read Vault status (may still be starting)"
                                     else
-                                        echo "⚠️ vault-0 is not Running (phase: \$PHASE) — skipping seal verification. Pipeline continues."
+                                        echo "⚠️ vault-0 is not Running (phase: $PHASE) — skipping seal verification. Pipeline continues."
                                     fi
 REMOTEOF
-                            """
+                            '''
                         }
                     }
                 }
