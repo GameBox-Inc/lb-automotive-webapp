@@ -509,7 +509,7 @@ def handle_time_selection(user_input, language, CallSid, metadata, response):
     voice = "Polly.Lupe" if language == "es" else "Polly.Matthew"
     response.say(slot_summary, voice=voice)
     
-    if not slots:
+    if not available_slots:
         response.hangup()
         return None
 
