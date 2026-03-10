@@ -212,12 +212,11 @@ pipeline {
                     ]) {
                         sshagent(credentials: ['lb-server-ssh']) {
                             sh """
-                                ssh -o StrictHostKeyChecking=no ${DEPLOY_USER}@${DEPLOY_HOST} "bash -s -- \\
-                                  \\$UNSEAL_KEY_1 \\$UNSEAL_KEY_2 \\$UNSEAL_KEY_3" <<'REMOTEOF'
+                                ssh -o StrictHostKeyChecking=no ${DEPLOY_USER}@${DEPLOY_HOST} "bash -s -- \\$UNSEAL_KEY_1 \\$UNSEAL_KEY_2 \\$UNSEAL_KEY_3" <<'REMOTEOF'
                                     set -e
-                                    K1="\\$1"
-                                    K2="\\$2"
-                                    K3="\\$3"
+                                    K1="\$1"
+                                    K2="\$2"
+                                    K3="\$3"
 
                                     NS="vault-unseal"
                                     POD="unseal-vault-0"
