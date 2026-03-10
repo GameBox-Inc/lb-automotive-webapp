@@ -2,7 +2,7 @@ import uuid
 import json
 import logging
 import os
-from twilio.util import RequestValidator
+from twilio.request_validator import RequestValidator
 from twilio.twiml.voice_response import VoiceResponse, Gather
 
 # Initialize logger
