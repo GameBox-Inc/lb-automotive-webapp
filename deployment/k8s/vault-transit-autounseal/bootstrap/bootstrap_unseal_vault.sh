@@ -33,7 +33,7 @@ error() { echo -e "${RED}[ERROR]${NC} $*"; exit 1; }
 
 # Helper: run vault command inside pod
 vault_exec() {
-  kubectl exec -n "$NAMESPACE" "$POD" -c vault -- \
+  kubectl exec -i -n "$NAMESPACE" "$POD" -c vault -- \
     env VAULT_ADDR=http://127.0.0.1:8200 "$@"
 }
 
