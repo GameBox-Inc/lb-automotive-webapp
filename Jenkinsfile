@@ -283,11 +283,11 @@ REMOTEOF
                         sh """
                             # Wait for rollouts to complete
                             ssh -o StrictHostKeyChecking=no ${DEPLOY_USER}@${DEPLOY_HOST} \
-                                "sudo k3s kubectl rollout status deployment/backend -n lb-automotive --timeout=2m"
+                                "sudo k3s kubectl rollout status deployment/backend -n lb-automotive --timeout=5m"
                         """
                         sh """
                             ssh -o StrictHostKeyChecking=no ${DEPLOY_USER}@${DEPLOY_HOST} \
-                                "sudo k3s kubectl rollout status deployment/frontend -n lb-automotive --timeout=2m"
+                                "sudo k3s kubectl rollout status deployment/frontend -n lb-automotive --timeout=5m"
                         """
                     }
                 }
