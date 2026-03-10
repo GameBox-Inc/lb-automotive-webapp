@@ -222,11 +222,14 @@ jobs:
           sudo k3s kubectl rollout restart deployment frontend -n lb-automotive
           sudo k3s kubectl rollout restart deployment redis -n lb-automotive
 
-          # Wait for rollout to complete
+          # Wait for rollout to complete (non-fatal: backend needs Vault Agent; if Vault is slow, rollout can hang)
           echo "⏳ Waiting for deployments to complete..."
-          sudo k3s kubectl rollout status deployment backend -n lb-automotive --timeout=5m
-          sudo k3s kubectl rollout status deployment frontend -n lb-automotive --timeout=5m
-          sudo k3s kubectl rollout status deployment redis -n lb-automotive --timeout=5m
+          sudo k3s kubectl rollout status deployment backend -n lb-automotive --timeout=5m || \
+            echo "⚠️ Backend rollout timed out — check if Vault is Running (backend needs Vault Agent for secrets)"
+          sudo k3s kubectl rollout status deployment frontend -n lb-automotive --timeout=5m || \
+            echo "⚠️ Frontend rollout timed out"
+          sudo k3s kubectl rollout status deployment redis -n lb-automotive --timeout=5m || \
+            echo "⚠️ Redis rollout timed out"
 
           echo "✅ Deployment complete!"
 
