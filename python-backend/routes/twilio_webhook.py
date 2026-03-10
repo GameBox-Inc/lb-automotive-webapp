@@ -426,7 +426,7 @@ def handle_smart_jump(intent, llm_result, CallSid, metadata, response, language)
     """
     if process_smart_jump(intent, llm_result, CallSid, metadata, response, language):
         return None # Jump occurred, redirect already added
-    return "welcome"
+    return "start"
 
 def handle_service_category(user_input, language, CallSid, metadata, response):
     """Handler for selecting a service category."""
@@ -621,7 +621,7 @@ def twilio_webhook(
     try:
         voice = get_setting("ivr_voice", "alice")
         language = get_setting("ivr_language", "en-US")
-        call_state = get_call_state(CallSid) or {"call_sid": CallSid, "current_step": "welcome", "language": "en", "metadata": {}}
+        call_state = get_call_state(CallSid) or {"call_sid": CallSid, "current_step": "start", "language": "en", "metadata": {}}
         language = call_state.get("language", "en")
         voice = "Polly.Lupe" if language == "es" else "Polly.Matthew"
         metadata = call_state.get("metadata", {})

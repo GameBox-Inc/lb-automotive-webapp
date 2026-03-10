@@ -1,6 +1,6 @@
 import logging
 import os
-from database import get_db_connection, upsert_call_state
+from database import get_db_connection, upsert_call_state, DatabaseContextManager, fmt_query
 
 logger = logging.getLogger(__name__)
 
@@ -31,11 +31,10 @@ def process_smart_jump(intent, llm_result, CallSid, metadata, response, language
         if extracted_service:
             logger.info(f"Smart Jump: Detected service '{extracted_service}'")
             # Try to match service name to DB
-            conn = get_db_connection()
-            cursor = conn.cursor()
-            cursor.execute("SELECT id, name, category, duration FROM services")
-            all_services = cursor.fetchall()
-            conn.close()
+            with DatabaseContextManager(read_only=True) as conn:
+                cursor = conn.cursor()
+                cursor.execute(fmt_query("SELECT id, name, category, duration FROM services"))
+                all_services = cursor.fetchall()
             
             # Simple fuzzy match (case insensitive substring)
             matched_service = None
@@ -70,6 +69,8 @@ def process_smart_jump(intent, llm_result, CallSid, metadata, response, language
                 # If we also extracted vehicle info, save it
                 if llm_result.get("vehicle"):
                     metadata["vehicle_info"] = llm_result.get("vehicle")
+                if llm_result.get("license_plate"):
+                    metadata["license_plate"] = llm_result.get("license_plate")
                 
                 # Determine next step: if we have vehicle info, go to plate, else to vehicle
                 next_step = "collect_plate" if metadata.get("vehicle_info") else "collect_vehicle"

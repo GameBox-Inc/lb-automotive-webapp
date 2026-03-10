@@ -71,7 +71,7 @@ def classify_intent(text: str) -> dict:
     """
     Classify intent and extract entities. Optimized for Haiku/Small models.
     """
-    system_prompt = """Extract JSON: {"intent": "appointment"|"emergency"|"spanish"|"other"| "unknown", "service": str|null, "time": str|null, "vehicle": str|null}
+    system_prompt = """Extract JSON: {"intent": "appointment"|"emergency"|"spanish"|"other"| "unknown", "service": str|null, "time": str|null, "vehicle": str|null, "license_plate": str|null}
 Only return JSON."""
     
     if anthropic_client:
