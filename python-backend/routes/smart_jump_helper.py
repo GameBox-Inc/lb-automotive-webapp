@@ -15,12 +15,22 @@ def process_smart_jump(intent, llm_result, CallSid, metadata, response, language
     Encapsulates the logic for 'Smart Jump' - detecting intent/service and skipping menu steps.
     Returns True if a jump occurred (response modified), False otherwise.
     """
-    if intent == "appointment" or intent == "spanish":
+    if intent in ["appointment", "spanish", "status_update", "representative"]:
         # Check for Spanish intent via LLM
         if intent == "spanish":
             language = "es"
             upsert_call_state(CallSid, "main_menu_es", language)
             response.redirect(f"{WEBHOOK_BASE_URL}?step=main_menu_es")
+            return True
+        
+        if intent == "status_update":
+            upsert_call_state(CallSid, "check_status", language, metadata)
+            response.redirect(f"{WEBHOOK_BASE_URL}?step=check_status")
+            return True
+            
+        if intent == "representative":
+            upsert_call_state(CallSid, "transfer_representative", language, metadata)
+            response.redirect(f"{WEBHOOK_BASE_URL}?step=transfer_representative")
             return True
 
         # If entity extraction found a service

@@ -51,14 +51,13 @@ def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -
 
 def get_user_by_username(username: str) -> Optional[Dict[str, Any]]:
     """Get user by username from database."""
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    cursor.execute(fmt_query("""
-        SELECT id, username, email, hashed_password, is_admin, staff_id, created_at
-        FROM users WHERE username = ?
-    """), (username,))
-    row = cursor.fetchone()
-    conn.close()
+    with DatabaseContextManager(read_only=True) as conn:
+        cursor = conn.cursor()
+        cursor.execute(fmt_query("""
+            SELECT id, username, email, hashed_password, is_admin, staff_id, created_at
+            FROM users WHERE username = ?
+        """), (username,))
+        row = cursor.fetchone()
     
     if row:
         return {
@@ -75,14 +74,13 @@ def get_user_by_username(username: str) -> Optional[Dict[str, Any]]:
 
 def get_user_by_id(user_id: str) -> Optional[Dict[str, Any]]:
     """Get user by ID from database."""
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    cursor.execute(fmt_query("""
-        SELECT id, username, email, is_admin, staff_id, created_at
-        FROM users WHERE id = ?
-    """), (user_id,))
-    row = cursor.fetchone()
-    conn.close()
+    with DatabaseContextManager(read_only=True) as conn:
+        cursor = conn.cursor()
+        cursor.execute(fmt_query("""
+            SELECT id, username, email, is_admin, staff_id, created_at
+            FROM users WHERE id = ?
+        """), (user_id,))
+        row = cursor.fetchone()
     
     if row:
         return {
@@ -108,19 +106,16 @@ def authenticate_user(username: str, password: str) -> Optional[Dict[str, Any]]:
 
 def create_user(user: UserCreate) -> Dict[str, Any]:
     """Create a new user."""
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    
     user_id = str(uuid.uuid4())
     hashed_password = get_password_hash(user.password)
     
-    cursor.execute(fmt_query("""
-        INSERT INTO users (id, username, email, hashed_password, is_admin, staff_id)
-        VALUES (?, ?, ?, ?, ?, ?)
-    """), (user_id, user.username, user.email, hashed_password, int(user.is_admin), user.staff_id))
-    
-    conn.commit()
-    conn.close()
+    with DatabaseContextManager(read_only=False) as conn:
+        cursor = conn.cursor()
+        cursor.execute(fmt_query("""
+            INSERT INTO users (id, username, email, hashed_password, is_admin, staff_id)
+            VALUES (?, ?, ?, ?, ?, ?)
+        """), (user_id, user.username, user.email, hashed_password, int(user.is_admin), user.staff_id))
+        conn.commit()
     
     return {
         "id": user_id,

@@ -3,16 +3,14 @@ import uuid
 from typing import List, Optional, Dict, Any
 from datetime import datetime
 from models import Appointment, AppointmentCreate, AppointmentUpdate
-from database import get_db_connection, fmt_query
+from database import DatabaseContextManager, fmt_query
 
 class AppointmentRepository:
-    def __init__(self, db_connection=None):
-        self.conn = db_connection or get_db_connection()
-        self.cursor = self.conn.cursor()
+    def __init__(self):
+        pass
 
     def close(self):
-        if self.conn:
-            self.conn.close()
+        pass
 
     def list_appointments(self, status_filter: Optional[str] = None, current_user: Optional[Dict[str, Any]] = None) -> List[Appointment]:
         query = """
@@ -48,8 +46,10 @@ class AppointmentRepository:
         
         query += " ORDER BY a.appointment_time ASC"
         
-        self.cursor.execute(fmt_query(query), params)
-        rows = self.cursor.fetchall()
+        with DatabaseContextManager(read_only=True) as conn:
+            cursor = conn.cursor()
+            cursor.execute(fmt_query(query), params)
+            rows = cursor.fetchall()
         
         appointments = []
         for row in rows:
@@ -78,8 +78,10 @@ class AppointmentRepository:
             LEFT JOIN services s ON a.service_type = s.id
             WHERE a.id = ?
         """
-        self.cursor.execute(fmt_query(query), (appointment_id,))
-        row = self.cursor.fetchone()
+        with DatabaseContextManager(read_only=True) as conn:
+            cursor = conn.cursor()
+            cursor.execute(fmt_query(query), (appointment_id,))
+            row = cursor.fetchone()
         
         if not row:
             return None
@@ -109,23 +111,25 @@ class AppointmentRepository:
     def create_appointment(self, appointment_data: Dict[str, Any], user_id: Optional[str] = None) -> Appointment:
         appointment_id = str(uuid.uuid4())
         
-        self.cursor.execute(fmt_query("""
-            INSERT INTO appointments (
-                id, customer_name, phone_number, appointment_time,
-                service_type, notes, emergency_request, user_id, assigned_staff_id
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """), (
-            appointment_id,
-            appointment_data["customer_name"],
-            appointment_data["phone_number"],
-            appointment_data["appointment_time"], # Expecting ISO string or datetime logic handled before
-            appointment_data["service_type"],
-            appointment_data.get("notes"),
-            int(appointment_data.get("emergency_request", False)),
-            user_id,
-            None
-        ))
-        self.conn.commit()
+        with DatabaseContextManager(read_only=False) as conn:
+            cursor = conn.cursor()
+            cursor.execute(fmt_query("""
+                INSERT INTO appointments (
+                    id, customer_name, phone_number, appointment_time,
+                    service_type, notes, emergency_request, user_id, assigned_staff_id
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """), (
+                appointment_id,
+                appointment_data["customer_name"],
+                appointment_data["phone_number"],
+                appointment_data["appointment_time"],
+                appointment_data["service_type"],
+                appointment_data.get("notes"),
+                int(appointment_data.get("emergency_request", False)),
+                user_id,
+                None
+            ))
+            conn.commit()
         
         return self.get_appointment(appointment_id)
 
@@ -164,11 +168,14 @@ class AppointmentRepository:
             # I will keep the side effect here for parity with existing logic for now, 
             # or move it to explicit 'update_status' method.
             if updates.status == 'in_progress':
-                self.cursor.execute(fmt_query("""
-                    UPDATE cases 
-                    SET started_at = CURRENT_TIMESTAMP 
-                    WHERE appointment_id = ? AND started_at IS NULL
-                """), (appointment_id,))
+                with DatabaseContextManager(read_only=False) as conn:
+                    cursor = conn.cursor()
+                    cursor.execute(fmt_query("""
+                        UPDATE cases 
+                        SET started_at = CURRENT_TIMESTAMP 
+                        WHERE appointment_id = ? AND started_at IS NULL
+                    """), (appointment_id,))
+                    conn.commit()
         
         if updates.emergency_request is not None:
             update_fields.append("emergency_request = ?")
@@ -181,12 +188,17 @@ class AppointmentRepository:
         params.append(appointment_id)
         
         query = f"UPDATE appointments SET {', '.join(update_fields)} WHERE id = ?"  # nosec B608
-        self.cursor.execute(fmt_query(query), params)
-        self.conn.commit()
+        with DatabaseContextManager(read_only=False) as conn:
+            cursor = conn.cursor()
+            cursor.execute(fmt_query(query), params)
+            conn.commit()
         
         return self.get_appointment(appointment_id)
 
     def delete_appointment(self, appointment_id: str) -> bool:
-        self.cursor.execute(fmt_query("DELETE FROM appointments WHERE id = ?"), (appointment_id,))
-        self.conn.commit()
-        return self.cursor.rowcount > 0
+        with DatabaseContextManager(read_only=False) as conn:
+            cursor = conn.cursor()
+            cursor.execute(fmt_query("DELETE FROM appointments WHERE id = ?"), (appointment_id,))
+            conn.commit()
+            rowCount = cursor.rowcount
+        return rowCount > 0

@@ -108,12 +108,11 @@ def register(user: UserCreate):
         )
     
     # Check if username already exists
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    from database import fmt_query
-    cursor.execute(fmt_query("SELECT id FROM users WHERE username = ?"), (user.username,))
-    existing = cursor.fetchone()
-    conn.close()
+    from database import DatabaseContextManager, fmt_query
+    with DatabaseContextManager(read_only=True) as conn:
+        cursor = conn.cursor()
+        cursor.execute(fmt_query("SELECT id FROM users WHERE username = ?"), (user.username,))
+        existing = cursor.fetchone()
     
     if existing:
         logger.warning(f"Registration failed: Username {user.username} already exists")

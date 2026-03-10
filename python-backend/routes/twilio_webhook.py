@@ -252,24 +252,21 @@ def update_decision_path(call_sid: str, node_name: str):
 DECISION_TREE = {
     "start": {
         "type": "gather",
-        "prompt_en": "Welcome to L-B Automotive Repair. For English, press 1 or say English. Para español, presione 2 o diga Español.",
-        "prompt_es": "Bienvenido a L-B Automotive Repair. Para español, presione 2 o diga Español. For English, press 1 or say English.",
+        "prompt_en": "Welcome to L-B Automotive Repair. How can we help you today? You can say things like 'I'd like to book an appointment', 'give me an update on my car', or 'I want to speak to someone'.",
+        "prompt_es": "Bienvenido a L-B Automotive Repair. ¿Cómo podemos ayudarle hoy? Puede decir cosas como 'Me gustaría programar una cita', 'demme una actualización sobre mi auto' o 'Quiero hablar con alguien'.",
         "gather_config": {
             "num_digits": 1,
-            "timeout": 5,
+            "timeout": 8,
             "bargein": True,
             "speech_timeout": "auto",
             "input": "speech dtmf"
         },
         "transitions": {
-            "1": "main_menu_en",
-            "english": "main_menu_en",
-            "2": "main_menu_es",
-            "español": "main_menu_es",
-            "spanish": "main_menu_es",
-            "appointment": "smart_jump_service",  # Smart Jump
+            "1": "collect_vehicle",
+            "2": "emergency_services",
+            "3": "transfer_representative"
         },
-        "default": "start"  # Repeat if no valid input
+        "default": "start"
     },
     
     "main_menu_en": {
@@ -415,6 +412,18 @@ DECISION_TREE = {
         "type": "terminal",
         "prompt_en": "Your appointment is confirmed. Thank you for choosing L-B Automotive. Goodbye.",
         "prompt_es": "Su cita está confirmada. Gracias por elegir L-B Automotive. Adiós."
+    },
+    
+    "transfer_representative": {
+        "type": "terminal",
+        "prompt_en": "Connecting you to a representative. One moment please.",
+        "prompt_es": "Conectando con un representante. Un momento por favor."
+    },
+    
+    "check_status": {
+        "type": "terminal",
+        "prompt_en": "I'll have a service advisor call you back with a status update on your vehicle shortly. Goodbye.",
+        "prompt_es": "Un asesor de servicio le llamará pronto con una actualización sobre su vehículo. Adiós."
     }
 }
 
@@ -626,6 +635,11 @@ def twilio_webhook(
         voice = "Polly.Lupe" if language == "es" else "Polly.Matthew"
         metadata = call_state.get("metadata", {})
         metadata["from_phone"] = From
+        
+        # Analytic Fix: Ensure call_state exists before track_decision
+        if not get_call_state(CallSid):
+            upsert_call_state(CallSid, step, language, metadata)
+        
         input_data = Digits if Digits else SpeechResult
         if input_data: log_ivr_interaction(CallSid, step, input_data)
         intent = None

@@ -10,7 +10,7 @@ import os
 
 # Anthropic Claude Configuration (Using Haiku for maximum cost/token efficiency)
 ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY")
-ANTHROPIC_MODEL = os.getenv("ANTHROPIC_MODEL", "claude-3-5-haiku-20241022")
+ANTHROPIC_MODEL = os.getenv("ANTHROPIC_MODEL", "claude-3-5-sonnet-20240620")
 
 # LLM Provider Consolidation - Strictly using Anthropic as Ollama was removed for resources
 LLM_PROVIDER = "anthropic" 
@@ -71,7 +71,7 @@ def classify_intent(text: str) -> dict:
     """
     Classify intent and extract entities. Optimized for Haiku/Small models.
     """
-    system_prompt = """Extract JSON: {"intent": "appointment"|"emergency"|"spanish"|"other"| "unknown", "service": str|null, "time": str|null, "vehicle": str|null, "license_plate": str|null}
+    system_prompt = """Extract JSON: {"intent": "appointment"|"status_update"|"representative"|"emergency"|"spanish"|"other"|"unknown", "service": str|null, "time": str|null, "vehicle": str|null, "license_plate": str|null}
 Only return JSON."""
     
     if anthropic_client:

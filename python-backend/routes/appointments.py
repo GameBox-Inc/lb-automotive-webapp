@@ -38,54 +38,46 @@ def get_available_slots(
     Get available appointment slots for a given date and service.
     (Kept as-is for now, complex logic requires Service/Schedule repositories)
     """
+    from database import DatabaseContextManager, fmt_query
     from datetime import datetime, timedelta, date as d_date
-    conn = get_db_connection()
-    cursor = conn.cursor()
-
+    
     try:
         target_date = datetime.strptime(date, "%Y-%m-%d").date()
     except ValueError:
         raise HTTPException(status_code=400, detail="Invalid date format. Use YYYY-MM-DD")
 
-    # 1. Get Service Duration
-    cursor.execute(fmt_query("SELECT duration FROM services WHERE id = ?"), (service_id,))
-    service_row = cursor.fetchone()
-    if not service_row:
-        conn.close()
-        raise HTTPException(status_code=404, detail="Service not found")
-    duration_minutes = service_row["duration"]
+    with DatabaseContextManager(read_only=True) as conn:
+        cursor = conn.cursor()
 
-    # 2. Get Staff Working on this day
-    # day_of_week: 0=Monday, 6=Sunday
-    day_of_week = target_date.weekday()
-    
-    cursor.execute(fmt_query("""
-        SELECT s.id as staff_id, s.name, ss.start_time, ss.end_time 
-        FROM staff s
-        JOIN staff_schedules ss ON s.id = ss.staff_id
-        WHERE s.active = 1 AND ss.day_of_week = ? AND ss.is_off = 0
-    """), (day_of_week,))
-    
-    staff_schedules = cursor.fetchall()
-    
-    if not staff_schedules:
-        # No staff working today
-        conn.close()
-        return []
+        # 1. Get Service Duration
+        cursor.execute(fmt_query("SELECT duration FROM services WHERE id = ?"), (service_id,))
+        service_row = cursor.fetchone()
+        if not service_row:
+            raise HTTPException(status_code=404, detail="Service not found")
+        duration_minutes = service_row["duration"]
 
-    # 3. Get existing appointments for this date
-    # We fetch all appointments that overlap with the day
-    # Note: date() is SQLite, we use a more generic approach or cast for PG
-    date_fn = "DATE" if os.getenv("DATABASE_URL", "").startswith("postgres") else "date"
-    cursor.execute(fmt_query(f"""
-        SELECT appointment_time, service_type, duration 
-        FROM appointments a
-        JOIN services s ON a.service_type = s.id
-        WHERE {date_fn}(appointment_time) = ? AND status != 'cancelled'
-    """), (date,))
-    
-    existing_appointments = cursor.fetchall()
-    conn.close()
+        # 2. Get Staff Working on this day
+        day_of_week = target_date.weekday()
+        cursor.execute(fmt_query("""
+            SELECT s.id as staff_id, s.name, ss.start_time, ss.end_time 
+            FROM staff s
+            JOIN staff_schedules ss ON s.id = ss.staff_id
+            WHERE s.active = 1 AND ss.day_of_week = ? AND ss.is_off = 0
+        """), (day_of_week,))
+        staff_schedules = cursor.fetchall()
+        
+        if not staff_schedules:
+            return []
+
+        # 3. Get existing appointments for this date
+        date_fn = "DATE" if os.getenv("DATABASE_URL", "").startswith("postgres") else "date"
+        cursor.execute(fmt_query(f"""
+            SELECT appointment_time, service_type, duration 
+            FROM appointments a
+            JOIN services s ON a.service_type = s.id
+            WHERE {date_fn}(appointment_time) = ? AND status != 'cancelled'
+        """), (date,))
+        existing_appointments = cursor.fetchall()
 
     # 4. Generate candidate slots
     # We'll use a set of 15-minute intervals for start times
