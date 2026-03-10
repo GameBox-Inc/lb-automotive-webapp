@@ -4,6 +4,7 @@ import json
 from datetime import datetime
 from typing import Optional, Dict, Any, List
 from contextvars import ContextVar
+import uuid
 
 # Context variable to store current user for RLS
 current_user_context: ContextVar[Optional[Dict[str, Any]]] = ContextVar('current_user', default=None)
