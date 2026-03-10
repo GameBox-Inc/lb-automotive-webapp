@@ -1,8 +1,7 @@
 import pytest
 from fastapi.testclient import TestClient
 from main import app
-from database import init_db, get_db_connection
-import os
+from database import init_db, get_db_connection, fmt_query
 
 client = TestClient(app)
 
@@ -19,13 +18,6 @@ app.dependency_overrides[get_optional_user] = mock_get_optional_user
 
 @pytest.fixture(scope="module", autouse=True)
 def setup_db():
-    # Ensure we use the test db defined in pytest.ini
-    if os.path.exists("test.db"):
-        try:
-            os.remove("test.db")
-        except PermissionError:
-            pass
-
     init_db()
     from database import seed_data
     seed_data() # Seed to ensure services exist
@@ -37,22 +29,14 @@ def setup_db():
 
     conn = get_db_connection()
     cursor = conn.cursor()
-    cursor.execute("""
+    cursor.execute(fmt_query("""
         INSERT INTO users (id, username, email, hashed_password, is_admin)
         VALUES (?, ?, ?, ?, ?)
-    """, (test_user_id, "testuser", "test@example.com", test_password, 0))
+    """), (test_user_id, "testuser", "test@example.com", test_password, 0))
     conn.commit()
     conn.close()
 
     yield
-
-    # Cleanup
-    if os.path.exists("test.db"):
-        try:
-            os.remove("test.db")
-        except PermissionError:
-            print("Warning: Could not remove test.db due to file lock")
-            pass
 
 def test_create_appointment():
     response = client.post("/api/appointments", json={
