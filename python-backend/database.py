@@ -9,13 +9,9 @@ import uuid
 # Context variable to store current user for RLS
 current_user_context: ContextVar[Optional[Dict[str, Any]]] = ContextVar('current_user', default=None)
 
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-# Priority 1: Environment variable (usually for Local Dev or Docker overrides)
-# Priority 2: Vault injected secret at /vault/secrets/supabase.env
-# Priority 3: Fallback to SQLite
+# Strict database enforcement: PostgreSQL/Supabase only.
 # Priority 1: Environment variable 
 # Priority 2: Vault injected secret at /vault/secrets/supabase.env
-# Priority 3: Fallback to SQLite
 DATABASE_URL = os.getenv("DATABASE_URL")
 DATABASE_READ_URL = os.getenv("DATABASE_READ_URL")
 
@@ -25,33 +21,28 @@ if os.path.exists(SUPABASE_ENV):
     try:
         with open(SUPABASE_ENV, "r") as f:
             for line in f:
-                if "DATABASE_URL=" in line and not DATABASE_URL:
-                    val = line.split("=", 1)[1].strip().strip('"').strip("'")
+                # Handle both 'export KEY="VAL"' and 'KEY="VAL"' formats
+                clean_line = line.strip().replace("export ", "")
+                if "DATABASE_URL=" in clean_line and not DATABASE_URL:
+                    val = clean_line.split("=", 1)[1].strip().strip('"').strip("'")
                     if val: DATABASE_URL = val
-                if "DATABASE_READ_URL=" in line and not DATABASE_READ_URL:
-                    val = line.split("=", 1)[1].strip().strip('"').strip("'")
+                if "DATABASE_READ_URL=" in clean_line and not DATABASE_READ_URL:
+                    val = clean_line.split("=", 1)[1].strip().strip('"').strip("'")
                     if val: DATABASE_READ_URL = val
     except Exception as e:
         print(f"Error reading Vault secret: {e}")
 
-if DATABASE_URL:
-    if DATABASE_URL.startswith("postgres"):
-        DB_TYPE = "postgresql"
-        DB_PATH = DATABASE_URL
-        DB_READ_PATH = DATABASE_READ_URL if DATABASE_READ_URL else DATABASE_URL
-    else:
-        DB_TYPE = "sqlite"
-        DB_PATH = DATABASE_URL.replace("sqlite:///", "").replace("sqlite://", "")
-        DB_READ_PATH = None
-else:
-    DB_TYPE = "sqlite"
-    DB_PATH = os.path.join(BASE_DIR, "data", "lb_automotive.db")
-    if not os.path.exists(os.path.dirname(DB_PATH)):
-        DB_PATH = os.path.join(BASE_DIR, "lb_automotive.db")
-    DB_READ_PATH = None
+if not DATABASE_URL or not DATABASE_URL.startswith("postgres"):
+    print("CRITICAL ERROR: DATABASE_URL is missing or invalid (must be a PostgreSQL/Supabase URL).")
+    print("Application will not start without a valid Supabase connection.")
+    raise ValueError("Valid PostgreSQL/Supabase connection string required.")
 
-# Standardize placeholders: %s for PostgreSQL, ? for SQLite
-SQL_PARAM = "%s" if DB_TYPE == "postgresql" else "?"
+DB_TYPE = "postgresql"
+DB_PATH = DATABASE_URL
+DB_READ_PATH = DATABASE_READ_URL if DATABASE_READ_URL else DATABASE_URL
+
+# Standardize placeholders for PostgreSQL
+SQL_PARAM = "%s"
 
 print(f"DATABASE TYPE: {DB_TYPE}")
 # Mask credentials for security
@@ -77,21 +68,14 @@ def fmt_query(query: str) -> str:
 
 def get_db_connection(read_only: bool = False):
     """
-    Get a database connection (SQLite or PostgreSQL).
+    Get a PostgreSQL/Supabase database connection.
     If read_only is True and DB_READ_PATH is set, use the replica.
     """
-    if DB_TYPE == "postgresql":
-        import psycopg2
-        from psycopg2.extras import RealDictCursor
-        
-        target_url = DB_READ_PATH if (read_only and DB_READ_PATH) else DB_PATH
-        conn = psycopg2.connect(target_url, cursor_factory=RealDictCursor)
-        return conn
+    import psycopg2
+    from psycopg2.extras import RealDictCursor
     
-    conn = sqlite3.connect(DB_PATH, timeout=20.0, check_same_thread=False)
-    conn.execute("PRAGMA journal_mode=WAL") 
-    conn.execute("PRAGMA foreign_keys=ON") 
-    conn.row_factory = sqlite3.Row
+    target_url = DB_READ_PATH if (read_only and DB_READ_PATH) else DB_PATH
+    conn = psycopg2.connect(target_url, cursor_factory=RealDictCursor)
     return conn
 
 
