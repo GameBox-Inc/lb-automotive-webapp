@@ -6,14 +6,12 @@ import logging
 logger = logging.getLogger(__name__)
 from datetime import datetime, time, timedelta
 from typing import Optional, Dict, Any
-from fastapi import APIRouter, Request, Form, Response, Depends
-from twilio.twiml.voice_response import VoiceResponse, Gather
-from twilio.rest import Client
-import os
-from database import get_db_connection, upsert_call_state, update_appointment_status, fmt_query
-from models import CallState, IVRLog
-from twilio.request_validator import RequestValidator
-from fastapi import HTTPException, Header
+from fastapi import HTTPException, Header, BackgroundTasks
+from database import get_db_connection, upsert_call_state, update_appointment_status, fmt_query, get_setting
+from llm_service import classify_intent, generate_response
+from utils.ivr_helper import get_random_filler, get_redis_result_key, clear_ivr_state
+from utils.background_tasks import process_ivr_intent_async
+from security import redis_client
 
 
 # Security Configuration
@@ -253,8 +251,8 @@ def update_decision_path(call_sid: str, node_name: str):
 DECISION_TREE = {
     "start": {
         "type": "gather",
-        "prompt_en": "Welcome to LB Automotive. For English, press 1 or say English. Para español, presione 2 o diga Español.",
-        "prompt_es": "Bienvenido a LB Automotive. Para español, presione 2 o diga Español. For English, press 1 or say English.",
+        "prompt_en": "Welcome to L-B Automotive Repair. For English, press 1 or say English. Para español, presione 2 o diga Español.",
+        "prompt_es": "Bienvenido a L-B Automotive Repair. Para español, presione 2 o diga Español. For English, press 1 or say English.",
         "gather_config": {
             "num_digits": 1,
             "timeout": 5,
@@ -468,6 +466,7 @@ def process_smart_jump(intent, llm_result, CallSid, metadata, response, language
 @router.post("/webhook", dependencies=[Depends(validate_twilio_request)])
 def twilio_webhook(
     request: Request,
+    background_tasks: BackgroundTasks,
     CallSid: str = Form(...),
     From: str = Form(...),
     Digits: Optional[str] = Form(None),
@@ -509,30 +508,77 @@ def twilio_webhook(
         
         # Determine intent if speech was used
         intent = None
-        llm_result = {}  # Initialize to empty dict
-        if SpeechResult:
-            logger.error(f"DEBUG: Processing SpeechResult: '{SpeechResult}'")
-            # Hybrid Approach: Use Local LLM for intent classification
-            try:
-                llm_result = classify_intent(SpeechResult)
-                logger.error(f"DEBUG: LLM Result Raw: {llm_result}")
+        llm_result = {}
+        
+        masking_enabled = get_setting('ivr_latency_masking_enabled', 'true').lower() == 'true'
+        
+        if SpeechResult and step != "processing":
+            logger.info(f"DEBUG: Processing SpeechResult: '{SpeechResult}'")
+            
+            if masking_enabled:
+                # OPT-1: Latency Masking Trigger
+                logger.info(f"LATENCY_TRACK: Speech received at {datetime.utcnow().isoformat()} for {CallSid}")
+                
+                # Start async processing
+                background_tasks.add_task(process_ivr_intent_async, CallSid, SpeechResult)
+                
+                filler = get_random_filler()
+                logger.info(f"LATENCY_TRACK: Filler playback start at {datetime.utcnow().isoformat()} for {CallSid}")
+                response.say(filler, voice=voice)
+                response.redirect(f"{WEBHOOK_BASE_URL}?step=processing")
+                return Response(content=str(response), media_type="application/xml")
+            else:
+                # Original Synchronous Flow
+                try:
+                    llm_result = classify_intent(SpeechResult)
+                    intent = llm_result.get("intent")
+                except Exception as e:
+                    logger.error(f"LLM failure: {e}")
+                    # Basic keyword fallback
+                    speech_lower = SpeechResult.lower()
+                    if any(k in speech_lower for k in ["appointment", "schedule"]): intent = "appointment"
+                    elif any(k in speech_lower for k in ["emergency", "help"]): intent = "emergency"
+        elif step == "processing":
+            # OPT-2: Latency Masking Polling
+            # Check if background result is ready
+            result_key = get_redis_result_key(CallSid)
+            result_data = redis_client.get(result_key) if redis_client else None
+            
+            if not result_data:
+                # Still processing. Check how long we've been waiting.
+                # If we don't have a specific 'wait_count', we could use metadata.
+                wait_count = int(metadata.get("wait_count", 0))
+                max_timeout = int(get_setting('ivr_processing_timeout', '10'))
+                
+                if wait_count * 2 < max_timeout: # Assuming ~2s per redirect loop
+                    metadata["wait_count"] = wait_count + 1
+                    upsert_call_state(CallSid, "processing", language, metadata)
+                    
+                    # Play a subtle thinking sound or a second filler
+                    mode = get_setting('ivr_filler_mode', 'hybrid')
+                    if mode in ['sound_only', 'hybrid']:
+                        sound_url = get_setting('ivr_thinking_sound_url', '')
+                        if sound_url:
+                            response.play(sound_url)
+                    
+                    # Redirect back to self to check again
+                    response.redirect(f"{WEBHOOK_BASE_URL}?step=processing")
+                    return Response(content=str(response), media_type="application/xml")
+                else:
+                    # Timeout fallback
+                    response.say("I'm still looking that up, one moment please.", voice=voice)
+                    # For now just continue to human fallback or retry
+                    intent = "unknown"
+            else:
+                # Result Found!
+                llm_result = json.loads(result_data)
                 intent = llm_result.get("intent")
-                logger.info(f"LLM Classification: {SpeechResult} -> {intent}")
-            except Exception as e:
-                logger.error(f"DEBUG: Classification Error: {e}")
-                logger.error(f"LLM classification failed: {e}")
-                # Fallback to keyword matching if LLM fails
-                speech_lower = SpeechResult.lower()
-                if "appointment" in speech_lower or "schedule" in speech_lower or "cita" in speech_lower:
-                    intent = "appointment"
-                elif "emergency" in speech_lower or "help" in speech_lower or "emergencia" in speech_lower:
-                    intent = "emergency"
-                elif "spanish" in speech_lower or "español" in speech_lower:
-                    intent = "spanish"
-                elif "english" in speech_lower or "inglés" in speech_lower:
-                    intent = "english"
+                # Clear state for next interaction
+                redis_client.delete(result_key)
+                metadata["wait_count"] = 0 
+                upsert_call_state(CallSid, step, language, metadata)
         else:
-            logger.error("DEBUG: No SpeechResult received.")
+            logger.info("DEBUG: No SpeechResult or already in processing loop.")
 
         # --- State Machine ---
 
@@ -544,39 +590,45 @@ def twilio_webhook(
                 response.redirect(f"{WEBHOOK_BASE_URL}?step=menu")
                 return Response(content=str(response), media_type="application/xml")
             
-            # --- Smart Jump Logic ---
-            if process_smart_jump(intent, llm_result, CallSid, metadata, response, language):
-                return Response(content=str(response), media_type="application/xml")
-            
-            # Default fallback if no smart jump
-            # Check for returning customer
+            # --- PHASE 1: Customer Lookup (Facilitate Personalization) ---
+            # Check for returning customer based on 'From' phone number
             conn = get_db_connection()
             cursor = conn.cursor()
-            # Normalize 'From' number (e.g., +1845...)
             clean_from = From.replace("+", "").replace("-", "").strip()
-            # Try exact match or match specific substring if needed
+            # Normalize and lookup
             cursor.execute(fmt_query("SELECT name FROM customers WHERE replace(replace(phone, '-', ''), '+', '') LIKE ?"), (f"%{clean_from}%",))
             row = cursor.fetchone()
             conn.close()
             
             customer_name = row["name"] if row else None
-            greeting = "Welcome to LB Automotive."
             if customer_name:
-                 # Extract first name
                  first_name = customer_name.split()[0]
-                 greeting = f"Welcome back, {first_name}."
                  metadata["customer_name"] = customer_name
-                 upsert_call_state(CallSid, "welcome", language, metadata)
+                 metadata["is_returning_customer"] = True
+                 greeting = f"Welcome back, {first_name}."
+                 logger.info(f"Returning customer identified: {customer_name} ({From})")
+            else:
+                 greeting = "Welcome to LB Automotive."
+            
+            # --- PHASE 2: Smart Jump Logic ---
+            # Now smart jump can use the metadata["customer_name"] if needed
+            if process_smart_jump(intent, llm_result, CallSid, metadata, response, language):
+                return Response(content=str(response), media_type="application/xml")
+            
+            # --- PHASE 3: Greeting and Initial Menu ---
+            upsert_call_state(CallSid, "welcome", language, metadata)
 
             gather = Gather(
                 num_digits=1,
                 timeout=5,
-                bargein=True,  # Enable cut-off
-                speechTimeout="auto", # Reduce latency
+                bargein=True,
+                speechTimeout="auto",
                 input="speech dtmf",
                 action=f"{WEBHOOK_BASE_URL}?step=language",
                 method="POST"
             )
+            
+            # If identified, we can ask more targeted questions or just go to menu
             gather.say(
                 f"{greeting} For English, press 1 or say English. Para español, presione 2 o diga Español.",
                 voice="Polly.Matthew"

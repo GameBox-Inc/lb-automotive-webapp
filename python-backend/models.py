@@ -2,6 +2,28 @@ from pydantic import BaseModel, Field, field_validator, ConfigDict
 from typing import Optional, Dict, Any, List
 from datetime import datetime
 from uuid import UUID, uuid4
+import logging
+
+logger = logging.getLogger(__name__)
+
+def parse_db_datetime(v: Any) -> Optional[datetime]:
+    """Liberal datetime parser for SQLite/Postgres strings."""
+    if v is None or isinstance(v, datetime):
+        return v
+    if isinstance(v, str):
+        try:
+            # Handle PostgreSQL format: '2026-03-09 21:08:05.39735+00'
+            cleaned_v = v.strip()
+            if ' ' in cleaned_v:
+                cleaned_v = cleaned_v.replace(' ', 'T', 1)
+            if cleaned_v.endswith('+00'):
+                cleaned_v = cleaned_v.replace('+00', '+00:00')
+            return datetime.fromisoformat(cleaned_v)
+        except ValueError:
+            # Fallback for other non-ISO formats
+            from dateutil.parser import parse
+            return parse(v)
+    return v
 
 
 class Service(BaseModel):
@@ -14,6 +36,11 @@ class Service(BaseModel):
     category: str
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
+
+    @field_validator("created_at", "updated_at", mode="before")
+    @classmethod
+    def validate_dates(cls, v):
+        return parse_db_datetime(v)
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -71,6 +98,11 @@ class Appointment(BaseModel):
     updated_at: Optional[datetime] = None
     started_at: Optional[datetime] = None
 
+    @field_validator("appointment_time", "created_at", "updated_at", "started_at", mode="before")
+    @classmethod
+    def validate_dates(cls, v):
+        return parse_db_datetime(v)
+
     model_config = ConfigDict(from_attributes=True)
 
 
@@ -85,6 +117,11 @@ class CallState(BaseModel):
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
 
+    @field_validator("last_response_time", "created_at", "updated_at", mode="before")
+    @classmethod
+    def validate_dates(cls, v):
+        return parse_db_datetime(v)
+
     model_config = ConfigDict(from_attributes=True)
 
 
@@ -94,6 +131,11 @@ class IVRLog(BaseModel):
     step: str
     input: Optional[str] = None
     created_at: Optional[datetime] = None
+
+    @field_validator("created_at", mode="before")
+    @classmethod
+    def validate_dates(cls, v):
+        return parse_db_datetime(v)
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -147,6 +189,11 @@ class CaseNote(BaseModel):
     is_internal: bool = True
     created_at: Optional[datetime] = None
 
+    @field_validator("created_at", mode="before")
+    @classmethod
+    def validate_dates(cls, v):
+        return parse_db_datetime(v)
+
     model_config = ConfigDict(from_attributes=True)
 
 
@@ -163,6 +210,11 @@ class CasePart(BaseModel):
     price: float = 0.0
     status: str = "pending"
     created_at: Optional[datetime] = None
+
+    @field_validator("created_at", mode="before")
+    @classmethod
+    def validate_dates(cls, v):
+        return parse_db_datetime(v)
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -183,6 +235,11 @@ class Case(BaseModel):
     created_at: Optional[datetime] = None
     started_at: Optional[datetime] = None
     closed_at: Optional[datetime] = None
+
+    @field_validator("created_at", "started_at", "closed_at", mode="before")
+    @classmethod
+    def validate_dates(cls, v):
+        return parse_db_datetime(v)
     notes: List[CaseNote] = []
     parts: List[CasePart] = []
 
@@ -209,6 +266,11 @@ class StaffSchedule(BaseModel):
     is_off: bool = False
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
+
+    @field_validator("created_at", "updated_at", mode="before")
+    @classmethod
+    def validate_dates(cls, v):
+        return parse_db_datetime(v)
 
     model_config = ConfigDict(from_attributes=True)
 

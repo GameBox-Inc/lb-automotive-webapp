@@ -8,42 +8,34 @@ import functools
 
 import os
 
-# LLM Provider Configuration
-LLM_PROVIDER = os.getenv("LLM_PROVIDER", "ollama").lower()
-
-# Ollama Configuration
-OLLAMA_HOST = os.getenv("OLLAMA_HOST", "http://ollama:11434")
-OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "smollm2:135m")
-
-# Anthropic Claude Configuration
+# Anthropic Claude Configuration (Using Haiku for maximum cost/token efficiency)
 ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY")
-ANTHROPIC_MODEL = os.getenv("ANTHROPIC_MODEL", "claude-3-5-sonnet-20241022")
+ANTHROPIC_MODEL = os.getenv("ANTHROPIC_MODEL", "claude-3-5-haiku-20241022")
+
+# LLM Provider Consolidation - Strictly using Anthropic as Ollama was removed for resources
+LLM_PROVIDER = "anthropic" 
 
 from utils.reliability import graceful_fallback
 
 # Initialize Anthropic client if API key is provided
 anthropic_client = None
-if LLM_PROVIDER == "anthropic" and ANTHROPIC_API_KEY:
+if ANTHROPIC_API_KEY:
     try:
         from anthropic import Anthropic
         anthropic_client = Anthropic(api_key=ANTHROPIC_API_KEY)
-        logger.info("Anthropic Claude API client initialized")
+        logger.info(f"Anthropic Claude API client initialized (using model: {ANTHROPIC_MODEL})")
     except ImportError:
         logger.warning("Anthropic package not installed. Install with: pip install anthropic")
     except Exception as e:
         logger.error(f"Failed to initialize Anthropic client: {e}")
-elif LLM_PROVIDER == "anthropic" and not ANTHROPIC_API_KEY:
-    logger.warning("LLM_PROVIDER is set to 'anthropic' but ANTHROPIC_API_KEY is not set. Falling back to Ollama.")
-    LLM_PROVIDER = "ollama"
 
 def generate_response(prompt: str, context: str = "", system_prompt: str = None) -> str:
     """
-    Generate a response using the configured LLM provider.
+    Generate a response using the Anthropic Claude API.
     """
-    if LLM_PROVIDER == "anthropic" and anthropic_client:
+    if anthropic_client:
         return _generate_response_anthropic(prompt, context, system_prompt)
-    else:
-        return _generate_response_ollama(prompt, context)
+    return "I'm having trouble thinking right now."
 
 
 @graceful_fallback(fallback_value="I'm having trouble thinking right now.", circuit_name="llm_anthropic")
@@ -54,7 +46,7 @@ def _generate_response_anthropic(prompt: str, context: str = "", system_prompt: 
     
     # Default system prompt if not provided
     if not system_prompt:
-        system_prompt = "You are a helpful assistant for an automotive service business."
+        system_prompt = "Automotive assistant. Be brief."
     
     message = anthropic_client.messages.create(
         model=ANTHROPIC_MODEL,
@@ -70,19 +62,6 @@ def _generate_response_anthropic(prompt: str, context: str = "", system_prompt: 
         return message.content[0].text.strip()
     return "I'm having trouble thinking right now."
 
-
-@graceful_fallback(fallback_value="I'm having trouble thinking right now.", circuit_name="llm_ollama")
-def _generate_response_ollama(prompt: str, context: str = "") -> str:
-    """Generate response using local Ollama instance."""
-    payload = {
-        "model": OLLAMA_MODEL,
-        "prompt": f"{context}\n\nUser: {prompt}\nAssistant:",
-        "stream": False
-    }
-    response = requests.post(f"{OLLAMA_HOST}/api/generate", json=payload, timeout=10)
-    response.raise_for_status()
-    return response.json().get("response", "").strip()
-
 @graceful_fallback(
     fallback_value={"intent": "unknown"}, 
     circuit_name="llm_classifier"
@@ -90,28 +69,12 @@ def _generate_response_ollama(prompt: str, context: str = "") -> str:
 @functools.lru_cache(maxsize=100)
 def classify_intent(text: str) -> dict:
     """
-    Use LLM to classify intent and extract entities from text.
-    Returns structured JSON: {"intent": "appointment"|"emergency"|"unknown", "service": "...", "time": "..."}
+    Classify intent and extract entities. Optimized for Haiku/Small models.
     """
-    system_prompt = """You are an IVR assistant. Extract INTENT, SERVICE, and TIME from user input.
+    system_prompt = """Extract JSON: {"intent": "appointment"|"emergency"|"spanish"|"other"|"unknown", "service": str|null, "time": str|null}
+Only return JSON."""
     
-Return ONLY valid JSON in this exact format:
-{"intent": "appointment"|"emergency"|"spanish"|"other"|"unknown", "service": "..."|null, "time": "..."|null}
-
-Examples:
-User: "I need an oil change tomorrow"
-{"intent": "appointment", "service": "oil change", "time": "tomorrow"}
-
-User: "My car won't start, I'm stuck"
-{"intent": "emergency", "service": "car wont start", "time": null}
-
-User: "Habla español?"
-{"intent": "spanish", "service": null, "time": null}
-
-User: "What are your hours?"
-{"intent": "other", "service": null, "time": null}"""
-    
-    if LLM_PROVIDER == "anthropic" and anthropic_client:
+    if anthropic_client:
         # Use Anthropic Claude for classification
         user_prompt = f"User Input: {text}\n\nReturn ONLY the JSON object, no other text:"
         
@@ -124,18 +87,9 @@ User: "What are your hours?"
             ]
         )
         
-        result = message.content[0].text.strip() if message.content else ""
+        result = message.content[0].text.strip() if message.content else "{\"intent\": \"unknown\"}"
     else:
-        # Use Ollama for classification
-        payload = {
-            "model": OLLAMA_MODEL,
-            "prompt": f"{system_prompt}\nUser Input: {text}\nJSON:",
-            "stream": False,
-            "format": "json" 
-        }
-        response = requests.post(f"{OLLAMA_HOST}/api/generate", json=payload, timeout=5)
-        response.raise_for_status()
-        result = response.json().get("response", "")
+        return {"intent": "unknown"}
     
     # Cleanup: Remove markdown code blocks if present
     if result.strip().startswith("```"):
@@ -153,9 +107,7 @@ def generate_repair_note(text: str) -> str:
     """
     Format a rough repair note into a professional structured note.
     """
-    system_prompt = """You are a professional automotive service writer.
-    Your task is to rephrase the mechanic's rough notes into a clear, professional repair note.
-    Guidelines: Fix grammar, use professional terminology, be concise."""
+    system_prompt = "Professional service writer. Rephrase rough notes. Brief, professional, terminologically correct."
     return generate_response(text, "", system_prompt)
 
 def analyze_schedule(slots: list, date_str: str, service_name: str) -> str:
@@ -167,17 +119,7 @@ def analyze_schedule(slots: list, date_str: str, service_name: str) -> str:
         return f"I apologize, but we are fully booked for that day. Please call back to speak with an advisor."
     
     # Strictly limit to listing times to avoid oversharing/hallucination
-    prompt = f"""Task: List these times for a customer.
-Slots: {', '.join(slots)}
-
-Instructions:
-- Say "We have openings at:" then list the times.
-- Group if possible (e.g. "several in the morning").
-- DO NOT mention the repair details.
-- DO NOT give advice.
-- End with "Please say the time you want."
-
-Response:"""
+    prompt = f"List times: {', '.join(slots)}. Format: 'We have openings at: [times]'. Group if possible. No advice. Say 'Please say the time you want' at end."
 
     response = generate_response(prompt, "")
     

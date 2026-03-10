@@ -62,13 +62,13 @@ def get_user_by_username(username: str) -> Optional[Dict[str, Any]]:
     
     if row:
         return {
-            "id": row[0],
-            "username": row[1],
-            "email": row[2],
-            "hashed_password": row[3],
-            "is_admin": bool(row[4]),
-            "staff_id": row[5],
-            "created_at": row[6]
+            "id": row["id"],
+            "username": row["username"],
+            "email": row["email"],
+            "hashed_password": row["hashed_password"],
+            "is_admin": bool(row["is_admin"]),
+            "staff_id": row["staff_id"],
+            "created_at": row["created_at"]
         }
     return None
 
@@ -86,12 +86,12 @@ def get_user_by_id(user_id: str) -> Optional[Dict[str, Any]]:
     
     if row:
         return {
-            "id": row[0],
-            "username": row[1],
-            "email": row[2],
-            "is_admin": bool(row[3]),
-            "staff_id": row[4],
-            "created_at": row[5]
+            "id": row["id"],
+            "username": row["username"],
+            "email": row["email"],
+            "is_admin": bool(row["is_admin"]),
+            "staff_id": row["staff_id"],
+            "created_at": row["created_at"]
         }
     return None
 

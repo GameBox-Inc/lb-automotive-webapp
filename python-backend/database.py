@@ -411,7 +411,12 @@ def seed_data():
         ('ivr_voice', 'alice', 'Voice for text-to-speech (alice, man, woman)'),
         ('ivr_language', 'en-US', 'Language for text-to-speech'),
         ('staff_count', '5', 'Number of staff members available per day'),
-        ('timezone', 'America/New_York', 'Business timezone')
+        ('timezone', 'America/New_York', 'Business timezone'),
+        ('ivr_latency_masking_enabled', 'true', 'Enable latency masking for IVR (true/false)'),
+        ('ivr_filler_mode', 'hybrid', 'Filler mode (voice_only, sound_only, hybrid)'),
+        ('ivr_filler_phrases', '["One moment...", "Let me check that for you...", "Got it, one second...", "Understood, just a moment.", "Checking our system, one second please."]', 'JSON list of filler phrases'),
+        ('ivr_thinking_sound_url', 'https://twilio.kozytherocket.space/audio/thinking.mp3', 'URL for background thinking sound'),
+        ('ivr_processing_timeout', '10', 'Max seconds to wait for AI response before fallback')
     ]
 
     for key, value, desc in default_settings:

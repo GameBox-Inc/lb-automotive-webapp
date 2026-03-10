@@ -82,8 +82,8 @@ spec:
       containers:
       - name: backend
         # Image updated by Jenkins CI pipeline
-        image: ghcr.io/gamebox-inc/lb-automotive-backend:latest
-        imagePullPolicy: Always
+        image: ghcr.io/gamebox-inc/lb-automotive-backend:143-c5caffd
+        imagePullPolicy: IfNotPresent
         ports:
         - containerPort: 8000
 
