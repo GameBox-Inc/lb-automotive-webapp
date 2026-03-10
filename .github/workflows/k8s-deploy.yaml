@@ -38,6 +38,8 @@ jobs:
       - name: Install dependencies
         run: |
           cd python-backend
+          python -m venv .venv
+          source .venv/bin/activate
           pip install -r requirements.txt
           pip install pytest httpx
       - name: Run Backend Tests
@@ -47,6 +49,7 @@ jobs:
           DATABASE_URL: postgresql://test:test@localhost:5432/test
         run: |
           cd python-backend
+          source .venv/bin/activate
           if [ -d "tests" ] && [ "$(ls -A tests)" ]; then
             python -m pytest
           else
