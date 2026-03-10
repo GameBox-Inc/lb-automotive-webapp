@@ -77,6 +77,13 @@ vault-transit-autounseal/
 > [!IMPORTANT]
 > Unseal Vault MUST be up and healthy before Main Vault starts. Main Vault's seal config points to Unseal Vault — if it can't reach it on startup, it won't unseal.
 
+## Key Management (Shamir shares)
+
+Unseal Vault uses **Shamir seal** (manual unseal). If it restarts sealed, Main Vault may crashloop until Unseal Vault is unsealed.
+
+- Runbook: `docs/runbooks/unseal-vault-key-management.md`
+- Rekey (rotate shares): `deployment/k8s/vault-transit-autounseal/ops/rekey-unseal-vault.sh`
+
 ```
 1. Generate TLS certs      → tls/generate-tls.sh
 2. Create K8s secrets      → kubectl create secret ...

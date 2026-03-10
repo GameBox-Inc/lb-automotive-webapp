@@ -1,7 +1,7 @@
 # Vault Init Failures Runbook
 
 **Last Updated:** March 2026  
-**Related:** [K8s Debugging](k8s-debugging.md) | [Twilio 503](twilio-503.md)
+**Related:** [Vault Unseal Order](vault-unseal-order.md) | [K8s Debugging](k8s-debugging.md) | [Twilio 503](twilio-503.md)
 
 ---
 
@@ -19,7 +19,7 @@
    ```bash
    sudo k3s kubectl exec -n gamebox-security vault-0 -c vault -- vault status
    ```
-   If sealed, unseal with keys from Jenkins credentials or manual process.
+   If sealed: Main Vault auto-unseals via **Unseal Vault** (vault-unseal namespace). Ensure Unseal Vault is running and unsealed first. See [Vault Unseal Order](vault-unseal-order.md).
 
 2. **Vault policy allows app secrets**
    - Path: `secret/data/lb-automotive/*` or `gamebox/data/clients/lb-autorepair/*`
