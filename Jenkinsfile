@@ -283,7 +283,8 @@ REMOTEOF
                             // Use single-quoted Groovy string so heredoc + $() are not parsed by Groovy.
                             // The token is expanded by the Jenkins agent shell and passed as $1 to remote bash.
                             sh '''
-                                ssh -o StrictHostKeyChecking=no $DEPLOY_USER@$DEPLOY_HOST "bash -s -- $TRANSIT_TOKEN" <<'REMOTEOF'
+                                # IMPORTANT: Trim/quote token to avoid newline breaking remote command.
+                                ssh -o StrictHostKeyChecking=no $DEPLOY_USER@$DEPLOY_HOST "bash -s -- '$(printf %s "$TRANSIT_TOKEN")'" <<'REMOTEOF'
                                     set -e
                                     TOKEN="$1"
                                     NS="gamebox-security"
