@@ -1,0 +1,49 @@
+---
+description: Testing standards for LB Automotive
+globs:
+  - "**/*.test.*"
+  - "**/*.spec.*"
+  - "**/tests/**"
+  - "**/pytest.ini"
+  - "**/vitest.config.*"
+alwaysApply: false
+---
+
+# Testing Standards
+
+## Backend (Python)
+
+```bash
+cd python-backend
+pytest
+pytest tests/test_auth.py
+```
+
+- Use parameterized queries only (no string concatenation in SQL)
+- Mock external services (Twilio, LLM API)
+- Set `DATABASE_URL` for tests (e.g. `postgresql://localhost:5432/test`)
+
+## Frontend (React/Vitest)
+
+```bash
+cd frontend
+npm run test:run
+npm run test:coverage
+```
+
+- Use `test:run` for CI (non-interactive)
+- Use `test` for watch mode during development
+
+## IVR / Webhook Testing
+
+- Use `npm run debug:webhook` to simulate Twilio requests
+- Use `npm run debug:twiml` to validate TwiML output
+- Set `TWILIO_SKIP_VALIDATION=true` only in dev
+
+## Security Checklist for New Code
+
+- [ ] Input validation (Pydantic)
+- [ ] Input sanitization (`security.sanitize_input`)
+- [ ] Parameterized DB queries
+- [ ] Auth/authorization checks
+- [ ] No stack traces in production responses

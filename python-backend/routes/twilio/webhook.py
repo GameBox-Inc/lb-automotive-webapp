@@ -10,12 +10,15 @@ logger = logging.getLogger(__name__)
 from datetime import datetime, time, timedelta
 from typing import Optional, Dict, Any
 from fastapi import HTTPException, Header, BackgroundTasks, APIRouter, Request, Response, Depends, Form
-from database import get_db_connection, upsert_call_state, update_appointment_status, fmt_query, get_setting, DatabaseContextManager
-from llm_service import classify_intent, generate_response
+from database import get_db_connection, update_appointment_status, fmt_query, DatabaseContextManager
+from services.llm import classify_intent, generate_response
+from services.call_state import get_call_state, upsert_call_state, get_setting, log_ivr_interaction, track_decision, update_decision_path
 from utils.ivr_helper import get_random_filler, get_redis_result_key, clear_ivr_state
 from utils.background_tasks import process_ivr_intent_async
 from security import redis_client
-from routes.smart_jump_helper import process_smart_jump
+from routes.twilio.smart_jump import process_smart_jump
+from observability.tracing import set_twilio_context, update_phase, get_trace_context
+from observability.tracing import PHASE_WEBHOOK_RECEIVED, PHASE_STT_STARTED, PHASE_LLM_STARTED, PHASE_LLM_COMPLETE, PHASE_TTS_READY
 
 
 # Security Configuration
@@ -100,6 +103,15 @@ async def validate_twilio_request(request: Request):
         # Get the POST data
         form = await request.form()
         params = dict(form)
+        # Set trace context early for Twilio requests (CallSid, AccountSid)
+        call_sid = params.get("CallSid") or ""
+        account_sid = params.get("AccountSid") or ""
+        if isinstance(call_sid, list):
+            call_sid = call_sid[0] if call_sid else ""
+        if isinstance(account_sid, list):
+            account_sid = account_sid[0] if account_sid else ""
+        if call_sid:
+            set_twilio_context(call_sid, account_sid)
         
         # Get the signature header
         signature = request.headers.get("X-Twilio-Signature", "")
@@ -140,113 +152,8 @@ def check_rate_limit(phone_number: str) -> bool:
 
 
 # --- Helper Functions ---
-
-def get_call_state(call_sid: str) -> Optional[dict]:
-    """Get call state from database."""
-    try:
-        with DatabaseContextManager(read_only=True) as conn:
-            cursor = conn.cursor()
-            cursor.execute(fmt_query("""
-                SELECT id, call_sid, current_step, language, metadata, appointment_id, 
-                       last_response_time, created_at, updated_at
-                FROM call_states WHERE call_sid = ?
-            """), (call_sid,))
-            row = cursor.fetchone()
-        
-        if row:
-            return {
-                "id": row["id"],
-                "call_sid": row["call_sid"],
-                "current_step": row["current_step"],
-                "language": row["language"],
-                "metadata": json.loads(row["metadata"]) if row["metadata"] else {},
-                "appointment_id": row["appointment_id"],
-                "last_response_time": row["last_response_time"],
-                "created_at": row["created_at"],
-                "updated_at": row["updated_at"]
-            }
-        return None
-    except Exception as e:
-        logger.error(f"Error fetching call state: {e}")
-        return None
-
-def get_setting(key: str, default: str) -> str:
-    """Get a specific setting value from the database."""
-    try:
-        with DatabaseContextManager(read_only=True) as conn:
-            cursor = conn.cursor()
-            cursor.execute(fmt_query("SELECT value FROM settings WHERE key = ?"), (key,))
-            row = cursor.fetchone()
-        return row['value'] if row else default
-    except Exception as e:
-        logger.error(f"Error fetching setting {key}: {e}")
-        return default
-
-# Business hours check removed - 24/7 booking enabled
-# Appointments can be scheduled at any time for future dates
-
-def log_ivr_interaction(call_sid: str, step: str, input_data: str = None):
-    """Log IVR interaction."""
-    try:
-        conn = get_db_connection()
-        cursor = conn.cursor()
-        
-        log_id = str(uuid.uuid4())
-        cursor.execute(fmt_query("""
-            INSERT INTO ivr_logs (id, call_sid, step, input)
-            VALUES (?, ?, ?, ?)
-        """), (log_id, call_sid, step, input_data))
-        
-        conn.commit()
-        conn.close()
-    except Exception as e:
-        logger.error(f"Error logging IVR interaction: {e}")
-
-
-def track_decision(call_sid: str, node_name: str, decision_taken: str = None, duration_seconds: int = None):
-    """Track IVR decision in analytics table."""
-    try:
-        conn = get_db_connection()
-        cursor = conn.cursor()
-        
-        analytics_id = str(uuid.uuid4())
-        cursor.execute(fmt_query("""
-            INSERT INTO ivr_analytics (id, call_sid, node_name, decision_taken, duration_seconds)
-            VALUES (?, ?, ?, ?, ?)
-        """), (analytics_id, call_sid, node_name, decision_taken, duration_seconds))
-        
-        conn.commit()
-        conn.close()
-    except Exception as e:
-        logger.error(f"Error tracking decision: {e}")
-
-
-def update_decision_path(call_sid: str, node_name: str):
-    """Update the decision path in call_states."""
-    try:
-        conn = get_db_connection()
-        cursor = conn.cursor()
-        
-        # Get current decision path
-        cursor.execute(fmt_query("SELECT decision_path FROM call_states WHERE call_sid = ?"), (call_sid,))
-        row = cursor.fetchone()
-        
-        if row:
-            current_path = json.loads(row["decision_path"]) if row["decision_path"] else []
-            current_path.append(node_name)
-            
-            cursor.execute(fmt_query("""
-                UPDATE call_states 
-                SET decision_path = ?
-                WHERE call_sid = ?
-            """), (json.dumps(current_path), call_sid))
-            
-            conn.commit()
-        
-        conn.close()
-    except Exception as e:
-        logger.error(f"Error updating decision path: {e}")
-
+# get_call_state, get_setting, log_ivr_interaction, track_decision, update_decision_path
+# are imported from services.call_state
 
 # --- Decision Tree Structure ---
 DECISION_TREE = {
@@ -497,7 +404,7 @@ def check_shop_bandwidth(date_str, slot_time):
 def handle_time_selection(user_input, language, CallSid, metadata, response):
     """Handler for selecting an appointment time with bandwidth check."""
     from utils_scheduler import get_available_slots_logic
-    from llm_service import analyze_schedule
+    from services.llm import analyze_schedule
     
     selected_service = metadata.get("selected_service", {"id": "general", "name": "General Service"})
     tomorrow_date = (datetime.now() + timedelta(days=1)).strftime("%Y-%m-%d")
@@ -574,7 +481,7 @@ def handle_booking(user_input, language, CallSid, metadata, response):
 
 def handle_symptoms_processing(user_input, language, CallSid, metadata, response):
     """Summarizes user symptoms using LLM."""
-    from llm_service import generate_response
+    from services.llm import generate_response
     
     symptoms = user_input or "No description provided."
     if user_input and len(user_input) > 5:
@@ -620,12 +527,15 @@ def twilio_webhook(
     request: Request,
     background_tasks: BackgroundTasks,
     CallSid: str = Form(...),
+    AccountSid: Optional[str] = Form(None),
     From: str = Form(...),
     Digits: Optional[str] = Form(None),
     SpeechResult: Optional[str] = Form(None),
     step: str = "start"
 ):
     """Handle incoming Twilio calls with speech and DTMF support."""
+    set_twilio_context(CallSid, AccountSid or "")
+    update_phase(PHASE_WEBHOOK_RECEIVED)
     response = VoiceResponse()
     try:
         voice = get_setting("ivr_voice", "alice")
@@ -646,18 +556,24 @@ def twilio_webhook(
         llm_result = {}
         masking_enabled = get_setting("ivr_latency_masking_enabled", "true").lower() == "true"
         if SpeechResult and step != "processing":
+            update_phase(PHASE_STT_STARTED)
             if masking_enabled:
-                background_tasks.add_task(process_ivr_intent_async, CallSid, SpeechResult)
+                trace_ctx = get_trace_context()
+                background_tasks.add_task(process_ivr_intent_async, CallSid, SpeechResult, trace_ctx)
                 response.say(get_random_filler(), voice=voice)
+                update_phase(PHASE_TTS_READY)
                 response.redirect(f"{WEBHOOK_BASE_URL}?step=processing")
                 return Response(content=str(response), media_type="application/xml")
             else:
                 try:
+                    update_phase(PHASE_LLM_STARTED)
                     llm_result = classify_intent(SpeechResult)
+                    update_phase(PHASE_LLM_COMPLETE)
                     intent = llm_result.get("intent")
                 except Exception:
                     intent = "unknown"
         elif step == "processing":
+            update_phase(PHASE_LLM_COMPLETE)
             result_key = get_redis_result_key(CallSid)
             result_data = redis_client.get(result_key) if redis_client else None
             if result_data:
@@ -670,6 +586,7 @@ def twilio_webhook(
                 if wait_count * 2 < int(get_setting("ivr_processing_timeout", "10")):
                     metadata["wait_count"] = wait_count + 1
                     upsert_call_state(CallSid, "processing", language, metadata)
+                    update_phase(PHASE_TTS_READY)
                     response.redirect(f"{WEBHOOK_BASE_URL}?step=processing")
                     return Response(content=str(response), media_type="application/xml")
                 else:
@@ -682,14 +599,15 @@ def twilio_webhook(
                 # Handle Smart Jump from LLM intent
                 ns = handle_smart_jump(intent, llm_result, CallSid, metadata, response, language)
                 if ns:
+                    update_phase(PHASE_TTS_READY)
                     response.redirect(f"{WEBHOOK_BASE_URL}?step={ns}")
                     return Response(content=str(response), media_type="application/xml")
                 else:
-                    # Fallback to menu if jump didn't trigger
+                    update_phase(PHASE_TTS_READY)
                     response.redirect(f"{WEBHOOK_BASE_URL}?step=main_menu_{language}")
                     return Response(content=str(response), media_type="application/xml")
             else:
-                # Still waiting or unknown, repeat current node if we have one, or go to menu
+                update_phase(PHASE_TTS_READY)
                 response.redirect(f"{WEBHOOK_BASE_URL}?step=main_menu_{language}")
                 return Response(content=str(response), media_type="application/xml")
 
@@ -704,12 +622,14 @@ def twilio_webhook(
                 if input_data:
                     if handler_name == "handle_vehicle_collection": 
                         ns = handle_vehicle_collection(input_data, language, CallSid, metadata, response)
-                        if ns: 
+                        if ns:
+                            update_phase(PHASE_TTS_READY)
                             response.redirect(f"{WEBHOOK_BASE_URL}?step={ns}")
                             return Response(content=str(response), media_type="application/xml")
                     elif handler_name == "handle_plate_collection":
                         ns = handle_plate_collection(input_data, language, CallSid, metadata, response)
                         if ns:
+                            update_phase(PHASE_TTS_READY)
                             response.redirect(f"{WEBHOOK_BASE_URL}?step={ns}")
                             return Response(content=str(response), media_type="application/xml")
 
@@ -733,12 +653,15 @@ def twilio_webhook(
                 response.say(node.get(f"prompt_{language}", node.get("prompt_en")), voice=voice)
                 response.hangup()
             track_decision(CallSid, step, input_data)
+            update_phase(PHASE_TTS_READY)
             return Response(content=str(response), media_type="application/xml")
+        update_phase(PHASE_TTS_READY)
         response.say("Goodbye.", voice=voice)
         response.hangup()
         return Response(content=str(response), media_type="application/xml")
     except Exception as e:
-        logger.error(f"IVR Error: {e}")
+        update_phase("error")
+        logger.error(f"IVR Error: {e}", extra=get_trace_context())
         response.say("An error occurred.", voice="Polly.Matthew")
         response.hangup()
         return Response(content=str(response), media_type="application/xml")

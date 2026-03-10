@@ -366,7 +366,7 @@ def generate_note_api(
     current_user: Dict[str, Any] = Depends(get_current_active_user)
 ):
     """Generate a professional repair note from rough text using AI."""
-    from llm_service import generate_repair_note
+    from services.llm import generate_repair_note
     
     if not request.text or len(request.text.strip()) < 5:
          raise HTTPException(status_code=400, detail="Input text too short")

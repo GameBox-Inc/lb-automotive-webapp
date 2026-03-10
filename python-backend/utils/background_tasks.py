@@ -1,17 +1,23 @@
 import json
 import logging
 import asyncio
-from typing import Dict, Any
-from llm_service import classify_intent
+from typing import Dict, Any, Optional
+from services.llm import classify_intent
 from security import redis_client
 from utils.ivr_helper import get_redis_result_key
+from observability.tracing import restore_trace_context, update_phase, PHASE_LLM_STARTED, PHASE_LLM_COMPLETE
 
 logger = logging.getLogger(__name__)
 
-async def process_ivr_intent_async(call_sid: str, speech_text: str):
+
+async def process_ivr_intent_async(call_sid: str, speech_text: str, trace_ctx: Optional[Dict[str, Any]] = None):
     """
     Background task to process intent and store in Redis.
+    Restores trace context so logs include callSid, requestId, etc.
     """
+    if trace_ctx:
+        restore_trace_context(trace_ctx)
+    update_phase(PHASE_LLM_STARTED)
     start_time = asyncio.get_event_loop().time()
     try:
         logger.info(f"Async processing intent for {call_sid}: {speech_text}")
@@ -24,7 +30,7 @@ async def process_ivr_intent_async(call_sid: str, speech_text: str):
         if redis_client:
             redis_key = get_redis_result_key(call_sid)
             redis_client.setex(redis_key, 120, json.dumps(llm_result))
-            
+            update_phase(PHASE_LLM_COMPLETE)
             end_time = asyncio.get_event_loop().time()
             duration = end_time - start_time
             logger.info(f"LATENCY_TRACK: AI processing for {call_sid} took {duration:.2f}s")

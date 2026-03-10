@@ -118,21 +118,29 @@ async def metrics_endpoint() -> Response:
 app_info.labels(version='1.0.0').set(1)
 
 def setup_logging():
-    """Configure structured logging"""
+    """Configure structured logging with trace context (callSid, requestId, etc.) in every log."""
+    from observability.trace_logging_filter import TraceContextFilter
+
     class CustomJsonFormatter(jsonlogger.JsonFormatter):
+        TRACE_FIELDS = ("callSid", "accountSid", "requestId", "traceId", "sessionId", "podName", "routeName", "latencyMs", "phase")
+
         def add_fields(self, log_record, record, message_dict):
             super(CustomJsonFormatter, self).add_fields(log_record, record, message_dict)
             log_record['timestamp'] = datetime.utcnow().isoformat()
             log_record['level'] = record.levelname
             log_record['logger'] = record.name
+            for f in self.TRACE_FIELDS:
+                if hasattr(record, f):
+                    log_record[f] = getattr(record, f)
 
     handler = logging.StreamHandler()
     formatter = CustomJsonFormatter('%(timestamp)s %(level)s %(name)s %(message)s')
     handler.setFormatter(formatter)
-    
+    handler.addFilter(TraceContextFilter())
+
     root_logger = logging.getLogger()
     root_logger.addHandler(handler)
     root_logger.setLevel(logging.INFO)
-    
+
     # Silence noisy loggers
     logging.getLogger("uvicorn.access").setLevel(logging.WARNING)

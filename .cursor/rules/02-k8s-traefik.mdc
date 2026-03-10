@@ -1,0 +1,43 @@
+---
+description: Kubernetes and Traefik infrastructure rules
+globs:
+  - "**/deployment/k8s/**"
+  - "**/infra/**"
+  - "**/Jenkinsfile*"
+alwaysApply: false
+---
+
+# K8s & Traefik Rules
+
+## Cluster
+
+- **Server:** Hetzner 178.156.223.196
+- **Orchestrator:** K3s
+- **Use:** `sudo k3s kubectl` (not plain `kubectl`)
+
+## Namespaces
+
+| Namespace         | Purpose                    |
+|-------------------|----------------------------|
+| `lb-automotive`   | Backend, frontend, Redis   |
+| `gamebox-security`| Vault, Traefik, cloudflared|
+| `vault-unseal`    | Unseal Vault (transit)     |
+
+## Key Paths
+
+- K8s manifests: `deployment/k8s/`
+- Traefik config: `deployment/k8s/gamebox-security/traefik/`
+- Twilio webhook URL: `https://twilio.kozytherocket.space/lb-automotive/api/twilio/webhook`
+
+## Traefik v3 Notes
+
+- Uses Gateway API (HTTPRoute), not Ingress
+- Service port 80 → container 8000 for Traefik
+- URLRewrite strips `/lb-automotive` before backend
+- Middleware CRDs via ExtensionRef may not work; prefer native Gateway API filters
+
+## Runbooks
+
+- [K8s Debugging](docs/runbooks/k8s-debugging.md)
+- [Ingress & Service Endpoints](docs/runbooks/ingress-service-endpoints.md)
+- [Vault Init Failures](docs/runbooks/vault-init-failures.md)

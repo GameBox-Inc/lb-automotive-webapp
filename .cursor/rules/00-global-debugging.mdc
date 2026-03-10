@@ -1,0 +1,32 @@
+---
+description: Global debugging principles for LB Automotive
+globs:
+  - "**/*"
+alwaysApply: true
+---
+
+# Global Debugging Rules
+
+1. **Never guess root cause without evidence.** Collect logs, reproduce, then hypothesize.
+2. **Reproduce first.** Before editing code, confirm you can reproduce the issue.
+3. **Collect logs before editing.** Preserve evidence; logs may be lost after restart.
+4. **Use correlation IDs.** Logs include `callSid`, `requestId`, `traceId`. Filter by these for end-to-end tracing.
+5. **Prefer minimal targeted fixes** over broad refactors.
+6. **After proposing a fix, explain:**
+   - Root cause
+   - Proof (logs, repro steps)
+   - Files changed
+   - Risks
+   - How to verify
+7. **If evidence is incomplete, say exactly what is missing.**
+8. **Never remove observability** to simplify code.
+
+## Quick Scripts
+
+```bash
+npm run debug:webhook   # Simulate Twilio webhook
+npm run debug:twiml    # Validate TwiML structure
+npm run debug:k8s      # K8s status summary
+npm run logs:app       # Tail backend logs
+npm run logs:ingress   # Tail Traefik logs
+```

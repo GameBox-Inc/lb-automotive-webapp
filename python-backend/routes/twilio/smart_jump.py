@@ -1,6 +1,7 @@
 import logging
 import os
-from database import get_db_connection, upsert_call_state, DatabaseContextManager, fmt_query
+from database import get_db_connection, DatabaseContextManager, fmt_query
+from services.call_state import upsert_call_state
 
 logger = logging.getLogger(__name__)
 

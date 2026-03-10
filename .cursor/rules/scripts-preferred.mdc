@@ -1,0 +1,22 @@
+---
+description: Prefer repo scripts over ad hoc shell commands
+globs:
+  - "**/*"
+alwaysApply: true
+---
+
+Always prefer repo scripts over ad hoc shell commands when available.
+
+When suggesting commands for development, testing, debugging, or deployment, check `package.json` scripts first:
+
+- **dev** — Start the app (`npm run dev`)
+- **test** / **test:watch** — Run tests
+- **lint** / **typecheck** — Linting and type checking
+- **debug:webhook** — Simulate Twilio webhook for testing
+- **debug:twiml** — Validate TwiML XML
+- **debug:audio** — Check audio assets
+- **debug:k8s** — K8s status summary (pods, events)
+- **logs:app** — Tail backend logs
+- **logs:ingress** — Tail Traefik logs
+
+Use `npm run <script>` or `./scripts/<script>` instead of inventing equivalent shell commands.

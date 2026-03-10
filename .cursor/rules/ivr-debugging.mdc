@@ -1,0 +1,42 @@
+---
+description: Debugging workflow for Twilio AI IVR
+globs:
+  - "**/*"
+alwaysApply: true
+---
+
+You are working on a production Twilio-based AI IVR running on K3s behind Traefik.
+
+Debugging priorities:
+1. Never guess root cause without evidence.
+2. Reproduce the issue first.
+3. Collect logs before editing code.
+4. Trace the full request path:
+   Twilio webhook/API -> Traefik ingress -> Kubernetes service -> pod/container -> app route -> AI/STT/TTS integration -> TwiML or media response.
+5. For voice issues, always check:
+   - webhook status code
+   - TwiML validity
+   - call SID / request correlation ID (callSid, requestId, traceId in logs)
+   - ingress routing
+   - service endpoints
+   - pod readiness/liveness
+   - timeout and retry behavior
+   - media/audio URL reachability
+6. Prefer minimal targeted fixes over broad refactors.
+7. After proposing a fix, explain:
+   - root cause
+   - proof
+   - files changed
+   - risks
+   - how to verify
+8. If evidence is incomplete, say exactly what is missing.
+9. When investigating, search for:
+   - Twilio webhook handlers
+   - voice routes
+   - TwiML generators
+   - AI orchestration logic
+   - timeout handling
+   - Kubernetes manifests / Helm values / ingress config
+   - logging and correlation ID middleware (observability/tracing.py, TraceContextFilter)
+10. Logs include callSid, accountSid, requestId, traceId, sessionId, podName, routeName, latencyMs, phase. Filter by callSid or requestId for end-to-end tracing.
+11. Never remove observability to simplify code.

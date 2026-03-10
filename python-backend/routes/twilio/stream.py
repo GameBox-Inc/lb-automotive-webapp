@@ -3,7 +3,7 @@ import base64
 import logging
 import asyncio
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
-from llm_service import generate_response
+from services.llm import generate_response
 
 router = APIRouter(tags=["stream"])
 logger = logging.getLogger(__name__)

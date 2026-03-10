@@ -1,0 +1,14 @@
+﻿node_modules
+dist
+build
+coverage
+.tmp
+.next
+*.log
+*.wav
+*.mp3
+*.zip
+*.tar
+*.min.js
+playwright-report
+test-results

@@ -2,7 +2,7 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-**Last Updated:** March 2, 2026
+**Last Updated:** March 5, 2026
 **Repository:** `GameBox-Inc/lb-automotive-webapp`
 **Branch:** `release/v0.1`
 
@@ -28,7 +28,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ### Current State (Production)
 - **Server:** Hetzner 2GB RAM / 2 vCPU / 40GB SSD - **Optimized for low resources**
 - **Frontend:** React 18 + TypeScript + Vite + TailwindCSS (128MB limit)
-- **Backend:** FastAPI (Python 3.11+) with SQLite database (384MB limit)
+- **Backend:** FastAPI (Python 3.11+) with PostgreSQL/Supabase (384MB limit)
 - **Cache/Queue:** Redis (64MB limit, LRU eviction)
 - **Reverse Proxy:** Frontend Nginx → Backend (replaces K3s Ingress)
 - **Ingress Routing:** Traefik v3 via Kubernetes Gateway API (Cloudflare Tunnel → Traefik → services)
@@ -43,7 +43,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 **Backend:**
 - FastAPI with Pydantic V2 models
-- SQLite (WAL mode) with monthly archiving - **Migration to PostgreSQL planned**
+- PostgreSQL/Supabase (psycopg2) with optional read replica
 - JWT authentication (python-jose)
 - Redis for caching (64MB limit for 2GB server), rate limiting, and session management
 - Alembic for database migrations
@@ -140,9 +140,10 @@ lb-automotive-dashboard/
 - Database access via `database.py` utilities
 
 **Database:**
-- SQLite with WAL mode (Write-Ahead Logging) at `python-backend/database.py:178`
-- Connection management via `get_db_connection()` utility
-- Parameterized queries only (NEVER use string concatenation for SQL)
+- PostgreSQL/Supabase via `python-backend/database.py` — `DATABASE_URL` required (PostgreSQL only)
+- Optional `DATABASE_READ_URL` for read replica
+- Connection management via `get_db_connection()` and `DatabaseContextManager`
+- Parameterized queries only — use `%s` placeholders (NEVER use string concatenation for SQL)
 - Foreign key relationships enforced
 - Always close connections after use
 
@@ -183,9 +184,9 @@ from database import get_db_connection
 conn = get_db_connection()
 cursor = conn.cursor()
 try:
-    # CORRECT: Use ? placeholders
+    # CORRECT: Use %s placeholders (PostgreSQL)
     cursor.execute(
-        "SELECT * FROM table WHERE id = ?",
+        "SELECT * FROM table WHERE id = %s",
         (record_id,)
     )
     result = cursor.fetchone()
@@ -225,14 +226,9 @@ OLLAMA_MODEL=smollm2:135m                    # Ollama model
 **Optional:**
 ```bash
 REDIS_URL=redis://redis:6379/0
-DATABASE_URL=sqlite:///./lb_automotive.db
+DATABASE_URL=postgresql://user:pass@host:5432/dbname  # Required in production
+DATABASE_READ_URL=postgresql://user:pass@replica:5432/dbname  # Optional read replica
 CSP_POLICY=strict  # or "development"
-
-# Database archiving (for K8s CronJob)
-DATABASE_PATH=/app/data/lb_automotive.db
-ARCHIVE_DIR=/app/data/archives
-ARCHIVE_AFTER_DAYS=90  # Archive data older than 90 days
-DELETE_ARCHIVED_AFTER_DAYS=30  # Delete from DB 30 days after archiving
 ```
 
 ---
@@ -277,14 +273,16 @@ DELETE_ARCHIVED_AFTER_DAYS=30  # Delete from DB 30 days after archiving
 - **Key credentials (in Jenkins):** `github-token`, `lb-server-ssh`, `vault-unseal-key-1/2/3`
 
 ### Secrets Management (Vault)
-- **Status:** ✅ Deployed via Helm in `gamebox-security` namespace
+- **Status:** ✅ Deployed via Helm in `gamebox-security` namespace (Transit Auto-Unseal)
 - **Files:** `deployment/k8s/gamebox-security/vault/`
-- **Secrets stored:**
-  - `secret/lb-automotive/app` — SECRET_KEY, ALLOWED_ORIGINS, DATABASE_URL, REDIS_URL
-  - `secret/lb-automotive/twilio` — Twilio credentials
-  - `secret/lb-automotive/anthropic` — Anthropic API key
+- **Secrets stored (KV v2 paths):**
+  - `secret/data/lb-automotive/app` — SECRET_KEY, ALLOWED_ORIGINS, REDIS_URL, CSP_POLICY, etc.
+  - `secret/data/lb-automotive/twilio` — Twilio credentials
+  - `secret/data/lb-automotive/anthropic` — Anthropic API key
+  - `gamebox/data/clients/lb-autorepair/database` — **DATABASE_URL** (PostgreSQL/Supabase), optional `read_url`
 - **Injection:** Vault Agent sidecar writes to `/vault/secrets/*.env`, sourced by `command:` in `backend.yaml`
-- **⚠️ Vault seals on every pod restart** — Jenkins auto-unseals, but manual unseal may be needed
+- **Configure Supabase:** Run `deployment/scripts/configure-vault-supabase.sh` with `VAULT_TOKEN` and `DATABASE_URL`
+- **⚠️ Main Vault uses Transit seal** — auto-unseals via Unseal Vault; no manual unseal keys
 
 ### Routing Architecture
 - **VPN users:** `10.100.0.1:30080` → frontend Nginx → `proxy_pass http://backend:8000` for `/api/*`
@@ -397,8 +395,7 @@ Every new feature MUST follow these security practices:
 
 ### High Priority
 1. **Server Resources** - 2GB RAM is minimal; upgrade to 4GB+ recommended for production
-2. **Database Migration** - SQLite → PostgreSQL (required for production scale)
-3. **Connection Pooling** - Full implementation needed
+2. **Connection Pooling** - Full implementation needed
 4. **JWT Storage** - Move from localStorage to httpOnly cookies
 5. **CSRF Protection** - Implement CSRF tokens
 
@@ -409,10 +406,11 @@ Every new feature MUST follow these security practices:
 - Restore Ollama support (requires 8GB+ RAM server)
 
 ### Recently Completed
+- ✅ PostgreSQL/Supabase migration (SQLite removed)
+- ✅ Vault Transit Auto-Unseal (dual-Vault architecture)
 - ✅ Kubernetes production deployment (K3s on 2GB server)
 - ✅ Memory optimization for low-resource environment
 - ✅ Automated log rotation and compression
-- ✅ Database archiving and vacuuming
 - ✅ Disk space monitoring
 - ✅ Ollama removed (uses Anthropic Claude API instead)
 
@@ -439,9 +437,9 @@ Every new feature MUST follow these security practices:
 - `python-backend/README.md` - Backend-specific docs
 
 ### Scripts
+- `deployment/scripts/configure-vault-supabase.sh` - **Store Supabase/PostgreSQL URL in Vault**
 - `deployment/scripts/remove_memory_hogs.sh` - **Remove Ollama/ArgoCD to free RAM**
 - `deployment/scripts/setup_log_rotation.sh` - **Setup automated log cleanup**
-- `python-backend/database_archiving.py` - **Archive old database records**
 - `deployment/scripts/generate_vpn_client.sh` - WireGuard client generation
 - `setup_git_on_server.sh` - Git repository initialization on server
 
@@ -578,11 +576,11 @@ ssh lb-admin@178.156.223.196  # Port 22 (default)
 
 See `ARCHITECTURE_GAP_ANALYSIS.md` for detailed comparison.
 
-**Current:** Single-instance, Docker Compose, SQLite  
-**Target:** Multi-business, Kubernetes clusters, PostgreSQL, high availability
+**Current:** Single-instance, K3s, PostgreSQL/Supabase
+**Target:** Multi-business, Kubernetes clusters, high availability
 
 **Migration Path:**
-1. Phase 1: PostgreSQL migration + production K8s
+1. Phase 1: ✅ PostgreSQL migration + production K8s (done)
 2. Phase 2: High availability (replicas, redundancy)
 3. Phase 3: Multi-business architecture
 4. Phase 4: Advanced features (service mesh, multi-region)
@@ -670,7 +668,7 @@ When working on this project:
 
 10. **`security_config.json`** - Required by `security.py` at startup. Contains SQL/XSS regex patterns. Must be in the Docker image or mounted via ConfigMap.
 
-11. **Vault seals on restart** - After any server/pod restart, Vault is sealed. The Jenkins pipeline auto-unseals, but manual unseal may be needed: `kubectl exec -n gamebox-security vault-0 -c vault -- env VAULT_SKIP_VERIFY=true vault operator unseal <KEY>`
+11. **Vault Transit seal** - Main Vault uses Transit Auto-Unseal via Unseal Vault. No manual unseal keys. If Main Vault is uninitialized, run `vault operator init -recovery-shares=1 -recovery-threshold=1` once and store the recovery key.
 
 12. **Frontend Nginx proxy** - The production Nginx config is at `deployment/docker/nginx.conf`, NOT `frontend/nginx.conf`. It proxies `/api/*` to `http://backend:8000`.
 
@@ -690,5 +688,5 @@ When working on this project:
 
 ---
 
-**Last Updated:** March 3, 2026  
+**Last Updated:** March 5, 2026  
 **Maintainer:** GameBox-Inc

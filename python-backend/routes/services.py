@@ -3,7 +3,7 @@ from fastapi import APIRouter, HTTPException
 from database import get_db_connection, fmt_query
 from models import Service, ServiceCreate
 from cache import get_cached, set_cached, TTL_SERVICES, TTL_CATEGORIES, cache_key
-from monitoring import db_query_duration_seconds
+from observability.monitoring import db_query_duration_seconds
 from time import time
 
 router = APIRouter(prefix="/api/services", tags=["services"])

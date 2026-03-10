@@ -1,0 +1,43 @@
+---
+description: Twilio voice IVR and webhook rules
+globs:
+  - "**/routes/twilio/**"
+  - "**/services/**"
+  - "**/utils/*ivr*"
+  - "**/utils/*twilio*"
+alwaysApply: false
+---
+
+# Twilio Voice Rules
+
+## Request Path
+
+```
+Twilio webhook → Cloudflare Tunnel → Traefik → K8s service → backend pod → /api/twilio/webhook
+  → AI/STT/TTS → TwiML or media response
+```
+
+## Key Files
+
+- `routes/twilio/webhook.py` — Main IVR webhook
+- `routes/twilio/smart_jump.py` — Intent-based menu skipping
+- `services/llm/` — Intent classification, response generation
+- `services/call_state/` — Call state persistence
+- `utils/background_tasks.py` — Async LLM processing
+
+## For Voice Issues, Always Check
+
+- Webhook status code (Twilio Console → Monitor → Logs)
+- TwiML validity (no malformed tags, valid XML)
+- Call SID / correlation ID (`callSid`, `requestId` in logs)
+- Ingress routing and service endpoints
+- Pod readiness and init containers (Vault Agent)
+- Timeout: backend gather (8s), Twilio webhook (15s), LLM latency
+- Media/audio URL reachability from Twilio
+
+## Runbooks
+
+- [Twilio 503](docs/runbooks/twilio-503.md)
+- [Twilio Debugging](docs/runbooks/twilio-debugging.md)
+- [TwiML Validation](docs/runbooks/twiml-validation.md)
+- [Audio Playback](docs/runbooks/audio-playback.md)

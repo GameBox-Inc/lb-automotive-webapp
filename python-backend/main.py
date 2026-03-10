@@ -6,11 +6,12 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.exceptions import RequestValidationError
 from database import init_db, seed_data, get_db_connection, DB_PATH
-from routes import appointments, services, auth_routes, twilio_webhook, cases, staff, customers, settings, business_hours
+from routes import appointments, services, auth_routes, cases, staff, customers, settings, business_hours
 from security import rate_limit_middleware, security_headers_middleware
-from monitoring import setup_logging
+from observability import setup_logging
 from auth import get_current_admin_user
-from logging_middleware import SecurityLoggingMiddleware
+from observability import SecurityLoggingMiddleware
+from observability.request_tracing_middleware import RequestTracingMiddleware
 import traceback
 import json
 
@@ -85,11 +86,14 @@ app.add_middleware(
 @app.exception_handler(Exception)
 async def global_exception_handler(request: Request, exc: Exception):
     """Global exception handler to prevent information leakage."""
+    from observability.tracing import get_trace_context
     logger = logging.getLogger(__name__)
+    extra = get_trace_context()
+    extra.update({"path": request.url.path, "method": request.method})
     logger.error(
         f"Unhandled exception: {type(exc).__name__}",
         exc_info=True,
-        extra={"path": request.url.path, "method": request.method}
+        extra=extra
     )
     
     # Return generic error message to client
@@ -114,8 +118,9 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
     )
 
 
-# Security middlewares (order matters - logging should be first)
+# Security middlewares (order matters - tracing first so correlation IDs available everywhere)
 app.add_middleware(SecurityLoggingMiddleware)
+app.add_middleware(RequestTracingMiddleware)
 app.middleware("http")(rate_limit_middleware)
 app.middleware("http")(security_headers_middleware)
 
@@ -125,29 +130,27 @@ from routes import (
     appointments,
     services,
     settings,
-    twilio_webhook,
     cases,
     staff,
     customers,
     reports,
-    twilio_stream,
-    ivr_routes,
     business_hours,
-    deployment_routes
+    deployment_routes,
 )
+from routes.twilio import webhook_router, stream_router, analytics_router
 
 # Include Routers
 app.include_router(auth_routes.router)
 app.include_router(appointments.router)
 app.include_router(services.router)
 app.include_router(settings.router)
-app.include_router(twilio_webhook.router)
+app.include_router(webhook_router)
 app.include_router(cases.router)
 app.include_router(staff.router)
 app.include_router(customers.router)
 app.include_router(reports.router)
-app.include_router(twilio_stream.router)
-app.include_router(ivr_routes.router)
+app.include_router(stream_router)
+app.include_router(analytics_router)
 app.include_router(business_hours.router)
 app.include_router(deployment_routes.router)
 

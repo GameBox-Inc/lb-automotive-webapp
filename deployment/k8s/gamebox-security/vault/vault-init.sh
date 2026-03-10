@@ -170,8 +170,7 @@ LLM_PROVIDER=$(read_k8s_secret app-secrets LLM_PROVIDER)
 $VAULT_CMD kv put secret/lb-automotive/app \
   SECRET_KEY="$SECRET_KEY" \
   ALLOWED_ORIGINS="${ALLOWED_ORIGINS:-https://kozytherocket.space}" \
-  DATABASE_URL="${DATABASE_URL:-sqlite:////app/data/lb_automotive.db}" \
-  REDIS_URL="${REDIS_URL:-redis://redis:6379/0}" \
+  REDIS_URL="${REDIS_URL:-redis://redis.lb-automotive.svc.cluster.local:6379}" \
   CSP_POLICY="${CSP_POLICY:-strict}" \
   LLM_PROVIDER="${LLM_PROVIDER:-anthropic}" \
   ENVIRONMENT="production" \
@@ -179,6 +178,16 @@ $VAULT_CMD kv put secret/lb-automotive/app \
   RATE_LIMIT_PER_MINUTE="120"
 
 echo -e "${GREEN}  ✅ secret/lb-automotive/app written${NC}"
+
+# Supabase/PostgreSQL database (required by backend — gamebox path)
+[[ -z "$DATABASE_URL" ]] && read -sp "  DATABASE_URL (PostgreSQL/Supabase): " DATABASE_URL; echo ""
+if [[ -n "$DATABASE_URL" && "$DATABASE_URL" == postgres* ]]; then
+  $VAULT_CMD kv put gamebox/clients/lb-autorepair/database url="$DATABASE_URL" \
+    ${DATABASE_READ_URL:+read_url="$DATABASE_READ_URL"}
+  echo -e "${GREEN}  ✅ gamebox/clients/lb-autorepair/database written${NC}"
+else
+  echo -e "${YELLOW}  ⚠️  Skipping gamebox database — run deployment/scripts/configure-vault-supabase.sh with DATABASE_URL${NC}"
+fi
 
 # Twilio secrets (optional)
 TWILIO_SID=$(read_k8s_secret twilio-secrets TWILIO_ACCOUNT_SID)

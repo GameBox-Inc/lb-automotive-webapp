@@ -18,9 +18,12 @@ path "secret/data/lb-automotive/*" {
   capabilities = ["read", "list"]
 }
 
-# Access to Supabase/Gamebox secrets
-# broad permissions for the mount to satisfy preflight/metadata/data checks
-path "gamebox/*" {
+# Access to Supabase/Gamebox secrets (KV v2 path: gamebox/data/clients/lb-autorepair/database)
+# + matches a single path segment; use explicit path for nested key
+path "gamebox/data/clients/lb-autorepair/database" {
+  capabilities = ["read", "list"]
+}
+path "gamebox/metadata/clients/lb-autorepair/database" {
   capabilities = ["read", "list"]
 }
 
