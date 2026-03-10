@@ -48,7 +48,7 @@ jobs:
         run: |
           cd python-backend
           if [ -d "tests" ] && [ "$(ls -A tests)" ]; then
-            pytest
+            python -m pytest
           else
             echo "⚠️ No backend tests found, skipping..."
           fi
