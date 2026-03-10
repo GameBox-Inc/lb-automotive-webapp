@@ -211,39 +211,41 @@ pipeline {
                         string(credentialsId: 'vault-unseal-key-3', variable: 'UNSEAL_KEY_3')
                     ]) {
                         sshagent(credentials: ['lb-server-ssh']) {
-                            sh """
-                                ssh -o StrictHostKeyChecking=no ${DEPLOY_USER}@${DEPLOY_HOST} "bash -s -- \\$UNSEAL_KEY_1 \\$UNSEAL_KEY_2 \\$UNSEAL_KEY_3" <<'REMOTEOF'
+                            // IMPORTANT: Use single-quoted Groovy string so $() and $VAR are not parsed by Groovy.
+                            // All variables here are expanded by the shell on the Jenkins agent (env vars from `environment {}` / `withCredentials {}`).
+                            sh '''
+                                ssh -o StrictHostKeyChecking=no $DEPLOY_USER@$DEPLOY_HOST "bash -s -- $UNSEAL_KEY_1 $UNSEAL_KEY_2 $UNSEAL_KEY_3" <<'REMOTEOF'
                                     set -e
-                                    K1="\$1"
-                                    K2="\$2"
-                                    K3="\$3"
+                                    K1="$1"
+                                    K2="$2"
+                                    K3="$3"
 
                                     NS="vault-unseal"
                                     POD="unseal-vault-0"
 
-                                    PHASE=\\$(sudo k3s kubectl get pod "\\$POD" -n "\\$NS" -o jsonpath='{.status.phase}' 2>/dev/null || echo "Unknown")
-                                    if [ "\\$PHASE" != "Running" ]; then
-                                      echo "⚠️ \\$NS/\\$POD is not Running (phase: \\$PHASE) — skipping unseal attempt."
+                                    PHASE=$(sudo k3s kubectl get pod "$POD" -n "$NS" -o jsonpath='{.status.phase}' 2>/dev/null || echo "Unknown")
+                                    if [ "$PHASE" != "Running" ]; then
+                                      echo "⚠️ $NS/$POD is not Running (phase: $PHASE) — skipping unseal attempt."
                                       exit 0
                                     fi
 
-                                    STATUS_JSON=\\$(sudo k3s kubectl exec -n "\\$NS" "\\$POD" -c vault -- \\
+                                    STATUS_JSON=$(sudo k3s kubectl exec -n "$NS" "$POD" -c vault -- \
                                       env VAULT_ADDR=https://127.0.0.1:8200 VAULT_SKIP_VERIFY=true vault status -format=json 2>/dev/null || echo "{}")
 
-                                    if echo "\\$STATUS_JSON" | grep -q '\"sealed\"[[:space:]]*:[[:space:]]*true'; then
+                                    if echo "$STATUS_JSON" | grep -q '"sealed"[[:space:]]*:[[:space:]]*true'; then
                                       echo "▶ Unseal Vault is sealed — unsealing with Jenkins keys..."
-                                      sudo k3s kubectl exec -n "\\$NS" "\\$POD" -c vault -- \\
-                                        env VAULT_ADDR=https://127.0.0.1:8200 VAULT_SKIP_VERIFY=true vault operator unseal "\\$K1" >/dev/null
-                                      sudo k3s kubectl exec -n "\\$NS" "\\$POD" -c vault -- \\
-                                        env VAULT_ADDR=https://127.0.0.1:8200 VAULT_SKIP_VERIFY=true vault operator unseal "\\$K2" >/dev/null
-                                      sudo k3s kubectl exec -n "\\$NS" "\\$POD" -c vault -- \\
-                                        env VAULT_ADDR=https://127.0.0.1:8200 VAULT_SKIP_VERIFY=true vault operator unseal "\\$K3" >/dev/null
+                                      sudo k3s kubectl exec -n "$NS" "$POD" -c vault -- \
+                                        env VAULT_ADDR=https://127.0.0.1:8200 VAULT_SKIP_VERIFY=true vault operator unseal "$K1" >/dev/null
+                                      sudo k3s kubectl exec -n "$NS" "$POD" -c vault -- \
+                                        env VAULT_ADDR=https://127.0.0.1:8200 VAULT_SKIP_VERIFY=true vault operator unseal "$K2" >/dev/null
+                                      sudo k3s kubectl exec -n "$NS" "$POD" -c vault -- \
+                                        env VAULT_ADDR=https://127.0.0.1:8200 VAULT_SKIP_VERIFY=true vault operator unseal "$K3" >/dev/null
                                       echo "✅ Unseal Vault unseal commands applied."
                                     else
                                       echo "▶ Unseal Vault is already unsealed (or status unavailable) — continuing."
                                     fi
 REMOTEOF
-                            """
+                            '''
                         }
                     }
                 }
