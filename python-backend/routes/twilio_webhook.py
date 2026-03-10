@@ -358,111 +358,173 @@ DECISION_TREE = {
     "emergency_services": {
         "type": "dynamic",
         "handler": "handle_emergency"
+    },
+    
+    "collect_symptoms": {
+        "type": "gather",
+        "prompt_en": "Please briefly describe the issue with your vehicle after the beep. For example, say 'I need an oil change' or 'my brakes are squeaking'.",
+        "prompt_es": "Por favor describa brevemente el problema. Por ejemplo, diga 'necesito un cambio de aceite' o 'mis frenos hacen ruido'.",
+        "gather_config": {
+            "input": "speech",
+            "timeout": 5,
+            "speech_timeout": "auto"
+        },
+        "transitions": {
+            "default": "process_symptoms"
+        }
+    },
+    
+    "process_symptoms": {
+        "type": "function",
+        "handler": "handle_symptoms_processing"
+    },
+    
+    "confirm_booking": {
+        "type": "function",
+        "handler": "handle_booking"
+    },
+    
+    "completed": {
+        "type": "terminal",
+        "prompt_en": "Your appointment is confirmed. Thank you for choosing L-B Automotive. Goodbye.",
+        "prompt_es": "Su cita está confirmada. Gracias por elegir L-B Automotive. Adiós."
     }
 }
 
 
-def get_tree_node(node_name: str) -> Optional[Dict[str, Any]]:
-    """Get a node from the decision tree."""
-    return DECISION_TREE.get(node_name)
-
-
-def navigate_tree(node_name: str, user_input: str, language: str = "en") -> Optional[str]:
+def handle_smart_jump(intent, llm_result, CallSid, metadata, response, language):
     """
-    Navigate the decision tree based on user input.
-    Returns the next node name or None if no match.
+    Handles 'Smart Jump' - detecting intent/service and skipping menu steps.
+    Used by the tree 'function' node.
     """
-    node = get_tree_node(node_name)
-    if not node:
+    if process_smart_jump(intent, llm_result, CallSid, metadata, response, language):
+        return None # Jump occurred, redirect already added
+    return "welcome"
+
+def handle_service_category(user_input, language, CallSid, metadata, response):
+    """Handler for selecting a service category."""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute(fmt_query("SELECT DISTINCT category FROM services ORDER BY category"))
+    categories = [row["category"] for row in cursor.fetchall()]
+    conn.close()
+    
+    metadata["categories"] = categories
+    upsert_call_state(CallSid, "select_service_category", language, metadata)
+    
+    voice = "Polly.Lupe" if language == "es" else "Polly.Matthew"
+    message = "Por favor seleccione una categoría:" if language == "es" else "Please select a category:"
+    response.say(message, voice=voice)
+    
+    for idx, cat in enumerate(categories, 1):
+        response.say(f"For {cat.replace('_', ' ')}, press {idx}", voice=voice)
+    
+    gather = Gather(num_digits=1, input="dtmf", action=f"{WEBHOOK_BASE_URL}?step=select_service_detail")
+    response.append(gather)
+    return None
+
+def handle_time_selection(user_input, language, CallSid, metadata, response):
+    """Handler for selecting an appointment time."""
+    from utils_scheduler import get_available_slots_logic
+    from llm_service import analyze_schedule
+    
+    selected_service = metadata.get("selected_service", {"id": "general", "name": "General Service"})
+    tomorrow_date = (datetime.now() + timedelta(days=1)).strftime("%Y-%m-%d")
+    
+    slots = get_available_slots_logic(tomorrow_date, selected_service.get('id'))
+    slot_summary = analyze_schedule(slots, tomorrow_date, selected_service.get('name'))
+    
+    voice = "Polly.Lupe" if language == "es" else "Polly.Matthew"
+    response.say(slot_summary, voice=voice)
+    
+    if not slots:
+        response.hangup()
         return None
-    
-    transitions = node.get("transitions", {})
-    
-    # Normalize user input for matching
-    input_lower = user_input.lower() if user_input else ""
-    
-    # Try exact match first
-    if user_input in transitions:
-        return transitions[user_input]
-    
-    # Try lowercase match
-    if input_lower in transitions:
-        return transitions[input_lower]
-    
-    # Return default if no match
-    return node.get("default")
 
+    metadata["available_slots"] = slots
+    metadata["target_date"] = tomorrow_date
+    upsert_call_state(CallSid, "select_time", language, metadata)
+    
+    gather = Gather(num_digits=1, input="speech dtmf", action=f"{WEBHOOK_BASE_URL}?step=collect_symptoms")
+    response.append(gather)
+    return None
 
-def process_smart_jump(intent, llm_result, CallSid, metadata, response, language):
-    """
-    Encapsulates the logic for 'Smart Jump' - detecting intent/service and skipping menu steps.
-    Returns True if a jump occurred (response modified), False otherwise.
-    """
-    # Normalize keys to lowercase for robustness
-    if isinstance(llm_result, dict):
-        llm_result = {k.lower(): v for k, v in llm_result.items()}
-    else:
-        llm_result = {}
-
-    intent = llm_result.get("intent", "").lower()
-
-    if intent == "appointment" or intent == "spanish":
-        # Check for Spanish intent via LLM
-        if intent == "spanish":
-            language = "es"
-            upsert_call_state(CallSid, "menu", language)
-            response.redirect("/api/twilio/webhook?step=menu")
-            return True
-
-        # If entity extraction found a service
-        extracted_service = llm_result.get("service")
+def handle_booking(user_input, language, CallSid, metadata, response):
+    """Final booking handler."""
+    choice = metadata.get("time_slot_choice")
+    slots = metadata.get("available_slots", [])
+    target_date = metadata.get("target_date")
+    svc = metadata.get("selected_service", {})
+    
+    chosen_slot = None
+    if choice == "1": # Morning
+        chosen_slot = next((s for s in slots if int(s.split(':')[0]) < 12), None)
+    elif choice == "2": # Afternoon
+        chosen_slot = next((s for s in slots if int(s.split(':')[0]) >= 12), None)
+    
+    voice = "Polly.Lupe" if language == "es" else "Polly.Matthew"
+    if chosen_slot:
+        appt_time = f"{target_date}T{chosen_slot}:00"
+        aid = str(uuid.uuid4())
         
-        if extracted_service:
-            logger.info(f"Smart Jump: Detected service '{extracted_service}'")
-            # Try to match service name to DB
-            conn = get_db_connection()
-            cursor = conn.cursor()
-            cursor.execute(fmt_query("SELECT id, name, category, duration FROM services"))
-            all_services = cursor.fetchall()
-            conn.close()
-            
-            # Simple fuzzy match (case insensitive substring)
-            matched_service = None
-            for svc in all_services:
-                # Improved Fuzzy Match: Check if meaningful parts of the string match
-                # Split by space and check overlap
-                user_terms = set(extracted_service.lower().split())
-                svc_terms = set(svc["name"].lower().split())
-                
-                # Filter out common stop words if needed, but for now just check intersection
-                common = user_terms.intersection(svc_terms)
-                
-                # If at least 2 words match (or 1 if it's a unique word like 'diagnostic')
-                if len(common) >= 2 or (len(common) >= 1 and len(user_terms) == 1):
-                    matched_service = svc
-                    break
-                
-                # Fallback: simple substring
-                if extracted_service.lower() in svc["name"].lower():
-                        matched_service = svc
-                        break
-            
-            if matched_service:
-                logger.info(f"Smart Jump: Matched DB service '{matched_service['name']}'")
-                metadata["selected_service"] = {
-                    "id": matched_service["id"],
-                    "name": matched_service["name"],
-                    "duration": matched_service["duration"]
-                }
-                metadata["selected_category"] = matched_service["category"]
-                
-                # Go straight to select_time
-                # We also default language to 'en' if not explicitly spanish
-                upsert_call_state(CallSid, "select_time", "en", metadata)
-                response.redirect(f"{WEBHOOK_BASE_URL}?step=select_time")
-                return True
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute(fmt_query("""
+            INSERT INTO appointments (id, customer_name, phone_number, appointment_time, service_type, status, notes)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+        """), (aid, metadata.get("customer_name", "Voice Customer"), metadata.get("from_phone"), appt_time, svc.get('name', 'General Service'), 'pending', metadata.get("symptoms")))
+        conn.commit()
+        conn.close()
+        
+        upsert_call_state(CallSid, "completed", language, metadata, aid)
+        response.say(f"Confirmed. See you at {chosen_slot}. Goodbye.", voice=voice)
+        response.hangup()
+    else:
+        response.say("Sorry, that slot is gone.", voice=voice)
+        response.redirect(f"{WEBHOOK_BASE_URL}?step=select_time")
+    return None
 
-    return False
+def handle_symptoms_processing(user_input, language, CallSid, metadata, response):
+    """Summarizes user symptoms using LLM."""
+    from llm_service import generate_response
+    
+    symptoms = user_input or "No description provided."
+    if user_input and len(user_input) > 5:
+        system_prompt = "Summarize car issue in 1 sentence for a mechanic. Brief and technical. Speak to the mechanic directly."
+        try:
+            summary = generate_response(user_input, "", system_prompt)
+            if "trouble thinking" not in summary.lower():
+                symptoms = summary
+        except Exception:
+            pass
+            
+    metadata["symptoms"] = symptoms
+    upsert_call_state(CallSid, "confirm_booking", language, metadata)
+    return "confirm_booking"
+
+def handle_emergency(user_input, language, CallSid, metadata, response):
+    """Emergency routing handler."""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute(fmt_query("SELECT * FROM services WHERE is_emergency = 1 ORDER BY name"))
+    services = [dict(row) for row in cursor.fetchall()]
+    conn.close()
+    
+    metadata["services"] = services
+    upsert_call_state(CallSid, "emergency_services", language, metadata)
+    
+    voice = "Polly.Lupe" if language == "es" else "Polly.Matthew"
+    response.say("Emergency services available:", voice=voice)
+    for idx, s in enumerate(services, 1):
+        response.say(f"For {s['name']}, press {idx}", voice=voice)
+    
+    gather = Gather(num_digits=1, input="dtmf", action=f"{WEBHOOK_BASE_URL}?step=confirm_emergency")
+    response.append(gather)
+    return None
+
+def get_tree_node(step: str) -> Optional[dict]:
+    """Retrieve node from the decision tree."""
+    return DECISION_TREE.get(step)
 
 # --- Webhook Handler ---
 
@@ -476,727 +538,82 @@ def twilio_webhook(
     SpeechResult: Optional[str] = Form(None),
     step: str = "start"
 ):
-    """
-    Handle incoming Twilio calls with speech and DTMF support.
-    """
+    """Handle incoming Twilio calls with speech and DTMF support."""
     response = VoiceResponse()
-    
     try:
-        # Get configuration from DB
-        voice = get_setting('ivr_voice', 'alice')
-        language = get_setting('ivr_language', 'en-US')
-        
-        # 24/7 booking enabled - no time-based restrictions
-        # Customers can call and book appointments at any time
-
-        # Fetch/Create state
-        call_state = get_call_state(CallSid)
-        if not call_state:
-            call_state = {
-                "call_sid": CallSid,
-                "current_step": "welcome",
-                "language": "en",
-                "metadata": {}
-            }
-        
-        # Update context from state
+        voice = get_setting("ivr_voice", "alice")
+        language = get_setting("ivr_language", "en-US")
+        call_state = get_call_state(CallSid) or {"call_sid": CallSid, "current_step": "welcome", "language": "en", "metadata": {}}
         language = call_state.get("language", "en")
-        # Adjust voice based on language
         voice = "Polly.Lupe" if language == "es" else "Polly.Matthew"
         metadata = call_state.get("metadata", {})
-        
-        # Log interaction (Digits or Speech)
+        metadata["from_phone"] = From
         input_data = Digits if Digits else SpeechResult
-        log_ivr_interaction(CallSid, step, input_data)
-        
-        # Determine intent if speech was used
+        if input_data: log_ivr_interaction(CallSid, step, input_data)
         intent = None
         llm_result = {}
-        
-        masking_enabled = get_setting('ivr_latency_masking_enabled', 'true').lower() == 'true'
-        
+        masking_enabled = get_setting("ivr_latency_masking_enabled", "true").lower() == "true"
         if SpeechResult and step != "processing":
-            logger.info(f"DEBUG: Processing SpeechResult: '{SpeechResult}'")
-            
             if masking_enabled:
-                # OPT-1: Latency Masking Trigger
-                logger.info(f"LATENCY_TRACK: Speech received at {datetime.utcnow().isoformat()} for {CallSid}")
-                
-                # Start async processing
                 background_tasks.add_task(process_ivr_intent_async, CallSid, SpeechResult)
-                
-                filler = get_random_filler()
-                logger.info(f"LATENCY_TRACK: Filler playback start at {datetime.utcnow().isoformat()} for {CallSid}")
-                response.say(filler, voice=voice)
+                response.say(get_random_filler(), voice=voice)
                 response.redirect(f"{WEBHOOK_BASE_URL}?step=processing")
                 return Response(content=str(response), media_type="application/xml")
             else:
-                # Original Synchronous Flow
                 try:
                     llm_result = classify_intent(SpeechResult)
                     intent = llm_result.get("intent")
-                except Exception as e:
-                    logger.error(f"LLM failure: {e}")
-                    # Basic keyword fallback
-                    speech_lower = SpeechResult.lower()
-                    if any(k in speech_lower for k in ["appointment", "schedule"]): intent = "appointment"
-                    elif any(k in speech_lower for k in ["emergency", "help"]): intent = "emergency"
+                except Exception:
+                    intent = "unknown"
         elif step == "processing":
-            # OPT-2: Latency Masking Polling
-            # Check if background result is ready
             result_key = get_redis_result_key(CallSid)
             result_data = redis_client.get(result_key) if redis_client else None
-            
-            if not result_data:
-                # Still processing. Check how long we've been waiting.
-                # If we don't have a specific 'wait_count', we could use metadata.
+            if result_data:
+                llm_result = json.loads(result_data)
+                intent = llm_result.get("intent")
+                if redis_client: redis_client.delete(result_key)
+                metadata["wait_count"] = 0
+            else:
                 wait_count = int(metadata.get("wait_count", 0))
-                max_timeout = int(get_setting('ivr_processing_timeout', '10'))
-                
-                if wait_count * 2 < max_timeout: # Assuming ~2s per redirect loop
+                if wait_count * 2 < int(get_setting("ivr_processing_timeout", "10")):
                     metadata["wait_count"] = wait_count + 1
                     upsert_call_state(CallSid, "processing", language, metadata)
-                    
-                    # Play a subtle thinking sound or a second filler
-                    mode = get_setting('ivr_filler_mode', 'hybrid')
-                    if mode in ['sound_only', 'hybrid']:
-                        sound_url = get_setting('ivr_thinking_sound_url', '')
-                        if sound_url:
-                            response.play(sound_url)
-                    
-                    # Redirect back to self to check again
                     response.redirect(f"{WEBHOOK_BASE_URL}?step=processing")
                     return Response(content=str(response), media_type="application/xml")
                 else:
-                    # Timeout fallback
-                    response.say("I'm still looking that up, one moment please.", voice=voice)
-                    # For now just continue to human fallback or retry
                     intent = "unknown"
-            else:
-                # Result Found!
-                llm_result = json.loads(result_data)
-                intent = llm_result.get("intent")
-                # Clear state for next interaction
-                redis_client.delete(result_key)
-                metadata["wait_count"] = 0 
-                upsert_call_state(CallSid, step, language, metadata)
-        else:
-            logger.info("DEBUG: No SpeechResult or already in processing loop.")
-
-        # --- State Machine ---
-
-        if step == "start" or step == "welcome":
-            # If user already spoke 'spanish' or pushed 2, switch language immediately
-            if Digits == "2":
-                language = "es"
-                upsert_call_state(CallSid, "menu", language)
-                response.redirect(f"{WEBHOOK_BASE_URL}?step=menu")
-                return Response(content=str(response), media_type="application/xml")
-            
-            # --- PHASE 1: Customer Lookup (Facilitate Personalization) ---
-            # Check for returning customer based on 'From' phone number
-            conn = get_db_connection()
-            cursor = conn.cursor()
-            clean_from = From.replace("+", "").replace("-", "").strip()
-            # Normalize and lookup
-            cursor.execute(fmt_query("SELECT name FROM customers WHERE replace(replace(phone, '-', ''), '+', '') LIKE ?"), (f"%{clean_from}%",))
-            row = cursor.fetchone()
-            conn.close()
-            
-            customer_name = row["name"] if row else None
-            if customer_name:
-                 first_name = customer_name.split()[0]
-                 metadata["customer_name"] = customer_name
-                 metadata["is_returning_customer"] = True
-                 greeting = f"Welcome back, {first_name}."
-                 logger.info(f"Returning customer identified: {customer_name} ({From})")
-            else:
-                 greeting = "Welcome to LB Automotive."
-            
-            # --- PHASE 2: Smart Jump Logic ---
-            # Now smart jump can use the metadata["customer_name"] if needed
-            if process_smart_jump(intent, llm_result, CallSid, metadata, response, language):
-                return Response(content=str(response), media_type="application/xml")
-            
-            # --- PHASE 3: Greeting and Initial Menu ---
-            upsert_call_state(CallSid, "welcome", language, metadata)
-
-            gather = Gather(
-                num_digits=1,
-                timeout=5,
-                bargein=True,
-                speechTimeout="auto",
-                input="speech dtmf",
-                action=f"{WEBHOOK_BASE_URL}?step=language",
-                method="POST"
-            )
-            
-            # If identified, we can ask more targeted questions or just go to menu
-            gather.say(
-                f"{greeting} For English, press 1 or say English. Para español, presione 2 o diga Español.",
-                voice="Polly.Matthew"
-            )
-            response.append(gather)
-        
-        elif step == "language":
-            # Check for Smart Jump here too (User said "I need brakes" at the first prompt)
-            if process_smart_jump(intent, llm_result, CallSid, metadata, response, language):
-                return Response(content=str(response), media_type="application/xml")
-
-            if Digits == "1" or (SpeechResult and "english" in SpeechResult.lower()):
-                language = "en"
-            elif Digits == "2" or (SpeechResult and "español" in SpeechResult.lower()):
-                language = "es"
-            
-            upsert_call_state(CallSid, "menu", language, metadata)
-            response.redirect(f"{WEBHOOK_BASE_URL}?step=menu")
-            return Response(content=str(response), media_type="application/xml")
-
-        elif step == "menu":
-            # Dynamic Response Generation
-            if SpeechResult:
-                 # If user said something but we didn't catch a direct intent or it was chatty
-                 context = "User is at the main menu. They can schedule an appointment or report an emergency."
-                 dynamic_reply = generate_response(SpeechResult, context)
-                 # Ensure we guide them back to the options if the LLM gets too chatty
-                 message = f"{dynamic_reply} To schedule an appointment, press 1. For emergencies, press 2."
-            else:
-                message = (
-                    "Para programar una cita, presione 1 o diga cita. Para emergencias, presione 2 o diga emergencia."
-                    if language == "es" else
-                    "To schedule an appointment, press 1 or say appointment. For road-side assistance and emergencies, press 2 or say emergency."
-                )
-
-            gather = Gather(
-                num_digits=1,
-                timeout=5,
-                bargein=True,  # Enable cut-off
-                speechTimeout="auto", # Reduce latency
-                input="speech dtmf",
-                action=f"{WEBHOOK_BASE_URL}?step=route_direct",
-                method="POST"
-            )
-            gather.say(message, voice=voice)
-            response.append(gather)
-        
-        elif step == "route_direct":
-            # Simplified routing: appointment (1) -> time selection, emergency (2) -> emergency services
-            is_emergency = False
-            if Digits == "2" or intent == "emergency":
-                is_emergency = True
-            elif Digits == "1" or intent == "appointment":
-                is_emergency = False
-            else:
-                # Check for speech numbers if intent wasn't clear
-                if SpeechResult:
-                    lower = SpeechResult.lower()
-                    if "one" in lower or "1" in lower or "appointment" in lower:
-                        is_emergency = False
-                    elif "two" in lower or "2" in lower or "emergency" in lower:
-                        is_emergency = True
-                    else:
-                        response.redirect(f"{WEBHOOK_BASE_URL}?step=menu")
-                        return Response(content=str(response), media_type="application/xml")
-                else:
-                    response.redirect(f"{WEBHOOK_BASE_URL}?step=menu")
-                    return Response(content=str(response), media_type="application/xml")
-
-            if is_emergency:
-                # Route to emergency services
-                conn = get_db_connection()
-                cursor = conn.cursor()
-                cursor.execute(fmt_query("""
-                    SELECT id, name, description, duration, price, category
-                    FROM services WHERE is_emergency = 1 ORDER BY name
-                """))
-                services = [dict(row) for row in cursor.fetchall()]
-                conn.close()
-                
-                metadata["services"] = services
-                upsert_call_state(CallSid, "select_emergency", language, metadata)
-                
-                message = (
-                    "Por favor seleccione el servicio de emergencia:"
-                    if language == "es" else
-                    "Please select from our available emergency services:"
-                )
-                
-                response.say(message, voice=voice)
-                
-                for idx, item in enumerate(services, 1):
-                    response.say(f"For {item['name']}, press {idx} or say {idx}", voice=voice)
-                
-                gather = Gather(
-                    num_digits=1,
-                    timeout=5,
-                    bargein=True,
-                    input="speech dtmf",
-                    action=f"{WEBHOOK_BASE_URL}?step=confirm_emergency",
-                    method="POST"
-                )
+        node = get_tree_node(step)
+        if node:
+            update_decision_path(CallSid, step)
+            node_type = node.get("type")
+            if node_type == "gather":
+                gc = node.get("gather_config", {})
+                next_s = node.get("transitions", {}).get(Digits or SpeechResult or "default", node.get("default", step))
+                gather = Gather(num_digits=gc.get("num_digits", 1), timeout=gc.get("timeout", 5), input=gc.get("input", "dtmf"), action=f"{WEBHOOK_BASE_URL}?step={next_s}")
+                gather.say(node.get(f"prompt_{language}", node.get("prompt_en")), voice=voice)
                 response.append(gather)
-            else:
-                # Route directly to time selection with default general service
-                # Create a default general service entry
-                default_service = {
-                    "id": "general",
-                    "name": "General Service",
-                    "duration": 60,  # Default 1 hour
-                    "category": "General"
-                }
-                
-                metadata["selected_service"] = default_service
-                metadata["selected_category"] = "General"
-                metadata["services"] = [default_service]
-                
-                upsert_call_state(CallSid, "select_time_direct", language, metadata)
-                response.redirect(f"{WEBHOOK_BASE_URL}?step=select_time_direct")
-                return Response(content=str(response), media_type="application/xml")
-
-        elif step == "route":
-            # Determine path based on input
-            is_emergency = False
-            if Digits == "2" or intent == "emergency":
-                is_emergency = True
-            elif Digits == "1" or intent == "appointment":
-                is_emergency = False
-            else:
-                 # Check for speech numbers if intent wasn't clear
-                 if SpeechResult:
-                     lower = SpeechResult.lower()
-                     if "one" in lower or "1" in lower:
-                         is_emergency = False
-                     elif "two" in lower or "2" in lower:
-                         is_emergency = True
-                     else:
-                        response.redirect(f"{WEBHOOK_BASE_URL}?step=menu")
-                        return Response(content=str(response), media_type="application/xml")
-                 else:
-                    response.redirect(f"{WEBHOOK_BASE_URL}?step=menu")
-                    return Response(content=str(response), media_type="application/xml")
-
-            conn = get_db_connection()
-            cursor = conn.cursor()
-            
-            if is_emergency:
-                # Emergency services
-                cursor.execute(fmt_query("""
-                    SELECT id, name, description, duration, price, category
-                    FROM services WHERE is_emergency = 1 ORDER BY name
-                """))
-                services = [dict(row) for row in cursor.fetchall()]
-                metadata["services"] = services
-                next_step = "select_emergency"
-                
-                message = (
-                    "Por favor seleccione el servicio de emergencia:"
-                    if language == "es" else
-                    "Please select from our available emergency services:"
-                )
-            else:
-                # Regular categories
-                cursor.execute(fmt_query("SELECT DISTINCT category FROM services ORDER BY category"))
-                categories = [row["category"] for row in cursor.fetchall()]
-                metadata["categories"] = categories
-                next_step = "select_category"
-                
-                message = (
-                    "Por favor seleccione una categoría:"
-                    if language == "es" else
-                    "Please select a category:"
-                )
-            conn.close()
-            
-            upsert_call_state(CallSid, next_step, language, metadata)
-            
-            response.say(message, voice=voice)
-            
-            items = metadata.get("services" if is_emergency else "categories", [])
-            for idx, item in enumerate(items, 1):
-                name = item["name"] if isinstance(item, dict) else item
-                # Capitalize categories for better speech synthesis
-                clean_name = name.capitalize() if isinstance(item, str) else name
-                response.say(f"For {clean_name}, press {idx} or say {idx}", voice=voice)
-            
-            gather = Gather(
-                num_digits=1,
-                timeout=5,
-                bargein=True,  # Enable cut-off
-                input="speech dtmf", # Enable speech
-                action=f"{WEBHOOK_BASE_URL}?step={'confirm_emergency' if is_emergency else 'select_service'}",
-                method="POST"
-            )
-            response.append(gather)
-
-        elif step == "select_service":
-            # Selection logic for category -> service
-            idx = -1
-            if Digits:
-                idx = int(Digits) - 1
-            elif SpeechResult:
-                # Try to parse number from speech
-                lower = SpeechResult.lower()
-                words_to_num = {"one": 1, "two": 2, "three": 3, "four": 4, "five": 5, "six": 6, "seven": 7, "eight": 8, "nine": 9}
-                for word, num in words_to_num.items():
-                    if word in lower or str(num) in lower:
-                        idx = num - 1
-                        break
-            
-            if idx == -1:
-                 response.redirect(f"{WEBHOOK_BASE_URL}?step=route") # Retry
-                 return Response(content=str(response), media_type="application/xml")
-            
-            categories = metadata.get("categories", [])
-            if 0 <= idx < len(categories):
-                selected_cat = categories[idx]
-                conn = get_db_connection()
-                cursor = conn.cursor()
-                cursor.execute(fmt_query("SELECT * FROM services WHERE category = ?"), (selected_cat,))
-                services = [dict(row) for row in cursor.fetchall()]
-                conn.close()
-                
-                metadata["services"] = services
-                metadata["selected_category"] = selected_cat
-                upsert_call_state(CallSid, "select_service_detail", language, metadata)
-                
-                response.say(f"Services for {selected_cat}:", voice=voice)
-                for i, svc in enumerate(services, 1):
-                    response.say(f"{svc['name']}, press {i} or say {i}", voice=voice)
-                
-                gather = Gather(
-                    num_digits=1,
-                    input="speech dtmf", # Enable Speech
-                    action=f"{WEBHOOK_BASE_URL}?step=select_time",
-                    method="POST"
-                )
-                response.append(gather)
-            else:
-                 response.say("Invalid selection", voice=voice)
-                 response.redirect(f"{WEBHOOK_BASE_URL}?step=route")
-
-        elif step == "select_time_direct":
-            # Simplified time selection - no service selection required
-            # Use the default general service from metadata
-            selected_service = metadata.get("selected_service", {"id": "general", "name": "General Service", "duration": 60})
-            
-            # Fetch availability for tomorrow
-            from utils_scheduler import get_available_slots_logic
-            tomorrow_date = (datetime.now() + timedelta(days=1)).strftime("%Y-%m-%d")
-            
-            # Get available slots using general service duration
-            slots = get_available_slots_logic(tomorrow_date, selected_service.get('id'))
-            
-            # If no slots with ID, try with duration-based logic
-            if not slots:
-                # Fallback: generate slots based on business hours
-                try:
-                    opening_str = get_setting('opening_time', "08:00")
-                    closing_str = get_setting('closing_time', "18:00")
-                    # Simple slot generation for demo
-                    slots = ["09:00", "10:00", "11:00", "13:00", "14:00", "15:00", "16:00"]
-                except Exception as e:
-                    logger.error(f"Error generating slots: {e}")
-                    slots = []
-            
-            # Check for morning and afternoon availability
-            has_morning = any(int(s.split(':')[0]) < 12 for s in slots)
-            has_afternoon = any(int(s.split(':')[0]) >= 12 for s in slots)
-            
-            if not slots:
-                message = (
-                    "Lo sentimos, no hay espacios disponibles mañana. Por favor llame durante horas de oficina para programar."
-                    if language == "es" else
-                    "Sorry, we have no available appointments tomorrow. Please call during business hours to schedule."
-                )
-                response.say(message, voice=voice)
+            elif node_type == "function":
+                handler_name = node.get("handler")
+                ns = None
+                if handler_name == "handle_smart_jump": ns = handle_smart_jump(intent, llm_result, CallSid, metadata, response, language)
+                elif handler_name == "handle_symptoms_processing": ns = handle_symptoms_processing(input_data, language, CallSid, metadata, response)
+                elif handler_name == "handle_booking": ns = handle_booking(None, language, CallSid, metadata, response)
+                if ns: response.redirect(f"{WEBHOOK_BASE_URL}?step={ns}")
+            elif node_type == "dynamic":
+                handler_name = node.get("handler")
+                if handler_name == "handle_service_category": handle_service_category(input_data, language, CallSid, metadata, response)
+                elif handler_name == "handle_time_selection": handle_time_selection(input_data, language, CallSid, metadata, response)
+                elif handler_name == "handle_emergency": handle_emergency(input_data, language, CallSid, metadata, response)
+            elif node_type == "terminal":
+                response.say(node.get(f"prompt_{language}", node.get("prompt_en")), voice=voice)
                 response.hangup()
-                return Response(content=str(response), media_type="application/xml")
-            
-            # Present time options
-            message = (
-                f"Tenemos disponibilidad mañana, {tomorrow_date}. "
-                if language == "es" else
-                f"We have availability tomorrow, {tomorrow_date}. "
-            )
-            
-            if has_morning and has_afternoon:
-                message += (
-                    "Para la mañana, presione 1. Para la tarde, presione 2."
-                    if language == "es" else
-                    "For morning, press 1. For afternoon, press 2."
-                )
-            elif has_morning:
-                message += (
-                    "Tenemos espacios en la mañana. Presione 1 para continuar."
-                    if language == "es" else
-                    "We have morning slots available. Press 1 to continue."
-                )
-            else:
-                message += (
-                    "Tenemos espacios en la tarde. Presione 2 para continuar."
-                    if language == "es" else
-                    "We have afternoon slots available. Press 2 to continue."
-                )
-            
-            response.say(message, voice=voice)
-            
-            metadata["available_slots"] = slots
-            metadata["target_date"] = tomorrow_date
-            upsert_call_state(CallSid, "collect_symptoms", language, metadata)
-            
-            gather = Gather(
-                num_digits=1,
-                input="speech dtmf",
-                timeout=5,
-                action=f"{WEBHOOK_BASE_URL}?step=collect_symptoms",
-                method="POST"
-            )
-            response.append(gather)
-
-        elif step == "select_time":
-            # Service selected, pick time
-            idx = -1
-            if Digits:
-                idx = int(Digits) - 1
-            elif SpeechResult:
-                 lower = SpeechResult.lower()
-                 words_to_num = {"one": 1, "two": 2, "three": 3, "four": 4, "five": 5}
-                 for word, num in words_to_num.items():
-                    if word in lower or str(num) in lower:
-                        idx = num - 1
-                        break
-
-            services = metadata.get("services", [])
-            if 0 <= idx < len(services):
-                selected_service = services[idx]
-                metadata["selected_service"] = selected_service
-                
-                # Fetch REAL availability for tomorrow
-                from utils_scheduler import get_available_slots_logic
-                tomorrow_date = (datetime.now() + timedelta(days=1)).strftime("%Y-%m-%d")
-                
-                # We need the service ID to check duration/slots
-                # Ensure the service dict has 'id', otherwise we might fail if metadata is incomplete
-                service_id = selected_service.get('id') 
-                
-                slots = []
-                if service_id:
-                     slots = get_available_slots_logic(tomorrow_date, service_id)
-                
-                # Aggregate logic: Check for Morning (before 12) and Afternoon (after 12) availability
-                has_morning = any(int(s.split(':')[0]) < 12 for s in slots)
-                has_afternoon = any(int(s.split(':')[0]) >= 12 for s in slots)
-                
-                # Use LLM to generate natural language summary of availability
-                from llm_service import analyze_schedule
-                
-                # Format slots for the LLM
-                slot_summary = analyze_schedule(slots, tomorrow_date, selected_service.get('name', 'Service'))
-                
-                # Check if the LLM output suggests options (it usually will for valid slots)
-                # We need to construct the speech.
-                # If no slots, the LLM will provide the "Fully booked" message which we can use directly.
-                
-                response.say(slot_summary, voice=voice)
-                
-                if not slots:
-                     response.hangup()
-                     return Response(content=str(response), media_type="application/xml")
-
-                metadata["available_slots"] = slots # Store for confirmation logic
-                metadata["target_date"] = tomorrow_date
-                upsert_call_state(CallSid, "select_time_slot_confirm", language, metadata)
-                
-                # We still need a Gather for the user's choice
-                # The LLM prompt asks the user to "say their preferred time".
-                gather = Gather(num_digits=1, input="speech dtmf", action=f"{WEBHOOK_BASE_URL}?step=collect_symptoms")
-                response.append(gather)
-            else:
-                response.say("Invalid selection", voice=voice)
-                response.redirect(f"{WEBHOOK_BASE_URL}?step=select_service")
-
-        elif step == "collect_symptoms":
-             # Save selection first if coming from select_time
-            if Digits:
-                choice = Digits
-                # Store the choice for later use in confirm_booking
-                metadata["time_slot_choice"] = choice
-                upsert_call_state(CallSid, "collect_symptoms", language, metadata)
-            elif SpeechResult:
-                 # Minimal logic if we just came from select_time confirmation loop
-                 lower = SpeechResult.lower()
-                 if "morning" in lower or "one" in lower or "1" in lower:
-                    choice = "1"
-                 elif "afternoon" in lower or "two" in lower or "2" in lower:
-                    choice = "2"
-                 else:
-                    choice = None
-                 
-                 if choice:
-                    metadata["time_slot_choice"] = choice
-                    upsert_call_state(CallSid, "collect_symptoms", language, metadata)
-                 else:
-                    response.say("Invalid time selection. Please try again.", voice=voice)
-                    response.redirect(f"{WEBHOOK_BASE_URL}?step=select_time")
-                    return Response(content=str(response), media_type="application/xml")
-            else:
-                # If no Digits or SpeechResult, redirect back to select_time
-                response.say("No selection received for time. Please try again.", voice=voice)
-                response.redirect(f"{WEBHOOK_BASE_URL}?step=select_time")
-                return Response(content=str(response), media_type="application/xml")
-            
-            message = (
-                "Please briefly describe the issue with your vehicle after the beep. For example, say 'I need an oil change' or 'my brakes are squeaking'."
-                if language == "en" else
-                "Por favor describa brevemente el problema. Por ejemplo, diga 'necesito un cambio de aceite' o 'mis frenos hacen ruido'."
-            )
-            
-            response.say(message, voice=voice)
-            
-            # Use Gather instead of Record to get immediate transcription
-            gather = Gather(
-                input="speech",
-                timeout=5,
-                speechTimeout="auto",
-                action=f"{WEBHOOK_BASE_URL}?step=process_symptoms",
-                method="POST"
-            )
-            response.append(gather)
-
-        elif step == "process_symptoms":
-            # Store symptoms
-            symptoms = "User provided audio description" 
-            if SpeechResult: 
-                 from llm_service import generate_response
-                 system_prompt = (
-                     "You are an automotive service advisor receiving a transcribed voicemail from a customer. "
-                     "Extract the core issue or symptoms into a concise 1-2 sentence structured note for the mechanic. "
-                     "Fix any transcription errors based on typical car issues. Output ONLY the note, nothing else."
-                 )
-                 try:
-                     summary = generate_response(SpeechResult, "", system_prompt)
-                     if "trouble thinking" not in summary.lower() and len(summary) > 5:
-                         symptoms = summary
-                     else:
-                         symptoms = SpeechResult
-                 except Exception as e:
-                     logger.error(f"Error summarizing symptoms via LLM: {e}")
-                     symptoms = SpeechResult
-            elif Digits:
-                 symptoms = "User pressed digits during description"
-            
-            metadata["symptoms"] = symptoms
-            upsert_call_state(CallSid, "confirm_booking", language, metadata)
-
-            # Now proceed to confirm booking with the collected symptoms
-            response.redirect(f"{WEBHOOK_BASE_URL}?step=confirm_booking")
+            track_decision(CallSid, step, input_data)
             return Response(content=str(response), media_type="application/xml")
-
-        elif step == "confirm_booking":
-            chosen_slot = None
-            # Retrieve choice from metadata, set in collect_symptoms
-            choice = metadata.get("time_slot_choice")
-
-            if choice:
-                # Default to General Service if selected_service is missing or empty
-                svc = metadata.get("selected_service") or {}
-                service_name = svc.get('name', 'General Service')
-                
-                target_date_str = metadata.get("target_date")
-                slots = metadata.get("available_slots", [])
-                
-                # Resolve approximate choice to specific slot
-                if choice == "1": # Morning
-                    for s in slots:
-                        if int(s.split(':')[0]) < 12:
-                            chosen_slot = s
-                            break
-                elif choice == "2": # Afternoon
-                    for s in slots:
-                        if int(s.split(':')[0]) >= 12:
-                            chosen_slot = s
-                            break
-                
-                if chosen_slot:
-                    # RATE LIMIT CHECK
-                    if not check_rate_limit(From):
-                        logger.warning(f"Rate limit exceeded for {From}")
-                        response.say("You have too many pending appointments. Please call us directly.", voice=voice)
-                        response.hangup()
-                        return Response(content=str(response), media_type="application/xml")
-
-                    # Book it
-                    appt_time = f"{target_date_str}T{chosen_slot}:00"
-                    
-                    conn = get_db_connection()
-                    cursor = conn.cursor()
-                    aid = str(uuid.uuid4())
-                    
-                    customer_name = metadata.get("customer_name", "Voice Customer")
-                    symptoms_desc = metadata.get("symptoms", "No symptoms provided.")
-                    
-                    # Ensure we don't have "Unknown Service"
-                    if not service_name or service_name == "Service":
-                        service_name = "General Service"
-
-                    # Insert with notes!
-                    logger.info(f"Booking Appointment: Name='{customer_name}', Notes='{symptoms_desc}'")
-                    cursor.execute(fmt_query("""
-                        INSERT INTO appointments (id, customer_name, phone_number, appointment_time, service_type, status, notes)
-                        VALUES (?, ?, ?, ?, ?, ?, ?)
-                    """), (aid, customer_name, From, appt_time, service_name, 'pending', symptoms_desc)) 
-                    conn.commit()
-                    conn.close()
-                    
-                    upsert_call_state(CallSid, "completed", language, metadata, aid)
-                    
-                    # Human friendly time readout
-                    h, m = map(int, chosen_slot.split(':'))
-                    ampm = "AM" if h < 12 else "PM"
-                    h_display = h if h <= 12 else h - 12
-                    
-                    response.say(f"Appointment confirmed for {h_display}:{m:02d} {ampm}. Goodbye.", voice=voice)
-                    response.hangup()
-                else:
-                    response.say("Sorry, that time block is no longer available.", voice=voice)
-                    response.redirect(f"{WEBHOOK_BASE_URL}?step=select_time") # Retry
-            else:
-                response.redirect(f"{WEBHOOK_BASE_URL}?step=select_time") # Retry
-
-        elif step == "confirm_emergency":
-           # Similar logic for emergency but faster
-           if Digits:
-               idx = int(Digits) - 1
-               services = metadata.get("services", [])
-               if 0 <= idx < len(services):
-                   svc = services[idx]
-                   # Book ASAP
-                   conn = get_db_connection()
-                   cursor = conn.cursor()
-                   aid = str(uuid.uuid4())
-                   cursor.execute(fmt_query("""
-                       INSERT INTO appointments (id, customer_name, phone_number, appointment_time, service_type, status, emergency_request)
-                       VALUES (?, ?, ?, ?, ?, ?, 1)
-                   """), (aid, "Emergency Caller", From, datetime.now().isoformat(), svc.get('name'), 'pending'))
-                   conn.commit()
-                   conn.close()
-                   
-                   response.say("Emergency team notified. We will call you back shortly.", voice=voice)
-                   response.hangup()
-
-        else:
-            response.say("Goodbye.", voice=voice)
-            response.hangup()
-
+        response.say("Goodbye.", voice=voice)
+        response.hangup()
         return Response(content=str(response), media_type="application/xml")
-
     except Exception as e:
-        import traceback
-        error_details = traceback.format_exc()
-        logger.error(f"Webhook error: {e}")
-        logger.error(f"Full traceback:\n{error_details}")
-        print(f"WEBHOOK ERROR: {e}")
-        print(f"TRACEBACK:\n{error_details}")
-        response.say("An error occurred. Please try again later.", voice="Polly.Matthew")
+        logger.error(f"IVR Error: {e}")
+        response.say("An error occurred.", voice="Polly.Matthew")
         response.hangup()
         return Response(content=str(response), media_type="application/xml")
