@@ -230,16 +230,16 @@ pipeline {
                                     fi
 
                                     STATUS_JSON=$(sudo k3s kubectl exec -n "$NS" "$POD" -c vault -- \
-                                      env VAULT_ADDR=https://127.0.0.1:8200 VAULT_SKIP_VERIFY=true vault status -format=json 2>/dev/null || echo "{}")
+                                      env VAULT_ADDR=http://127.0.0.1:8200 vault status -format=json 2>/dev/null || echo "{}")
 
                                     if echo "$STATUS_JSON" | grep -q '"sealed"[[:space:]]*:[[:space:]]*true'; then
                                       echo "▶ Unseal Vault is sealed — unsealing with Jenkins keys..."
                                       sudo k3s kubectl exec -n "$NS" "$POD" -c vault -- \
-                                        env VAULT_ADDR=https://127.0.0.1:8200 VAULT_SKIP_VERIFY=true vault operator unseal "$K1" >/dev/null
+                                        env VAULT_ADDR=http://127.0.0.1:8200 vault operator unseal "$K1" >/dev/null
                                       sudo k3s kubectl exec -n "$NS" "$POD" -c vault -- \
-                                        env VAULT_ADDR=https://127.0.0.1:8200 VAULT_SKIP_VERIFY=true vault operator unseal "$K2" >/dev/null
+                                        env VAULT_ADDR=http://127.0.0.1:8200 vault operator unseal "$K2" >/dev/null
                                       sudo k3s kubectl exec -n "$NS" "$POD" -c vault -- \
-                                        env VAULT_ADDR=https://127.0.0.1:8200 VAULT_SKIP_VERIFY=true vault operator unseal "$K3" >/dev/null
+                                        env VAULT_ADDR=http://127.0.0.1:8200 vault operator unseal "$K3" >/dev/null
                                       echo "✅ Unseal Vault unseal commands applied."
                                     else
                                       echo "▶ Unseal Vault is already unsealed (or status unavailable) — continuing."
