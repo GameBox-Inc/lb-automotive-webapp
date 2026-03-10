@@ -6,7 +6,7 @@
 const fs = require('fs');
 const path = require('path');
 
-const dirs = ['frontend/public', 'frontend/src', 'public'];
+const dirs = ['frontend/public', 'frontend/src', 'public', 'python-backend/static/audio'];
 const exts = ['.wav', '.mp3', '.ogg', '.m4a'];
 
 let found = 0;

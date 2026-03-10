@@ -1,6 +1,7 @@
 import json
 import logging
 import asyncio
+import functools
 from typing import Dict, Any, Optional
 from services.llm import classify_intent
 from security import redis_client
@@ -10,21 +11,27 @@ from observability.tracing import restore_trace_context, update_phase, PHASE_LLM
 logger = logging.getLogger(__name__)
 
 
-async def process_ivr_intent_async(call_sid: str, speech_text: str, trace_ctx: Optional[Dict[str, Any]] = None):
+async def process_ivr_intent_async(
+    call_sid: str,
+    speech_text: str,
+    trace_ctx: Optional[Dict[str, Any]] = None,
+    conversation_context: Optional[str] = None,
+):
     """
     Background task to process intent and store in Redis.
     Restores trace context so logs include callSid, requestId, etc.
+    conversation_context: optional "Last intent: X, step: Y" for follow-up resolution.
     """
     if trace_ctx:
         restore_trace_context(trace_ctx)
     update_phase(PHASE_LLM_STARTED)
     start_time = asyncio.get_event_loop().time()
     try:
-        logger.info(f"Async processing intent for {call_sid}: {speech_text}")
-        
-        # Run classification in a thread pool since it's synchronous requests-based
+        logger.info(f"Async processing intent for {call_sid}: {speech_text}", extra={"conversation_context": conversation_context})
         loop = asyncio.get_event_loop()
-        llm_result = await loop.run_in_executor(None, classify_intent, speech_text)
+        llm_result = await loop.run_in_executor(
+            None, functools.partial(classify_intent, speech_text, conversation_context)
+        )
         
         # Store result in Redis (valid for 2 minutes)
         if redis_client:

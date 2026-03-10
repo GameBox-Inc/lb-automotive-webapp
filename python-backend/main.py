@@ -1,10 +1,12 @@
 import os
 import logging
 from contextlib import asynccontextmanager
+from pathlib import Path
 from fastapi import FastAPI, Request, status, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.exceptions import RequestValidationError
+from fastapi.staticfiles import StaticFiles
 from database import init_db, seed_data, get_db_connection, DB_PATH
 from routes import appointments, services, auth_routes, cases, staff, customers, settings, business_hours
 from security import rate_limit_middleware, security_headers_middleware
@@ -153,6 +155,11 @@ app.include_router(stream_router)
 app.include_router(analytics_router)
 app.include_router(business_hours.router)
 app.include_router(deployment_routes.router)
+
+# Static audio for IVR (thinking sound, etc.) — served at /audio/*
+_audio_dir = Path(__file__).resolve().parent / "static" / "audio"
+if _audio_dir.exists():
+    app.mount("/audio", StaticFiles(directory=str(_audio_dir)), name="audio")
 
 
 @app.get("/api/debug/db")

@@ -90,6 +90,14 @@ spec:
         ports:
         - containerPort: 8000
 
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 8000
+          initialDelaySeconds: 20
+          periodSeconds: 10
+          failureThreshold: 3
+
         # Secrets are injected from Vault — no more secretKeyRef ENV vars.
         # The startup command sources all three env files before exec-ing uvicorn.
         command:

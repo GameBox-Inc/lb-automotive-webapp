@@ -56,3 +56,31 @@ spec:
         - name: backend
           namespace: lb-automotive
           port: 8000
+
+    # 3. Audio files (IVR thinking sound, etc.) — GET only
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /audio
+          method: GET
+      backendRefs:
+        - name: backend
+          namespace: lb-automotive
+          port: 8000
+
+    # 4. Legacy /lb-automotive/audio for Twilio media fetches
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /lb-automotive/audio
+          method: GET
+      filters:
+        - type: URLRewrite
+          urlRewrite:
+            path:
+              type: ReplacePrefixMatch
+              replacePrefixMatch: /audio
+      backendRefs:
+        - name: backend
+          namespace: lb-automotive
+          port: 8000

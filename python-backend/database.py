@@ -411,7 +411,9 @@ def seed_data():
         ('ivr_filler_mode', 'hybrid', 'Filler mode (voice_only, sound_only, hybrid)'),
         ('ivr_filler_phrases', '["One moment...", "Let me check that for you...", "Got it, one second...", "Understood, just a moment.", "Checking our system, one second please."]', 'JSON list of filler phrases'),
         ('ivr_thinking_sound_url', 'https://twilio.kozytherocket.space/audio/thinking.mp3', 'URL for background thinking sound'),
-        ('ivr_processing_timeout', '10', 'Max seconds to wait for AI response before fallback')
+        ('ivr_processing_timeout', '10', 'Max seconds to wait for AI response before fallback'),
+        ('ivr_speech_timeout', 'auto', 'Twilio speechTimeout: auto or seconds (e.g. 3)'),
+        ('ivr_repair_max_retries', '3', 'Max timeouts before offering transfer')
     ]
 
     for key, value, desc in default_settings:

@@ -36,11 +36,10 @@ def create_case(
 
     case_id = str(uuid.uuid4())
     
-    # Generate simple case number (auto-increment simulation or random)
-    # For SQLite simplicity, we'll just use a random int or timestamp based
-    # Better approach: SELECT MAX(case_number) + 1
-    cursor.execute(fmt_query("SELECT MAX(case_number) FROM cases"))
-    max_num = cursor.fetchone()[0]
+    # Generate simple case number (auto-increment simulation)
+    cursor.execute(fmt_query("SELECT MAX(case_number) AS max_num FROM cases"))
+    row = cursor.fetchone()
+    max_num = row.get("max_num") if row else None
     case_number = (max_num or 1000) + 1
 
     metadata_json = json.dumps(case_data.metadata or {})
@@ -62,8 +61,8 @@ def create_case(
         case_number=row["case_number"],
         appointment_id=row["appointment_id"],
         status=row["status"],
-        customer_signature=row["customer_signature"],
-        metadata=json.loads(row["metadata"]),
+        customer_signature=row.get("customer_signature"),
+        metadata=json.loads(row["metadata"] or "{}"),
         created_at=row["created_at"],
         closed_at=row["closed_at"]
     )
@@ -204,7 +203,7 @@ def add_case_note(
             row = cursor.fetchone()
             
             if row:
-                staff_id = row[0]
+                staff_id = row["id"] if isinstance(row, dict) else row[0]
             else:
                 # Create System Admin staff
                 new_staff_id = str(uuid.uuid4())

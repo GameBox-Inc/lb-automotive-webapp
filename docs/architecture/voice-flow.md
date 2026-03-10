@@ -88,8 +88,20 @@ When speech is detected, the system uses an LLM to classify intent. If the user 
 ## Voice Configuration
 
 - **Voice:** `Polly.Matthew` (en), `Polly.Lupe` (es)
-- **Settings:** `ivr_voice`, `ivr_language`, `ivr_latency_masking_enabled` from DB
+- **Settings:** `ivr_voice`, `ivr_language`, `ivr_latency_masking_enabled`, `ivr_filler_mode`, `ivr_speech_timeout`, `ivr_repair_max_retries` from DB
 - **24/7:** No business-hours blocking; calls accepted anytime
+
+---
+
+## Conversational UX
+
+- **Barge-in:** Speech `<Gather>` nodes use `bargeIn="true"` so callers can interrupt prompts.
+- **Turn detection:** `speechTimeout` from node `gather_config` or `ivr_speech_timeout` (e.g. `auto`) controls when Twilio treats the caller as done speaking.
+- **Latency masking:** After caller speech, the app returns immediately with a short acknowledgement (`ivr_filler_mode`: voice_only, sound_only, or hybrid with thinking sound); LLM runs async and the next request uses the result.
+- **Repair:** On timeout/no input, the IVR says "Sorry, I didn't catch that. Let's try again." and re-gathers; after `ivr_repair_max_retries` it offers transfer.
+- **Context:** `last_intent` is stored and passed to the classifier so follow-ups like "yes" or "that one" can be resolved.
+
+See [IVR Conversational Upgrade](ivr-conversational-upgrade.md) for design and implementation details.
 
 ---
 

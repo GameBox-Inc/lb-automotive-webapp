@@ -3,6 +3,7 @@ import functools
 import json
 import logging
 import os
+from typing import Optional
 
 from utils.reliability import graceful_fallback
 
@@ -50,15 +51,14 @@ def _generate_response_anthropic(prompt: str, context: str = "", system_prompt: 
     return "I'm having trouble thinking right now."
 
 
-@graceful_fallback(fallback_value={"intent": "unknown"}, circuit_name="llm_classifier")
-@functools.lru_cache(maxsize=100)
-def classify_intent(text: str) -> dict:
-    """Classify intent and extract entities."""
+def _classify_intent_impl(text: str, conversation_context: Optional[str] = None) -> dict:
+    """Classify intent and extract entities. Optional conversation context for follow-ups."""
     system_prompt = """Extract JSON: {"intent": "appointment"|"status_update"|"representative"|"emergency"|"spanish"|"other"|"unknown", "service": str|null, "time": str|null, "vehicle": str|null, "license_plate": str|null}
-Only return JSON."""
+Only return JSON. If the user says "yes", "that one", "same", use context to resolve."""
 
     if anthropic_client:
-        user_prompt = f"User Input: {text}\n\nReturn ONLY the JSON object, no other text:"
+        context_line = f"\nConversation context: {conversation_context}" if conversation_context else ""
+        user_prompt = f"User Input: {text}{context_line}\n\nReturn ONLY the JSON object, no other text:"
         message = anthropic_client.messages.create(
             model=ANTHROPIC_MODEL,
             max_tokens=200,
@@ -75,6 +75,19 @@ Only return JSON."""
     if start != -1 and end != -1:
         result = result[start : end + 1]
     return json.loads(result)
+
+
+@graceful_fallback(fallback_value={"intent": "unknown"}, circuit_name="llm_classifier")
+def classify_intent(text: str, conversation_context: Optional[str] = None) -> dict:
+    """Classify intent; uses cache only when no context to avoid stale follow-ups."""
+    if conversation_context:
+        return _classify_intent_impl(text, conversation_context)
+    return _classify_intent_cached(text)
+
+
+@functools.lru_cache(maxsize=100)
+def _classify_intent_cached(text: str) -> dict:
+    return _classify_intent_impl(text, None)
 
 
 def generate_repair_note(text: str) -> str:
