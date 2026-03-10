@@ -40,7 +40,7 @@ sudo k3s kubectl get pods -n vault-unseal
 sudo k3s kubectl get pods -n gamebox-security
 ```
 
-If `vault-unseal` namespace doesn't exist or Unseal Vault isn't deployed, Main Vault cannot auto-unseal. Deploy Unseal Vault first (see `deployment/k8s/vault-transit-autounseal/README.md`).
+If `vault-unseal` namespace doesn't exist or `unseal-vault-0` isn't deployed, Main Vault cannot auto-unseal. Deploy Unseal Vault first (see `deployment/k8s/vault-transit-autounseal/README.md`).
 
 ### 2. Ensure Unseal Vault is deployed before gamebox-security
 
@@ -57,17 +57,17 @@ sudo k3s kubectl apply -f ~/k8s-manifests/k8s/vault-transit-autounseal/unseal-va
 Unseal Vault uses **manual unseal** (Shamir). When its pod restarts, you must unseal it:
 
 ```bash
-# Check status
-sudo k3s kubectl exec -n vault-unseal vault-0 -c vault -- \
-  env VAULT_SKIP_VERIFY=true vault status
+# Check status (Unseal Vault uses HTTP internally)
+sudo k3s kubectl exec -n vault-unseal unseal-vault-0 -c vault -- \
+  env VAULT_ADDR=http://127.0.0.1:8200 vault status
 
 # Unseal with keys (typically 3 of 5)
-sudo k3s kubectl exec -n vault-unseal vault-0 -c vault -- \
-  env VAULT_SKIP_VERIFY=true vault operator unseal <KEY1>
-sudo k3s kubectl exec -n vault-unseal vault-0 -c vault -- \
-  env VAULT_SKIP_VERIFY=true vault operator unseal <KEY2>
-sudo k3s kubectl exec -n vault-unseal vault-0 -c vault -- \
-  env VAULT_SKIP_VERIFY=true vault operator unseal <KEY3>
+sudo k3s kubectl exec -n vault-unseal unseal-vault-0 -c vault -- \
+  env VAULT_ADDR=http://127.0.0.1:8200 vault operator unseal <KEY1>
+sudo k3s kubectl exec -n vault-unseal unseal-vault-0 -c vault -- \
+  env VAULT_ADDR=http://127.0.0.1:8200 vault operator unseal <KEY2>
+sudo k3s kubectl exec -n vault-unseal unseal-vault-0 -c vault -- \
+  env VAULT_ADDR=http://127.0.0.1:8200 vault operator unseal <KEY3>
 ```
 
 Store Unseal Vault root token and unseal keys securely (see your credentials document).

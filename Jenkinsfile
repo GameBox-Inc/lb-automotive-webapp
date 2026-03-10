@@ -288,7 +288,7 @@ REMOTEOF
                                     set -e
                                     TOKEN="$1"
                                     NS="gamebox-security"
-                                    CM="vault"
+                                    CM="vault-config"
 
                                     echo "▶ Reading current ConfigMap..."
                                     CURRENT=$(sudo k3s kubectl get configmap "$CM" -n "$NS" \

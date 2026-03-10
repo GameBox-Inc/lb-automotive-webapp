@@ -82,6 +82,8 @@ Backend uses Vault Agent init to inject secrets. If init fails:
 - **VPN:** `10.100.0.1:30080` → frontend → backend.
 - **Public:** Cloudflare → Traefik → backend (Twilio only).
 
+**Quick diagnostic:** Run `./scripts/k8s-debug-summary.sh lb-admin@178.156.223.196` from repo root. See [Common Failures § 502](../incidents/common-failures.md#1-502-bad-gateway-frontend--api).
+
 ---
 
 ## Vault Unseal

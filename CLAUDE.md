@@ -435,6 +435,8 @@ Every new feature MUST follow these security practices:
 - `SECURITY_IMPROVEMENTS_SUMMARY.md` - Security changes log
 - `ARCHITECTURE_GAP_ANALYSIS.md` - Current vs. future architecture
 - `python-backend/README.md` - Backend-specific docs
+- `docs/howto/vault-transit-token-management.md` - **Vault transit token + Jenkins credential management**
+- `docs/incidents/common-failures.md` - Common failure modes and fixes
 
 ### Scripts
 - `deployment/scripts/configure-vault-supabase.sh` - **Store Supabase/PostgreSQL URL in Vault**
