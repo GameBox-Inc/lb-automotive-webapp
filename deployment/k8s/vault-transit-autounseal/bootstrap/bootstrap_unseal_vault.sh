@@ -73,8 +73,29 @@ else
 fi
 
 # ── Step 5: Login with root token ─────────────────────────────────────────────
-ROOT_TOKEN=$(jq -r '.root_token' "$OUTPUT_DIR/unseal_init.json" 2>/dev/null || \
-  { echo "Enter Unseal Vault root token:"; read -rs TOKEN; echo "$TOKEN"; })
+ROOT_TOKEN=""
+
+# Prefer root token from init output if available
+if [ -f "$OUTPUT_DIR/unseal_init.json" ]; then
+  ROOT_TOKEN="$(jq -r '.root_token' "$OUTPUT_DIR/unseal_init.json" 2>/dev/null || true)"
+fi
+
+# Allow explicit env var override (useful when init file is stored offline)
+if [ -z "${ROOT_TOKEN:-}" ] && [ -n "${UNSEAL_VAULT_ROOT_TOKEN:-}" ]; then
+  ROOT_TOKEN="$UNSEAL_VAULT_ROOT_TOKEN"
+fi
+
+# If still missing, prompt operator (from /dev/tty to avoid non-interactive stdin issues)
+if [ -z "${ROOT_TOKEN:-}" ] || [ "$ROOT_TOKEN" = "null" ]; then
+  echo "Enter Unseal Vault root token (input hidden):" >/dev/tty
+  read -rs TOKEN </dev/tty || true
+  echo "" >/dev/tty
+  ROOT_TOKEN="$TOKEN"
+fi
+
+if [ -z "${ROOT_TOKEN:-}" ] || [ "$ROOT_TOKEN" = "null" ]; then
+  error "Unseal Vault root token not provided. Set UNSEAL_VAULT_ROOT_TOKEN or place $OUTPUT_DIR/unseal_init.json next to this script."
+fi
 vault_exec vault login "$ROOT_TOKEN" > /dev/null
 info "✅ Logged in with root token"
 
