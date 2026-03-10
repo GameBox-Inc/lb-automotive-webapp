@@ -198,13 +198,6 @@ jobs:
           sudo k3s kubectl apply -f deployment/k8s/ingress.yaml
           sudo k3s kubectl apply -f deployment/k8s/disk-monitor-cronjob.yaml
 
-          # Update image pull secret for GHCR
-          echo "🔐 Updating image pull secret..."
-          sudo k3s kubectl create secret docker-registry ghcr-secret -n lb-automotive \
-            --docker-server=ghcr.io \
-            --docker-username=${{ github.actor }} \
-            --docker-password=$GH_TOKEN \
-            --dry-run=client -o yaml | sudo k3s kubectl apply -f -
 
           # Restart deployments to pick up new images
           echo "🔄 Restarting deployments..."
