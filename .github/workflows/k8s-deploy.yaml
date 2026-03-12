@@ -1,10 +1,14 @@
 name: K8s CI/CD Pipeline
 
+# Production deploy is Jenkins-only (single pipeline owner). This workflow runs
+# tests + build on push; deploy runs only when triggered manually (workflow_dispatch).
+# See: docs/architecture/vault-stability-and-improvements.md
 on:
   push:
     branches: [ "main", "master", "release/*" ]
   pull_request:
     branches: [ "main", "master", "release/*" ]
+  workflow_dispatch:  # Allow manual deploy from Actions tab
 
 env:
   REGISTRY: ghcr.io
@@ -125,7 +129,9 @@ jobs:
 
   deploy:
     needs: build-and-push
-    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master' || startsWith(github.ref, 'refs/heads/release/'))
+    # Only deploy on manual trigger (workflow_dispatch). Automatic push no longer
+    # deploys — Jenkins is the single pipeline owner for production (Vault + app).
+    if: github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && false)
     runs-on: self-hosted  # Uses self-hosted runner on your server
     environment:
       name: production

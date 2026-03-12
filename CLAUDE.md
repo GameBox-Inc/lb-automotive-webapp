@@ -32,7 +32,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - **Cache/Queue:** Redis (64MB limit, LRU eviction)
 - **Reverse Proxy:** Frontend Nginx → Backend (replaces K3s Ingress)
 - **Ingress Routing:** Traefik v3 via Kubernetes Gateway API (Cloudflare Tunnel → Traefik → services)
-- **Secrets Management:** Dual-Vault Architecture (Main Vault app secrets auto-unsealed via Unseal Vault using Transit engine)
+- **Secrets Management:** K8s Secrets for lb-automotive backend (app-secrets, twilio-secrets, anthropic-secrets). No Vault dependency for the app.
 - **Deployment:** Kubernetes (K3s) on Hetzner server (178.156.223.196)
 - **Domain:** kozytherocket.space
 - **CI/CD:** Jenkins (Dockerized, self-hosted) — replaced GitHub Actions
@@ -68,7 +68,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - WireGuard VPN (for secure server access, subnet 10.100.0.0/24)
 - Jenkins CI/CD (Dockerized, `Jenkinsfile` in repo root)
 - GitHub Container Registry (GHCR) for Docker images
-- HashiCorp Vault for secrets (deployed via Helm in `gamebox-security` & `vault-unseal` namespaces, uses Transit Auto-Unseal)
+- Application secrets via K8s Secrets in `lb-automotive` (see `deployment/k8s/create-secrets.sh`). Vault may remain in `gamebox-security` for other workloads.
 - Traefik v3 as Gateway API ingress controller
 - Automated log rotation and compression (7-day retention)
 - Monthly database archiving (K8s CronJob)
@@ -266,23 +266,16 @@ CSP_POLICY=strict  # or "development"
   3. Docker images built & pushed to GHCR
   4. K8s manifests synced to server via SCP
   5. `kubectl apply` for all manifests
-  6. Vault auto-unseal (keys stored in Jenkins credentials)
+  6. Ensure app-secrets exist (from Jenkins credentials secret-key, allowed-origins)
   7. `kubectl set image` to update deployments
   8. Rollout status verification
 - **Jenkins:** Dockerized, accessible on server
-- **Key credentials (in Jenkins):** `github-token`, `lb-server-ssh`, `vault-unseal-key-1/2/3`
+- **Key credentials (in Jenkins):** `github-token`, `lb-server-ssh`, `secret-key`, `allowed-origins`
 
-### Secrets Management (Vault)
-- **Status:** ✅ Deployed via Helm in `gamebox-security` namespace (Transit Auto-Unseal)
-- **Files:** `deployment/k8s/gamebox-security/vault/`
-- **Secrets stored (KV v2 paths):**
-  - `secret/data/lb-automotive/app` — SECRET_KEY, ALLOWED_ORIGINS, REDIS_URL, CSP_POLICY, etc.
-  - `secret/data/lb-automotive/twilio` — Twilio credentials
-  - `secret/data/lb-automotive/anthropic` — Anthropic API key
-  - `gamebox/data/clients/lb-autorepair/database` — **DATABASE_URL** (PostgreSQL/Supabase), optional `read_url`
-- **Injection:** Vault Agent sidecar writes to `/vault/secrets/*.env`, sourced by `command:` in `backend.yaml`
-- **Configure Supabase:** Run `deployment/scripts/configure-vault-supabase.sh` with `VAULT_TOKEN` and `DATABASE_URL`
-- **⚠️ Main Vault uses Transit seal** — auto-unseals via Unseal Vault; no manual unseal keys
+### Secrets Management (K8s Secrets)
+- **Status:** Backend reads from K8s Secrets (no Vault dependency). Create via `deployment/k8s/create-secrets.sh` or Jenkins "Ensure App Secrets" stage.
+- **Secrets:** `app-secrets` (SECRET_KEY, ALLOWED_ORIGINS, DATABASE_URL, REDIS_URL, LLM_PROVIDER, CSP_POLICY), `twilio-secrets`, `anthropic-secrets` (optional).
+- **Jenkins:** Add secret-text credentials `secret-key` and `allowed-origins`; pipeline creates/updates `app-secrets`. For Twilio/Anthropic run `create-secrets.sh` on the server once.
 
 ### Routing Architecture
 - **VPN users:** `10.100.0.1:30080` → frontend Nginx → `proxy_pass http://backend:8000` for `/api/*`
@@ -329,7 +322,7 @@ CSP_POLICY=strict  # or "development"
 4. Builds & pushes Docker images to GHCR
 5. SCPs K8s manifests to `~/k8s-manifests/` on server
 6. `kubectl apply` for all namespaces + manifests
-7. Auto-unseals Vault if sealed
+7. Ensures app-secrets exist (from Jenkins credentials)
 8. `kubectl set image` to update backend + frontend deployments
 9. Waits for rollout completion
 
@@ -407,7 +400,7 @@ Every new feature MUST follow these security practices:
 
 ### Recently Completed
 - ✅ PostgreSQL/Supabase migration (SQLite removed)
-- ✅ Vault Transit Auto-Unseal (dual-Vault architecture)
+- ✅ Backend uses K8s Secrets (no Vault dependency)
 - ✅ Kubernetes production deployment (K3s on 2GB server)
 - ✅ Memory optimization for low-resource environment
 - ✅ Automated log rotation and compression
@@ -437,6 +430,7 @@ Every new feature MUST follow these security practices:
 - `python-backend/README.md` - Backend-specific docs
 - `docs/howto/vault-transit-token-management.md` - **Vault transit token + Jenkins credential management**
 - `docs/incidents/common-failures.md` - Common failure modes and fixes
+- `docs/architecture/vault-stability-and-improvements.md` - **Why Vault chain fails repeatedly and how to improve**
 
 ### Scripts
 - `deployment/scripts/configure-vault-supabase.sh` - **Store Supabase/PostgreSQL URL in Vault**
@@ -670,7 +664,7 @@ When working on this project:
 
 10. **`security_config.json`** - Required by `security.py` at startup. Contains SQL/XSS regex patterns. Must be in the Docker image or mounted via ConfigMap.
 
-11. **Vault Transit seal** - Main Vault uses Transit Auto-Unseal via Unseal Vault. No manual unseal keys. If Main Vault is uninitialized, run `vault operator init -recovery-shares=1 -recovery-threshold=1` once and store the recovery key.
+11. **App secrets** - Backend uses K8s Secrets (`app-secrets`, `twilio-secrets`, `anthropic-secrets`). Create via `deployment/k8s/create-secrets.sh` or Jenkins credentials `secret-key` and `allowed-origins`.
 
 12. **Frontend Nginx proxy** - The production Nginx config is at `deployment/docker/nginx.conf`, NOT `frontend/nginx.conf`. It proxies `/api/*` to `http://backend:8000`.
 

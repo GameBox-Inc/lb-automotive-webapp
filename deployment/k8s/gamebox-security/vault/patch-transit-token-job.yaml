@@ -1,0 +1,82 @@
+# =============================================================================
+# Job: Patch Main Vault ConfigMap with transit token from Secret
+# Single source of truth: Secret vault-transit-token; this Job applies it to
+# vault-config so vault-0 picks up the token. Run after updating the Secret
+# or after Helm install that left PLACEHOLDER in the ConfigMap.
+#
+# Usage: kubectl apply -f patch-transit-token-job.yaml
+#        kubectl create job -n gamebox-security patch-transit-$(date +%s) --from=cronjob/patch-transit-token  # if using CronJob
+# See: docs/architecture/vault-stability-and-improvements.md
+# =============================================================================
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: patch-transit-token
+  namespace: gamebox-security
+  annotations:
+    # Run once; delete and re-apply to re-run
+    helm.sh/hook-weight: "-5"
+spec:
+  ttlSecondsAfterFinished: 300
+  backoffLimit: 2
+  template:
+    spec:
+      serviceAccountName: patch-transit-token
+      restartPolicy: OnFailure
+      containers:
+        - name: patch
+          image: bitnami/kubectl:latest
+          command:
+            - /bin/bash
+            - -c
+            - |
+              set -e
+              NS=gamebox-security
+              CM=vault-config
+              TOKEN=$(kubectl get secret vault-transit-token -n $NS -o jsonpath='{.data.token}' | base64 -d)
+              [ -z "$TOKEN" ] && echo "ERROR: vault-transit-token secret or token key missing" && exit 1
+              KEY=extraconfig-from-values.hcl
+              CURRENT=$(kubectl get configmap $CM -n $NS -o jsonpath='{.data.extraconfig-from-values\.hcl}' 2>/dev/null || true)
+              [ -z "$CURRENT" ] && KEY=server-config.hcl && CURRENT=$(kubectl get configmap $CM -n $NS -o jsonpath='{.data.server-config\.hcl}' 2>/dev/null)
+              [ -z "$CURRENT" ] && echo "ERROR: ConfigMap $CM has no HCL config" && exit 1
+              # Replace token value (handles PLACEHOLDER or existing token)
+              NEW=$(echo "$CURRENT" | sed "s|token *= *\"[^\"]*\"|token = \"$TOKEN\"|")
+              # Patch using kubectl patch with JSON; escape for shell
+              NEW_ESC=$(echo "$NEW" | jq -Rs .)
+              kubectl patch configmap $CM -n $NS --type merge -p "{\"data\":{\"$KEY\":$NEW_ESC}}"
+              echo "ConfigMap patched. Restarting vault-0..."
+              kubectl delete pod vault-0 -n $NS --ignore-not-found --wait=false
+              echo "Done."
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: patch-transit-token
+  namespace: gamebox-security
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: patch-transit-token
+  namespace: gamebox-security
+rules:
+  - apiGroups: [""]
+    resources: ["secrets", "configmaps"]
+    verbs: ["get", "patch", "update"]
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["delete"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: patch-transit-token
+  namespace: gamebox-security
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: patch-transit-token
+subjects:
+  - kind: ServiceAccount
+    name: patch-transit-token
+    namespace: gamebox-security

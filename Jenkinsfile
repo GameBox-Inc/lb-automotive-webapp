@@ -110,6 +110,50 @@ pipeline {
         }
 
 
+        stage('Ensure App Secrets') {
+            // Backend uses K8s Secrets (no Vault). Create app-secrets so the backend can start.
+            // Add Jenkins secret-text credentials: secret-key, allowed-origins
+            // For Twilio/Anthropic run deployment/k8s/create-secrets.sh on the server once.
+            when {
+                anyOf {
+                    branch 'main'
+                    branch 'master'
+                    expression { env.BRANCH_NAME ==~ /.*release\/.*/ || env.GIT_BRANCH ==~ /.*release\/.*/ }
+                }
+            }
+            steps {
+                echo '🔐 Ensuring app-secrets exist on server (K8s Secrets, no Vault)...'
+                script {
+                    withCredentials([
+                        string(credentialsId: 'secret-key', variable: 'SECRET_KEY'),
+                        string(credentialsId: 'allowed-origins', variable: 'ALLOWED_ORIGINS')
+                    ]) {
+                        sshagent(credentials: ['lb-server-ssh']) {
+                            // Pass secret values base64-encoded as args to avoid heredoc quoting issues
+                            sh '''
+                                SK_B64=$(printf %s "$SECRET_KEY" | base64 | tr -d '\n')
+                                AO_B64=$(printf %s "$ALLOWED_ORIGINS" | base64 | tr -d '\n')
+                                ssh -o StrictHostKeyChecking=no $DEPLOY_USER@$DEPLOY_HOST "bash -s -- '$SK_B64' '$AO_B64'" <<'REMOTEOF'
+                                set -e
+                                SK=$(echo "$1" | base64 -d)
+                                AO=$(echo "$2" | base64 -d)
+                                sudo k3s kubectl create secret generic app-secrets -n lb-automotive \
+                                  --from-literal=SECRET_KEY="$SK" \
+                                  --from-literal=ALLOWED_ORIGINS="$AO" \
+                                  --from-literal=DATABASE_URL="sqlite:////app/data/lb_automotive.db" \
+                                  --from-literal=REDIS_URL="redis://redis.lb-automotive.svc.cluster.local:6379/0" \
+                                  --from-literal=LLM_PROVIDER="anthropic" \
+                                  --from-literal=CSP_POLICY="strict" \
+                                  --dry-run=client -o yaml | sudo k3s kubectl apply -f -
+                                echo "✅ app-secrets applied"
+                                REMOTEOF
+                            '''
+                        }
+                    }
+                }
+            }
+        }
+
         stage('Deploy Manifests') {
             // Syncs K8s manifests to server and applies them.
             // Replaces ArgoCD — Jenkins is now the GitOps mechanism.

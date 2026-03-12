@@ -1,0 +1,85 @@
+# =============================================================================
+# Optional: Automatically unseal Unseal Vault when sealed (e.g. after restart).
+# Requires: namespace vault-unseal exists (create when deploying Unseal Vault).
+# Requires: Secret vault-unseal-keys in vault-unseal with key1, key2, key3.
+#
+#   kubectl create secret generic vault-unseal-keys -n vault-unseal \
+#     --from-literal=key1=... --from-literal=key2=... --from-literal=key3=...
+#
+# See: docs/architecture/vault-stability-and-improvements.md
+# =============================================================================
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: unseal-unseal-vault
+  namespace: vault-unseal
+spec:
+  schedule: "*/5 * * * *"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 1
+  failedJobsHistoryLimit: 2
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          serviceAccountName: unseal-vault-automation
+          restartPolicy: OnFailure
+          containers:
+            - name: unseal
+              image: bitnami/kubectl:latest
+              command:
+                - /bin/sh
+                - -c
+                - |
+                  set -e
+                  K1=$(cat /keys/key1 2>/dev/null || true)
+                  K2=$(cat /keys/key2 2>/dev/null || true)
+                  K3=$(cat /keys/key3 2>/dev/null || true)
+                  [ -z "$K1" ] && echo "key1 missing" && exit 1
+                  [ -z "$K2" ] && echo "key2 missing" && exit 1
+                  [ -z "$K3" ] && echo "key3 missing" && exit 1
+                  SEALED=$(kubectl exec -n vault-unseal unseal-vault-0 -c vault -- env VAULT_ADDR=http://127.0.0.1:8200 vault status -format=json 2>/dev/null | grep -o '"sealed":[^,}]*' | grep -o 'true\|false' || echo "unknown")
+                  [ "$SEALED" != "true" ] && echo "Already unsealed" && exit 0
+                  kubectl exec -n vault-unseal unseal-vault-0 -c vault -- env VAULT_ADDR=http://127.0.0.1:8200 vault operator unseal "$K1"
+                  kubectl exec -n vault-unseal unseal-vault-0 -c vault -- env VAULT_ADDR=http://127.0.0.1:8200 vault operator unseal "$K2"
+                  kubectl exec -n vault-unseal unseal-vault-0 -c vault -- env VAULT_ADDR=http://127.0.0.1:8200 vault operator unseal "$K3"
+                  echo "Unsealed."
+              volumeMounts:
+                - name: keys
+                  mountPath: /keys
+                  readOnly: true
+          volumes:
+            - name: keys
+              secret:
+                secretName: vault-unseal-keys
+                optional: true
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: unseal-vault-automation
+  namespace: vault-unseal
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: unseal-vault-automation
+  namespace: vault-unseal
+rules:
+  - apiGroups: [""]
+    resources: ["pods", "pods/exec"]
+    verbs: ["get", "list", "create"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: unseal-vault-automation
+  namespace: vault-unseal
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: unseal-vault-automation
+subjects:
+  - kind: ServiceAccount
+    name: unseal-vault-automation
+    namespace: vault-unseal

@@ -10,15 +10,14 @@
 
 **Cause:** Backend not reachable. Frontend Nginx proxies `/api/*` to backend; if backend is down → 502.
 
-**Typical chain:**
-1. **Unseal Vault** sealed → Main Vault cannot auto-unseal
-2. **Main Vault** (vault-0) sealed/crashlooping → Vault Agent cannot inject secrets
-3. **Backend** stuck in `Init:0/1` (waiting for secrets) or `CrashLoopBackOff`
+**Backend uses K8s Secrets (no Vault).** Typical causes:
+1. **Missing app-secrets** — backend needs `app-secrets` (SECRET_KEY, ALLOWED_ORIGINS, DATABASE_URL, etc.). Create via `deployment/k8s/create-secrets.sh` or run Jenkins pipeline (stage "Ensure App Secrets" uses credentials `secret-key`, `allowed-origins`).
+2. **Backend pod not Running** — image pull, OOM, or bad env.
 
-**Diagnostic (run on server or via script):**
+**Diagnostic:**
 
 ```bash
-# One-liner from repo root (SSH to server)
+# From repo root (SSH to server)
 ./scripts/k8s-debug-summary.sh lb-admin@178.156.223.196
 ```
 
@@ -27,32 +26,22 @@ Or manually:
 ```bash
 ssh lb-admin@178.156.223.196
 
-# 1. Pod status
+# Pod status
 sudo k3s kubectl get pods -n lb-automotive -o wide
-sudo k3s kubectl get pods -n gamebox-security -o wide
-sudo k3s kubectl get pods -n vault-unseal -o wide
 
-# 2. Unseal Vault (must be unsealed first)
-sudo k3s kubectl exec -n vault-unseal unseal-vault-0 -c vault -- \
-  env VAULT_ADDR=http://127.0.0.1:8200 vault status
-
-# 3. Main Vault (auto-unseals when Unseal Vault is reachable)
-sudo k3s kubectl exec -n gamebox-security vault-0 -c vault -- vault status
-
-# 4. Backend init logs (if Init:0/1)
+# Backend logs (if CrashLoopBackOff or not Ready)
 BPOD=$(sudo k3s kubectl get pods -n lb-automotive -l app=backend -o jsonpath='{.items[0].metadata.name}')
-sudo k3s kubectl logs -n lb-automotive $BPOD -c vault-agent-init --tail=50
+sudo k3s kubectl logs -n lb-automotive $BPOD -c backend --tail=50
+sudo k3s kubectl logs -n lb-automotive $BPOD -c backend --previous --tail=50  # if restarted
 
-# 5. Backend crash logs (if CrashLoopBackOff)
-sudo k3s kubectl logs -n lb-automotive $BPOD -c backend --previous --tail=50
+# Check app-secrets exist
+sudo k3s kubectl get secret app-secrets -n lb-automotive
 ```
 
 **Fix order:**
-1. **Unseal Unseal Vault** — if sealed, unseal with Shamir keys (Jenkins credentials `vault-unseal-key-1/2/3`). See [Vault Unseal Order](../runbooks/vault-unseal-order.md).
-2. **Main Vault** — should auto-unseal once Unseal Vault is reachable. If vault-0 is CrashLoopBackOff with "invalid token" / 403 on transit: see [§7 Transit Token 403](#7-main-vault-crashloopbackoff--transit-token-403).
-3. **Restart backend** — after Vault is unsealed: `sudo k3s kubectl rollout restart deploy/backend -n lb-automotive`
-4. If Vault 403: fix policy (e.g. `secret/data/lb-automotive/*`), restart backend.
-5. If DB: ensure `DATABASE_URL` in Vault at `secret/lb-automotive/app`.
+1. **Ensure app-secrets exist** — run `deployment/k8s/create-secrets.sh` on the server, or add Jenkins credentials `secret-key` and `allowed-origins` and re-run the pipeline.
+2. **Restart backend** — `sudo k3s kubectl rollout restart deploy/backend -n lb-automotive`
+3. If DB errors: ensure `DATABASE_URL` in `app-secrets` points to a valid DB (e.g. `sqlite:////app/data/lb_automotive.db`).
 
 ---
 
@@ -208,11 +197,65 @@ sudo k3s kubectl rollout restart deploy/backend -n lb-automotive
 
 ---
 
-## 8. OOM / 2GB Server
+## 8. Main Vault — Transit Decrypt 400 (cipher: message authentication failed)
+
+**Symptoms:** `vault-0` fails to start; logs:
+```
+fetching stored unseal keys failed: invalid key: failed to decrypt keys from storage
+error decrypting using seal transit: Error making API request.
+URL: PUT .../v1/transit/decrypt/autounseal
+Code: 400. Errors: * cipher: message authentication failed
+```
+
+**Cause:** Main Vault’s stored data was encrypted with a **different** transit key than the one that currently exists as `autounseal` on Unseal Vault. Common causes:
+- Unseal Vault was **re-initialized** (or PVC wiped) and the `autounseal` key was recreated
+- The transit key was **rotated** or recreated
+- Main Vault was never re-initialized after Unseal Vault was reset
+
+**You do not need to “add” a key** — the key that encrypted Main Vault’s data is gone or changed. **Removing autounseal** does not fix this; Main Vault must decrypt its storage to unseal, and that decrypt is failing.
+
+**Recovery (destructive to Main Vault data — re-init and re-seed secrets):**
+
+1. **Wipe Main Vault storage** so it can re-initialize with the *current* Unseal Vault transit key:
+   ```bash
+   # Delete the pod and its PVC so Vault starts with empty storage
+   sudo k3s kubectl delete pod vault-0 -n gamebox-security --force --grace-period=0
+   sudo k3s kubectl delete pvc -n gamebox-security data-vault-0
+   ```
+   (If the PVC name differs, check `kubectl get pvc -n gamebox-security`.)
+
+2. **Wait for vault-0 to be recreated** (StatefulSet) and become Ready. It will auto-initialize and auto-unseal using the current transit key and token.
+
+3. **Re-seed all app secrets** in Main Vault (previous secrets are gone). Use the canonical script:
+   ```bash
+   export VAULT_ADDR="https://vault.gamebox-security.svc.cluster.local:8200"
+   export VAULT_TOKEN="<root-or-admin-token>"
+   export VAULT_SKIP_VERIFY=true
+   export SECRET_KEY="..." ALLOWED_ORIGINS="..." DATABASE_URL="..."
+   export TWILIO_ACCOUNT_SID="..." TWILIO_AUTH_TOKEN="..." TWILIO_PHONE_NUMBER="..."
+   export ANTHROPIC_API_KEY="..."
+   bash deployment/scripts/seed-vault-secrets.sh
+   ```
+   (Or port-forward and run locally; see script header.)
+
+4. **Restart backend** so Vault Agent can inject the new secrets:
+   ```bash
+   sudo k3s kubectl rollout restart deploy/backend -n lb-automotive
+   ```
+
+5. **Update Jenkins** credential `vault-transit-token` if you generated a new token; the existing one may still be valid.
+
+---
+
+## 9. OOM / 2GB Server
 
 **Symptoms:** Pods evicted, OOMKilled.
 
 **Fix:** See `QUICK_FIX_2GB_SERVER.md` — remove memory hogs, add swap, apply resource limits.
+
+---
+
+**Note:** The transit *token* in the ConfigMap is still valid; the problem is the transit *key* on Unseal Vault changed (e.g. after re-init). No need to patch the token again unless you re-ran bootstrap and created a new token.
 
 ---
 

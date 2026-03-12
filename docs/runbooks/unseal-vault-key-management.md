@@ -5,6 +5,12 @@
 
 ---
 
+## Operational policy
+
+**Do not re-initialize Unseal Vault** unless you are doing a full recovery and accept re-initializing Main Vault and re-seeding all app secrets. Re-init of Unseal Vault creates a new transit key; Main Vault’s data was encrypted with the old key and will fail with `cipher: message authentication failed`. See [Vault stability and improvements](../architecture/vault-stability-and-improvements.md).
+
+---
+
 ## Why this exists
 
 Main Vault uses **transit auto-unseal** and depends on **Unseal Vault** being **unsealed**.
@@ -113,6 +119,8 @@ If you see this error when attempting unseal:
 - `cipher: message authentication failed`
 
 …then the keys you’re using do **not** match the current Unseal Vault storage. If the correct keys are unrecoverable, Unseal Vault cannot be unsealed.
+
+**⚠️ Important:** Re-initializing Unseal Vault (below) creates a **new** transit key. Main Vault’s data was encrypted with the **old** key and will then fail with `cipher: message authentication failed` on decrypt. You must also [re-initialize Main Vault and re-seed app secrets](../incidents/common-failures.md#8-main-vault--transit-decrypt-400-cipher-message-authentication-failed). See [Vault stability and improvements](../architecture/vault-stability-and-improvements.md) for why this chain is fragile and how to avoid it.
 
 ### Recovery option (destructive to Unseal Vault only)
 

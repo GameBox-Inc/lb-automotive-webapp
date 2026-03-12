@@ -1,0 +1,154 @@
+# =============================================================================
+# Vault health check CronJob — fails if Unseal/Main Vault sealed or backend Init
+# Run every 5 minutes; failed runs surface in kubectl get jobs / monitoring.
+# See: docs/architecture/vault-stability-and-improvements.md
+# =============================================================================
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: vault-health-check-script
+  namespace: gamebox-security
+data:
+  vault-health-check.sh: |
+    #!/bin/sh
+    set -e
+    KUBECTL="${KUBECTL:-kubectl}"
+    FAILED=0
+    # Unseal Vault
+    if $KUBECTL get pod -n vault-unseal unseal-vault-0 -o jsonpath='{.status.phase}' 2>/dev/null | grep -q Running; then
+      SEALED=$($KUBECTL exec -n vault-unseal unseal-vault-0 -c vault -- env VAULT_ADDR=http://127.0.0.1:8200 vault status -format=json 2>/dev/null | grep -o '"sealed":[^,}]*' | grep -o 'true\|false' || echo "unknown")
+      [ "$SEALED" = "true" ] && echo "Unseal Vault is SEALED" && FAILED=1
+    else
+      echo "Unseal Vault pod not Running" && FAILED=1
+    fi
+    # Main Vault
+    if $KUBECTL get pod -n gamebox-security vault-0 -o jsonpath='{.status.phase}' 2>/dev/null | grep -q Running; then
+      SEALED=$($KUBECTL exec -n gamebox-security vault-0 -c vault -- env VAULT_SKIP_VERIFY=true vault status -format=json 2>/dev/null | grep -o '"sealed":[^,}]*' | grep -o 'true\|false' || echo "unknown")
+      [ "$SEALED" = "true" ] && echo "Main Vault is SEALED" && FAILED=1
+    else
+      echo "Main Vault pod not Running" && FAILED=1
+    fi
+    # At least one backend pod must be Running (not stuck in Init)
+    RUNNING=$($KUBECTL get pods -n lb-automotive -l app=backend --field-selector=status.phase=Running -o jsonpath='{.items[*].metadata.name}' 2>/dev/null | wc -w)
+    [ "${RUNNING:-0}" -eq 0 ] && echo "No backend pod Running (stuck in Init?)" && FAILED=1
+    [ $FAILED -eq 1 ] && echo "Vault health check FAILED" && exit 1
+    echo "Vault health check OK" && exit 0
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: vault-health-check
+  namespace: gamebox-security
+spec:
+  schedule: "*/5 * * * *"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 1
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          serviceAccountName: vault-health-check
+          restartPolicy: OnFailure
+          containers:
+            - name: check
+              image: bitnami/kubectl:latest
+              command: ["/bin/sh", "/scripts/vault-health-check.sh"]
+              volumeMounts:
+                - name: script
+                  mountPath: /scripts
+                  readOnly: true
+          volumes:
+            - name: script
+              configMap:
+                name: vault-health-check-script
+                defaultMode: 0755
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: vault-health-check
+  namespace: gamebox-security
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: vault-health-check
+  namespace: gamebox-security
+rules:
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["get", "list"]
+  - apiGroups: [""]
+    resources: ["pods/exec"]
+    verbs: ["create"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: vault-health-check
+  namespace: gamebox-security
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: vault-health-check
+subjects:
+  - kind: ServiceAccount
+    name: vault-health-check
+    namespace: gamebox-security
+---
+# Cross-namespace: read pods in vault-unseal and lb-automotive
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: vault-health-check-vault-unseal
+  namespace: vault-unseal
+rules:
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["get", "list"]
+  - apiGroups: [""]
+    resources: ["pods/exec"]
+    verbs: ["create"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: vault-health-check
+  namespace: vault-unseal
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: vault-health-check-vault-unseal
+subjects:
+  - kind: ServiceAccount
+    name: vault-health-check
+    namespace: gamebox-security
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: vault-health-check-lb-automotive
+  namespace: lb-automotive
+rules:
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["get", "list"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: vault-health-check
+  namespace: lb-automotive
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: vault-health-check-lb-automotive
+subjects:
+  - kind: ServiceAccount
+    name: vault-health-check
+    namespace: gamebox-security
+---
+# Allow CronJob to run in gamebox-security (no exec needed in lb-automotive)
+# Script only does get pods in lb-automotive; exec only in vault-unseal and gamebox-security.
+# Already covered above.

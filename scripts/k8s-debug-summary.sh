@@ -35,14 +35,12 @@ echo "=== Main Vault status (vault-0) ==="
 run exec -n gamebox-security vault-0 -c vault -- env VAULT_SKIP_VERIFY=true vault status 2>/dev/null || echo "(pod not Running or exec failed)"
 
 echo ""
-echo "=== Backend init logs (vault-agent-init) — if Init:0/1 ==="
+echo "=== Backend pod / app-secrets (backend uses K8s Secrets, no Vault) ==="
+run get secret app-secrets -n lb-automotive -o name 2>/dev/null || echo "(app-secrets missing — run create-secrets.sh or Jenkins Ensure App Secrets)"
 BPOD=$(run get pods -n lb-automotive -l app=backend -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || true)
-if [[ -n "$BPOD" ]]; then
-  run logs -n lb-automotive "$BPOD" -c vault-agent-init --tail=30 2>/dev/null || echo "(no init logs)"
-fi
 
 echo ""
-echo "=== Backend container logs — if CrashLoopBackOff ==="
+echo "=== Backend container logs — if not Ready or CrashLoopBackOff ==="
 if [[ -n "$BPOD" ]]; then
   run logs -n lb-automotive "$BPOD" -c backend --tail=30 2>/dev/null || \
   run logs -n lb-automotive "$BPOD" -c backend --previous --tail=30 2>/dev/null || echo "(no backend logs)"
@@ -53,4 +51,4 @@ echo "=== Recent events (lb-automotive) ==="
 run get events -n lb-automotive --sort-by='.lastTimestamp' --tail=10 2>/dev/null || true
 
 echo ""
-echo "--- 502 fix order: Unseal Vault (unsealed) → Main Vault (auto-unseals) → Backend (starts) ---"
+echo "--- 502 fix: Ensure app-secrets exist (create-secrets.sh or Jenkins) → Restart backend ---"

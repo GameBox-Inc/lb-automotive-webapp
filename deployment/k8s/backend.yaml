@@ -1,3 +1,7 @@
+# Backend deployment — secrets from K8s Secrets (no Vault dependency).
+# Create app-secrets, twilio-secrets, anthropic-secrets via:
+#   deployment/k8s/create-secrets.sh  (interactive)
+#   or Jenkins "Ensure App Secrets" stage (from credentials)
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -15,123 +19,63 @@ spec:
     metadata:
       labels:
         app: backend
-      annotations:
-        # ── Vault Agent Injector ────────────────────────────────────────────
-        # The pod is unaware of Vault. The injector sidecar starts first,
-        # authenticates to Vault using the ServiceAccount JWT, reads secrets,
-        # and writes them to /vault/secrets/app.env before the main container
-        # starts. The init-style injection guarantees secrets are ready at boot.
-        vault.hashicorp.com/agent-inject: "true"
-        vault.hashicorp.com/role: "lb-automotive-role"
-        vault.hashicorp.com/agent-init-first: "true"
-
-        # TLS — the agent validates Vault's certificate using the CA bundle
-        vault.hashicorp.com/tls-secret: "vault-server-tls"
-        vault.hashicorp.com/ca-cert: "/vault/tls/ca.crt"
-
-        # ── Secret: app (core application secrets) ──────────────────────────
-        vault.hashicorp.com/agent-inject-secret-app.env: "secret/data/lb-automotive/app"
-        vault.hashicorp.com/agent-inject-template-app.env: |
-          {{- with secret "secret/data/lb-automotive/app" -}}
-          {{- range $k, $v := .Data.data }}
-          export {{ $k }}="{{ $v }}"
-          {{- end }}
-          {{- end }}
-
-        # ── Secret: twilio ──────────────────────────────────────────────────
-        vault.hashicorp.com/agent-inject-secret-twilio.env: "secret/data/lb-automotive/twilio"
-        vault.hashicorp.com/agent-inject-template-twilio.env: |
-          {{- with secret "secret/data/lb-automotive/twilio" -}}
-          {{- range $k, $v := .Data.data }}
-          export {{ $k }}="{{ $v }}"
-          {{- end }}
-          {{- end }}
-
-        # ── Secret: anthropic ───────────────────────────────────────────────
-        vault.hashicorp.com/agent-inject-secret-anthropic.env: "secret/data/lb-automotive/anthropic"
-        vault.hashicorp.com/agent-inject-template-anthropic.env: |
-          {{- with secret "secret/data/lb-automotive/anthropic" -}}
-          {{- range $k, $v := .Data.data }}
-          export {{ $k }}="{{ $v }}"
-          {{- end }}
-          {{- end }}
-
-        # ── Secret: supabase ────────────────────────────────────────────────
-        vault.hashicorp.com/agent-inject-secret-supabase.env: "gamebox/data/clients/lb-autorepair/database"
-        vault.hashicorp.com/agent-inject-template-supabase.env: |
-          {{- with secret "gamebox/data/clients/lb-autorepair/database" -}}
-          export DATABASE_URL="{{ .Data.data.url }}"
-          {{- if .Data.data.read_url }}
-          export DATABASE_READ_URL="{{ .Data.data.read_url }}"
-          {{- end }}
-          {{- end }}
-
-        # Token lifetime — renew after 30m, re-auth after 24h
-        vault.hashicorp.com/agent-inject-token: "false"
-
-        # Sidecar Resources — restrict to allow scheduling on the constrained node
-        vault.hashicorp.com/agent-limits-cpu: "50m"
-        vault.hashicorp.com/agent-limits-mem: "64Mi"
-        vault.hashicorp.com/agent-requests-cpu: "10m"
-        vault.hashicorp.com/agent-requests-mem: "32Mi"
     spec:
-      # ── Identity used for Vault Kubernetes auth ─────────────────────────────
-      # The SA JWT is presented to Vault, which validates it against the K8s API.
-      serviceAccountName: lb-automotive-backend
-
       imagePullSecrets:
-      - name: ghcr-secret
+        - name: ghcr-secret
 
       containers:
-      - name: backend
-        # Image updated by Jenkins CI pipeline
-        image: ghcr.io/gamebox-inc/lb-automotive-backend:143-c5caffd
-        imagePullPolicy: IfNotPresent
-        ports:
-        - containerPort: 8000
+        - name: backend
+          image: ghcr.io/gamebox-inc/lb-automotive-backend:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 8000
 
-        readinessProbe:
-          httpGet:
-            path: /health
-            port: 8000
-          initialDelaySeconds: 20
-          periodSeconds: 10
-          failureThreshold: 3
+          envFrom:
+            - secretRef:
+                name: app-secrets
+            - secretRef:
+                name: twilio-secrets
+                optional: true
+            - secretRef:
+                name: anthropic-secrets
+                optional: true
 
-        # Secrets are injected from Vault — no more secretKeyRef ENV vars.
-        # The startup command sources all three env files before exec-ing uvicorn.
-        command:
-        - /bin/sh
-        - -c
-        - |
-          set -e
-          # Source Vault-injected secrets (written by the init agent)
-          [ -f /vault/secrets/app.env ]       && . /vault/secrets/app.env
-          [ -f /vault/secrets/twilio.env ]    && . /vault/secrets/twilio.env
-          [ -f /vault/secrets/anthropic.env ] && . /vault/secrets/anthropic.env
-          [ -f /vault/secrets/supabase.env ]  && . /vault/secrets/supabase.env
-          exec uvicorn main:app --host 0.0.0.0 --port 8000
+          env:
+            - name: REDIS_URL
+              value: "redis://redis.lb-automotive.svc.cluster.local:6379/0"
 
-        env:
-        - name: REDIS_URL
-          value: "redis://redis.lb-automotive.svc.cluster.local:6379"
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            initialDelaySeconds: 15
+            periodSeconds: 10
+            failureThreshold: 3
 
-        volumeMounts:
-        - name: app-data
-          mountPath: /app/data
+          command:
+            - uvicorn
+            - main:app
+            - --host
+            - "0.0.0.0"
+            - --port
+            - "8000"
 
-        resources:
-          limits:
-            memory: "256Mi"
-            cpu: "300m"
-          requests:
-            memory: "128Mi"
-            cpu: "100m"
+          volumeMounts:
+            - name: app-data
+              mountPath: /app/data
+
+          resources:
+            limits:
+              memory: "256Mi"
+              cpu: "300m"
+            requests:
+              memory: "128Mi"
+              cpu: "100m"
 
       volumes:
-      - name: app-data
-        persistentVolumeClaim:
-          claimName: app-data-pvc
+        - name: app-data
+          persistentVolumeClaim:
+            claimName: app-data-pvc
 
 ---
 apiVersion: v1
@@ -144,6 +88,6 @@ spec:
   selector:
     app: backend
   ports:
-  - port: 8000
-    targetPort: 8000
-    nodePort: 30800
+    - port: 8000
+      targetPort: 8000
+      nodePort: 30800
