@@ -1,10 +1,10 @@
 /* Import Google Fonts - Bebas Neue for headings */
 @import url('https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Roboto:wght@400;500;700&display=swap');
 
-@reference "tailwindcss";
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+/* Tailwind CSS v4 – use the new import syntax with @tailwindcss/postcss */
+@import "tailwindcss/base";
+@import "tailwindcss/components";
+@import "tailwindcss/utilities";
 
 @layer base {
   :root {
