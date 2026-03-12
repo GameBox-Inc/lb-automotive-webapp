@@ -139,6 +139,7 @@ ssh -o StrictHostKeyChecking=no "$DEPLOY_USER@$DEPLOY_HOST" bash -s -- "$SK_B64"
 set -e
 SK=$(printf %s "$1" | base64 -d)
 AO=$(printf %s "$2" | base64 -d)
+DB=$(printf %s "$3" | base64 -d)
 sudo k3s kubectl create secret generic app-secrets -n lb-automotive \
   --from-literal=SECRET_KEY="$SK" \
   --from-literal=ALLOWED_ORIGINS="$AO" \
