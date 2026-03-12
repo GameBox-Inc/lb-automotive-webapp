@@ -127,26 +127,28 @@ pipeline {
                     withCredentials([
                         string(credentialsId: 'secret-key', variable: 'SECRET_KEY'),
                         string(credentialsId: 'allowed-origins', variable: 'ALLOWED_ORIGINS')
+                        string(credentialsId: 'supabase-db-url', variable: 'DATABASE_URL')
                     ]) {
                         sshagent(credentials: ['lb-server-ssh']) {
-                            // Pass secret values base64-encoded as args to avoid heredoc quoting issues
+                            // Pass secret values base64-encoded as args and decode on the remote side
                             sh '''
-                                SK_B64=$(printf %s "$SECRET_KEY" | base64 | tr -d '\n')
-                                AO_B64=$(printf %s "$ALLOWED_ORIGINS" | base64 | tr -d '\n')
-                                ssh -o StrictHostKeyChecking=no $DEPLOY_USER@$DEPLOY_HOST "bash -s -- '$SK_B64' '$AO_B64'" <<'REMOTEOF'
-                                set -e
-                                SK=$(echo "$1" | base64 -d)
-                                AO=$(echo "$2" | base64 -d)
-                                sudo k3s kubectl create secret generic app-secrets -n lb-automotive \
-                                  --from-literal=SECRET_KEY="$SK" \
-                                  --from-literal=ALLOWED_ORIGINS="$AO" \
-                                  --from-literal=DATABASE_URL="sqlite:////app/data/lb_automotive.db" \
-                                  --from-literal=REDIS_URL="redis://redis.lb-automotive.svc.cluster.local:6379/0" \
-                                  --from-literal=LLM_PROVIDER="anthropic" \
-                                  --from-literal=CSP_POLICY="strict" \
-                                  --dry-run=client -o yaml | sudo k3s kubectl apply -f -
-                                echo "✅ app-secrets applied"
-                                REMOTEOF
+SK_B64=$(printf %s "$SECRET_KEY" | base64 | tr -d '\n')
+AO_B64=$(printf %s "$ALLOWED_ORIGINS" | base64 | tr -d '\n')
+DB_B64=$(printf %s "$DATABASE_URL" | base64 | tr -d '\n')
+ssh -o StrictHostKeyChecking=no "$DEPLOY_USER@$DEPLOY_HOST" bash -s -- "$SK_B64" "$AO_B64" "$DB_B64" << 'REMOTEOF'
+set -e
+SK=$(printf %s "$1" | base64 -d)
+AO=$(printf %s "$2" | base64 -d)
+sudo k3s kubectl create secret generic app-secrets -n lb-automotive \
+  --from-literal=SECRET_KEY="$SK" \
+  --from-literal=ALLOWED_ORIGINS="$AO" \
+  --from-literal=DATABASE_URL="$DB" \
+  --from-literal=REDIS_URL="redis://redis.lb-automotive.svc.cluster.local:6379/0" \
+  --from-literal=LLM_PROVIDER="anthropic" \
+  --from-literal=CSP_POLICY="strict" \
+  --dry-run=client -o yaml | sudo k3s kubectl apply -f -
+echo "✅ app-secrets applied"
+REMOTEOF
                             '''
                         }
                     }
