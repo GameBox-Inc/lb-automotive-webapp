@@ -257,10 +257,10 @@ REMOTEOF
                                 "sudo k3s kubectl set image deployment/frontend frontend=${FRONTEND_IMAGE}:${BUILD_TAG} -n lb-automotive"
                         """
                         sh """
-                            # Wait for rollouts to complete (non-fatal: backend needs Vault; if Vault is Pending, rollout will hang)
+                            # Wait for rollouts to complete (non-fatal; if DB/app-secrets are misconfigured, rollout can hang)
                             ssh -o StrictHostKeyChecking=no ${DEPLOY_USER}@${DEPLOY_HOST} \
                                 "sudo k3s kubectl rollout status deployment/backend -n lb-automotive --timeout=5m" || \
-                                echo "⚠️ Backend rollout timed out — check if Vault is Running (backend needs Vault Agent for secrets)"
+                                echo "⚠️ Backend rollout timed out — check backend logs, app-secrets, and DATABASE_URL"
                         """
                         sh """
                             ssh -o StrictHostKeyChecking=no ${DEPLOY_USER}@${DEPLOY_HOST} \
@@ -325,18 +325,11 @@ REMOTEOF
 
         always {
             echo '🧹 Cleaning up workspace and remote node...'
-            sh 'docker image prune -f || true'
-            sshagent(credentials: ['lb-server-ssh']) {
-                sh """
-                    ssh -o StrictHostKeyChecking=no ${DEPLOY_USER}@${DEPLOY_HOST} '
-                        echo "▶ Pruning remote images..."
-                        sudo k3s crictl rmi --prune || true
-                        
-                        echo "▶ Cleaning up completed/failed pods..."
-                        sudo k3s kubectl delete pods --all-namespaces --field-selector=status.phase==Succeeded --ignore-not-found || true
-                        sudo k3s kubectl delete pods --all-namespaces --field-selector=status.phase==Failed --ignore-not-found || true
-                    '
-                """
+            script {
+                // Conservative cleanup: keep recent images, prune old/unused ones and K3s images
+                sshagent(credentials: ['lb-server-ssh']) {
+                    sh 'bash deployment/scripts/cleanup-docker-and-k3s.sh || true'
+                }
             }
         }
         failure {
