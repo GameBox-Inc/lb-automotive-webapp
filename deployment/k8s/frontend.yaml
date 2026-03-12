@@ -17,21 +17,27 @@ spec:
         app: frontend
     spec:
       imagePullSecrets:
-      - name: ghcr-secret
+        - name: ghcr-secret
+
+      tolerations:
+        - key: "node.kubernetes.io/disk-pressure"
+          operator: "Exists"
+          effect: "NoSchedule"
+
       containers:
-      - name: frontend
-        # Image updated by Jenkins CI pipeline
-        image: ghcr.io/gamebox-inc/lb-automotive-frontend:latest
-        imagePullPolicy: Always
-        ports:
-        - containerPort: 80
-        resources:
-          limits:
-            memory: "128Mi"
-            cpu: "150m"
-          requests:
-            memory: "64Mi"
-            cpu: "50m"
+        - name: frontend
+          # Image updated by Jenkins CI pipeline
+          image: ghcr.io/gamebox-inc/lb-automotive-frontend:latest
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 80
+          resources:
+            limits:
+              memory: "128Mi"
+              cpu: "150m"
+            requests:
+              memory: "64Mi"
+              cpu: "50m"
 ---
 apiVersion: v1
 kind: Service

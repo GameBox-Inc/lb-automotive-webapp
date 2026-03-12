@@ -16,31 +16,36 @@ spec:
       labels:
         app: redis
     spec:
+      tolerations:
+        - key: "node.kubernetes.io/disk-pressure"
+          operator: "Exists"
+          effect: "NoSchedule"
+
       containers:
-      - name: redis
-        image: redis:7-alpine
-        ports:
-        - containerPort: 6379
-        # Optimized for low-memory server (2GB total)
-        command:
-          - redis-server
-          - --maxmemory
-          - 64mb
-          - --maxmemory-policy
-          - allkeys-lru
-          - --save
-          - ""
-          - --appendonly
-          - "no"
-          - --loglevel
-          - warning
-        resources:
-          limits:
-            memory: "128Mi"
-            cpu: "100m"
-          requests:
-            memory: "64Mi"
-            cpu: "50m"
+        - name: redis
+          image: redis:7-alpine
+          ports:
+            - containerPort: 6379
+          # Optimized for low-memory server (2GB total)
+          command:
+            - redis-server
+            - --maxmemory
+            - 64mb
+            - --maxmemory-policy
+            - allkeys-lru
+            - --save
+            - ""
+            - --appendonly
+            - "no"
+            - --loglevel
+            - warning
+          resources:
+            limits:
+              memory: "128Mi"
+              cpu: "100m"
+            requests:
+              memory: "64Mi"
+              cpu: "50m"
 ---
 apiVersion: v1
 kind: Service

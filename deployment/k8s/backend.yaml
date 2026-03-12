@@ -23,6 +23,11 @@ spec:
       imagePullSecrets:
         - name: ghcr-secret
 
+      tolerations:
+        - key: "node.kubernetes.io/disk-pressure"
+          operator: "Exists"
+          effect: "NoSchedule"
+
       containers:
         - name: backend
           image: ghcr.io/gamebox-inc/lb-automotive-backend:latest
