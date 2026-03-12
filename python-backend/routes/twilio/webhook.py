@@ -47,6 +47,13 @@ async def validate_twilio_request(request: Request):
         )
         return
 
+    if not (TWILIO_AUTH_TOKEN and TWILIO_AUTH_TOKEN.strip()):
+        logger.error("Twilio webhook validation failed: TWILIO_AUTH_TOKEN is not set (create twilio-secrets with TWILIO_AUTH_TOKEN)")
+        raise HTTPException(
+            status_code=503,
+            detail="Twilio webhook not configured. Set TWILIO_AUTH_TOKEN (e.g. via twilio-secrets).",
+        )
+
     try:
         validator = RequestValidator(TWILIO_AUTH_TOKEN)
         
@@ -126,9 +133,10 @@ async def validate_twilio_request(request: Request):
             logger.warning(f"Invalid Twilio Signature. URL: {url}")
             raise HTTPException(status_code=403, detail="Invalid Twilio Signature")
             
+    except HTTPException:
+        raise
     except Exception as e:
-        logger.error(f"Error validating Twilio request: {e}")
-        # Fail safe? Or fail secure? Fail secure for now.
+        logger.error(f"Error validating Twilio request: {type(e).__name__}: {e}")
         raise HTTPException(status_code=403, detail="Validation Error")
 
 def check_rate_limit(phone_number: str) -> bool:

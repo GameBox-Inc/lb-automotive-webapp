@@ -77,16 +77,20 @@ Apply: `vault policy write lb-automotive-policy - < lb-automotive-policy.hcl`
 
 ---
 
-## 4. Twilio Webhook 403 — Invalid Signature
+## 4. Twilio Webhook 403 / 503
 
-**Symptoms:** Twilio calls fail; backend returns 403.
+**Symptoms:** `https://twilio.kozytherocket.space/lb-automotive/api/twilio/webhook` returns 403 or 503.
 
-**Cause:** URL used for HMAC validation doesn’t match what Twilio sent. Often due to proxy stripping `/lb-automotive` or incorrect scheme.
+**403 "Invalid Twilio Signature"** — URL used for HMAC validation doesn’t match what Twilio sent (e.g. proxy stripping `/lb-automotive` or wrong scheme).
+
+**403 "Validation Error"** — An exception occurred during validation (e.g. bad request body, validator error). Check backend logs for the real exception: `kubectl logs deployment/backend -n lb-automotive --tail=100` and look for `Error validating Twilio request: <type>: <message>`.
+
+**503 "Twilio webhook not configured"** — `TWILIO_AUTH_TOKEN` is not set. Backend uses optional `twilio-secrets`; if that secret is missing or has no `TWILIO_AUTH_TOKEN`, validation fails.
 
 **Fix:**
-- Ensure `x-forwarded-proto`, `x-original-uri` (or `x-forwarded-prefix`) are passed
-- Backend fallback: if `twilio.kozytherocket.space` in URL and `/lb-automotive` missing, inject it
-- Twilio Console: webhook URL must be `https://twilio.kozytherocket.space/lb-automotive/api/twilio/webhook`
+- **503:** Create `twilio-secrets` with `TWILIO_AUTH_TOKEN` (and optionally `TWILIO_ACCOUNT_SID`, `TWILIO_PHONE_NUMBER`): run `deployment/k8s/create-secrets.sh` on the server or create the secret manually, then restart the backend.
+- **403 Invalid Signature:** Ensure `x-forwarded-proto`, `x-original-uri` (or `x-forwarded-prefix`) are passed; backend fallback injects `/lb-automotive` when host is `twilio.kozytherocket.space`. Twilio Console webhook URL must be `https://twilio.kozytherocket.space/lb-automotive/api/twilio/webhook`.
+- **403 Validation Error:** Inspect backend logs for the exception type and message; fix the underlying cause (e.g. request body format, missing headers).
 
 ---
 
