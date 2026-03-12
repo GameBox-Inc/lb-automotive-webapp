@@ -126,7 +126,7 @@ pipeline {
                 script {
                     withCredentials([
                         string(credentialsId: 'secret-key', variable: 'SECRET_KEY'),
-                        string(credentialsId: 'allowed-origins', variable: 'ALLOWED_ORIGINS')
+                        string(credentialsId: 'allowed-origins', variable: 'ALLOWED_ORIGINS'),
                         string(credentialsId: 'supabase-db-url', variable: 'DATABASE_URL')
                     ]) {
                         sshagent(credentials: ['lb-server-ssh']) {
