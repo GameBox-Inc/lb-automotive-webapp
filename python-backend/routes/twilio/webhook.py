@@ -107,6 +107,20 @@ async def validate_twilio_request(request: Request):
         if "twilio.kozytherocket.space" in url and "/lb-automotive" not in url:
             url = url.replace("/api/twilio", "/lb-automotive/api/twilio")
 
+        # 4. Traefik Gateway API URLRewrite: backend sees /api/twilio/... (no /lb-automotive, internal host).
+        #    Reconstruct the canonical public URL Twilio signed (no forwarding headers set).
+        from urllib.parse import urlparse, urlunparse
+        parsed = urlparse(url)
+        if (
+            parsed.path.startswith("/api/twilio")
+            and not parsed.path.startswith("/lb-automotive")
+            and "twilio.kozytherocket.space" not in parsed.netloc
+        ):
+            path_with_prefix = f"/lb-automotive{parsed.path}"
+            url = urlunparse(
+                ("https", "twilio.kozytherocket.space", path_with_prefix, parsed.params, parsed.query, parsed.fragment)
+            )
+
         # Get the POST data
         form = await request.form()
         params = dict(form)
