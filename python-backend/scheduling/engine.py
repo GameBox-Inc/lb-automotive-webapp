@@ -55,18 +55,31 @@ def compute_availability(
     start_day = date.date()
     end_day = start_day + timedelta(days=horizon_days)
 
-    # Load service duration (fallback to 60 minutes if unknown)
+    # Load service duration (fallback to 60 minutes if unknown).
+    # Be backwards compatible with schemas that don't yet have duration_minutes.
     service_duration_min = 60
     if service_id:
-        cursor.execute(
-            fmt_query("SELECT duration_minutes, duration FROM services WHERE id = ?"),
-            (service_id,),
-        )
-        row = cursor.fetchone()
-        if row:
-            duration_minutes = row["duration_minutes"] if "duration_minutes" in row.keys() else row[0]
-            duration = row["duration"] if "duration" in row.keys() else row[1]
-            service_duration_min = _minutes(duration_minutes) or _minutes(duration) or 60
+        try:
+            cursor.execute(
+                fmt_query("SELECT duration_minutes, duration FROM services WHERE id = ?"),
+                (service_id,),
+            )
+            row = cursor.fetchone()
+            if row:
+                duration_minutes = row.get("duration_minutes")
+                duration = row.get("duration")
+                service_duration_min = _minutes(duration_minutes) or _minutes(duration) or 60
+        except Exception as e:
+            logger.warning("duration_minutes not available, falling back to duration only: %s", e)
+            cursor.execute(
+                fmt_query("SELECT duration FROM services WHERE id = ?"),
+                (service_id,),
+            )
+            row = cursor.fetchone()
+            if row:
+                # RealDictCursor returns dict; SQLite row is indexable by key or position.
+                duration = row.get("duration") if isinstance(row, dict) else row[0]
+                service_duration_min = _minutes(duration) or 60
 
     # Load business hours
     cursor.execute(
@@ -121,29 +134,52 @@ def compute_availability(
             }
         )
 
-    # Load existing appointments overlapping horizon
-    cursor.execute(
-        fmt_query(
+    # Load existing appointments overlapping horizon.
+    # Prefer new start_time/end_time fields, but gracefully fall back to appointment_time
+    # for legacy schemas.
+    try:
+        cursor.execute(
+            fmt_query(
+                """
+                SELECT id, technician_id, start_time, end_time
+                FROM appointments
+                WHERE start_time IS NOT NULL
             """
-            SELECT id, technician_id, start_time, end_time
-            FROM appointments
-            WHERE start_time IS NOT NULL
-        """
+            )
         )
-    )
-    appt_rows = cursor.fetchall()
+        appt_rows = cursor.fetchall()
+        use_legacy_appointments = False
+    except Exception as e:
+        logger.warning("start_time/end_time not available, falling back to appointment_time: %s", e)
+        cursor.execute(
+            fmt_query(
+                """
+                SELECT id, assigned_staff_id AS technician_id, appointment_time
+                FROM appointments
+                WHERE appointment_time IS NOT NULL
+            """
+            )
+        )
+        appt_rows = cursor.fetchall()
+        use_legacy_appointments = True
 
     existing: List[TimeSlot] = []
     for r in appt_rows:
         try:
-            s = _parse_time(r["start_time"])
-            e_raw = r["end_time"] or r["start_time"]
-            e = _parse_time(e_raw)
+            if use_legacy_appointments:
+                start_raw = r["appointment_time"]
+                end_raw = r["appointment_time"]
+            else:
+                start_raw = r["start_time"]
+                end_raw = r["end_time"] or r["start_time"]
+
+            s = _parse_time(start_raw)
+            e = _parse_time(end_raw)
             existing.append(
                 TimeSlot(
                     start=s,
                     end=e,
-                    technician_id=r["technician_id"],
+                    technician_id=r.get("technician_id"),
                     service_id=None,
                     source="existing",
                 )
@@ -151,16 +187,20 @@ def compute_availability(
         except Exception:
             continue
 
-    # Load blackouts
-    cursor.execute(
-        fmt_query(
+    # Load blackouts (if table exists; otherwise treat as none).
+    blackout_rows = []
+    try:
+        cursor.execute(
+            fmt_query(
+                """
+                SELECT start_time, end_time, scope, technician_id
+                FROM blackouts
             """
-            SELECT start_time, end_time, scope, technician_id
-            FROM blackouts
-        """
+            )
         )
-    )
-    blackout_rows = cursor.fetchall()
+        blackout_rows = cursor.fetchall()
+    except Exception as e:
+        logger.warning("blackouts table not available, continuing without blackouts: %s", e)
     blackouts: List[TimeSlot] = []
     for r in blackout_rows:
         try:
@@ -266,26 +306,49 @@ def check_conflicts(candidate: TimeSlot) -> bool:
     conn = get_db_connection()
     cursor = conn.cursor()
 
-    cursor.execute(
-        fmt_query(
+    # Mirror the same legacy-safe logic used in compute_availability.
+    try:
+        cursor.execute(
+            fmt_query(
+                """
+                SELECT technician_id, start_time, end_time
+                FROM appointments
+                WHERE start_time IS NOT NULL
             """
-            SELECT technician_id, start_time, end_time
-            FROM appointments
-            WHERE start_time IS NOT NULL
-        """
+            )
         )
-    )
-    appt_rows = cursor.fetchall()
+        appt_rows = cursor.fetchall()
+        use_legacy_appointments = False
+    except Exception as e:
+        logger.warning("check_conflicts falling back to appointment_time: %s", e)
+        cursor.execute(
+            fmt_query(
+                """
+                SELECT assigned_staff_id AS technician_id, appointment_time
+                FROM appointments
+                WHERE appointment_time IS NOT NULL
+            """
+            )
+        )
+        appt_rows = cursor.fetchall()
+        use_legacy_appointments = True
     existing: List[TimeSlot] = []
     for r in appt_rows:
         try:
-            s = _parse_time(r["start_time"])
-            e = _parse_time(r["end_time"] or r["start_time"])
+            if use_legacy_appointments:
+                start_raw = r["appointment_time"]
+                end_raw = r["appointment_time"]
+            else:
+                start_raw = r["start_time"]
+                end_raw = r["end_time"] or r["start_time"]
+
+            s = _parse_time(start_raw)
+            e = _parse_time(end_raw)
             existing.append(
                 TimeSlot(
                     start=s,
                     end=e,
-                    technician_id=r["technician_id"],
+                    technician_id=r.get("technician_id"),
                     service_id=None,
                     source="existing",
                 )
@@ -293,15 +356,20 @@ def check_conflicts(candidate: TimeSlot) -> bool:
         except Exception:
             continue
 
-    cursor.execute(
-        fmt_query(
+    # Blackouts: tolerate missing table.
+    blackout_rows = []
+    try:
+        cursor.execute(
+            fmt_query(
+                """
+                SELECT start_time, end_time, scope, technician_id
+                FROM blackouts
             """
-            SELECT start_time, end_time, scope, technician_id
-            FROM blackouts
-        """
+            )
         )
-    )
-    blackout_rows = cursor.fetchall()
+        blackout_rows = cursor.fetchall()
+    except Exception as e:
+        logger.warning("check_conflicts: blackouts table not available, skipping: %s", e)
     blackouts: List[TimeSlot] = []
     for r in blackout_rows:
         try:
