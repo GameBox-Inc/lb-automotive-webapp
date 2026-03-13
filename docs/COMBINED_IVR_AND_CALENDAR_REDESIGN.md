@@ -78,7 +78,7 @@ This document merges the **Premium IVR call entry redesign** with the **in-app c
   - **Ensure App Secrets** — `SECRET_KEY`, `ALLOWED_ORIGINS`, `DATABASE_URL` (Supabase/PostgreSQL); no new env vars for IVR/calendar.
   - **Ensure Twilio Secrets** — `TWILIO_AUTH_TOKEN` already synced for webhook signature validation.
   - **Deploy Manifests / Deploy to Production** — backend and frontend images; no new K8s resources for IVR/calendar.
-- **Operational note:** New IVR settings (`ivr_transfer_number`, `ivr_language_prompt_enabled`, etc.) live in the **database** (`settings` table). Admins configure them via **Admin IVR** in the app, not via Jenkins credentials. If using Supabase-managed schema, run the new migration once (`frontend/supabase/migrations/20260305120000_ivr_and_calendar_support.sql`) via `supabase db push` or the Supabase SQL editor; Jenkins does not run Supabase migrations.
+- **Operational note:** New IVR settings (`ivr_transfer_number`, `ivr_language_prompt_enabled`, etc.) live in the **database** (`settings` table). Admins configure them via **Admin IVR** in the app. **Supabase/Postgres migrations are applied on each pipeline deployment** (Jenkins stage `Run Supabase Migrations`; script `deployment/scripts/run_supabase_migrations.sh`). All migrations in `frontend/supabase/migrations/` run in sorted order so the schema stays in sync for IVR, Kiosk, and web booking.
 
 ### 7.2 Frontend UI
 

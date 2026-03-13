@@ -35,7 +35,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - **Secrets Management:** K8s Secrets for lb-automotive backend (app-secrets, twilio-secrets, anthropic-secrets). No Vault dependency for the app.
 - **Deployment:** Kubernetes (K3s) on Hetzner server (178.156.223.196)
 - **Domain:** kozytherocket.space
-- **CI/CD:** Jenkins (Dockerized, self-hosted) — replaced GitHub Actions
+- **CI/CD:** Jenkins (Dockerized, self-hosted) — replaced GitHub Actions. **Supabase/Postgres migrations are applied on each pipeline deployment** (see `Run Supabase Migrations` stage and `deployment/scripts/run_supabase_migrations.sh`).
 - **LLM:** Anthropic Claude API (Ollama removed due to memory constraints)
 - **VPN:** WireGuard (10.100.0.0/24, app accessible at 10.100.0.1:30080)
 
@@ -432,6 +432,9 @@ Every new feature MUST follow these security practices:
 - `docs/incidents/common-failures.md` - Common failure modes and fixes
 - `docs/architecture/vault-stability-and-improvements.md` - **Why Vault chain fails repeatedly and how to improve**
 
+### Supabase / DB
+- **Supabase table connections:** Backend expects `business_hours`, `staff_schedules`, `blackouts`, `services`, `appointments`, `call_states`, `settings`, etc. in the same DB as `DATABASE_URL`. See `.cursor/rules/04-deployment-migrations.mdc` for the table map and connection requirements. Migrations must seed `business_hours` (e.g. `20260305140000_seed_business_hours_and_routing.sql`) or IVR/Kiosk show "fully booked" when that table is empty or weekend uses default.
+
 ### Scripts
 - `deployment/scripts/configure-vault-supabase.sh` - **Store Supabase/PostgreSQL URL in Vault**
 - `deployment/scripts/remove_memory_hogs.sh` - **Remove Ollama/ArgoCD to free RAM**
@@ -629,14 +632,8 @@ docker compose down                       # Stop all services
 ```
 
 **Production Deployment:**
-```bash
-# On server at /opt/lb-automotive-dashboard
-cd deployment/docker
-docker compose up -d --build --force-recreate  # Deploy
-docker compose ps                              # Check status
-docker logs lb-auto-backend --tail 50          # View logs
-docker exec lb-auto-backend python migrate_business_hours.py  # Run migrations
-```
+- **Pipeline (Jenkins):** On each deploy, the pipeline runs **Supabase migrations** (`Run Supabase Migrations` stage) before applying K8s manifests. This keeps `business_hours`, `staff_schedules`, `blackouts`, and appointment/vehicle columns in sync for IVR, Kiosk, and web booking.
+- **Manual (legacy):** On server at `/opt/lb-automotive-dashboard`, `cd deployment/docker`, `docker compose up -d --build --force-recreate`; run migrations via pipeline or manually: `bash deployment/scripts/run_supabase_migrations.sh` (with `DATABASE_URL` set).
 
 ---
 
@@ -656,31 +653,35 @@ When working on this project:
 
 6. **Documentation** - **Always update `CLAUDE.md`** when making architecture or deployment changes.
 
-7. **24/7 Booking** - Business hours are per-day. IVR accepts calls 24/7. Appointments can be scheduled for future days even if currently closed.
+7. **Cursor / project guidance** - **Manage and update the `.cursor` file and project guidance** as part of your workflow: when changing architecture, deployment, or process, update `.cursor/rules/` (e.g. deployment-migrations, IVR, K8s) and `CLAUDE.md` so future sessions have accurate context.
 
-8. **Repository name** - The GitHub repo is `lb-automotive-webapp` (not `lb-automotive-dashboard`).
+8. **Supabase migrations** - **Key deployment step:** Migrations in `frontend/supabase/migrations/` are applied on each pipeline run (Jenkins stage `Run Supabase Migrations`). When adding schema for IVR, Kiosk, or booking, add a new `.sql` migration and ensure it is idempotent (e.g. `CREATE TABLE IF NOT EXISTS`, `ADD COLUMN IF NOT EXISTS`, `ON CONFLICT DO NOTHING`).
 
-9. **Case sensitivity** - Use kebab-case for filenames. Windows is case-insensitive but Linux Docker builds are case-sensitive. This has caused build failures.
+9. **24/7 Booking** - Business hours are per-day. IVR accepts calls 24/7. Appointments can be scheduled for future days even if currently closed.
 
-10. **`security_config.json`** - Required by `security.py` at startup. Contains SQL/XSS regex patterns. Must be in the Docker image or mounted via ConfigMap.
+10. **Repository name** - The GitHub repo is `lb-automotive-webapp` (not `lb-automotive-dashboard`).
 
-11. **App secrets** - Backend uses K8s Secrets (`app-secrets`, `twilio-secrets`, `anthropic-secrets`). Create via `deployment/k8s/create-secrets.sh` or Jenkins: `Ensure App Secrets` uses `secret-key`, `allowed-origins`, `supabase-db-url`; `Ensure Twilio Secrets` uses `twilio-auth-token` (Twilio Auth Token for webhook signature validation).
+11. **Case sensitivity** - Use kebab-case for filenames. Windows is case-insensitive but Linux Docker builds are case-sensitive. This has caused build failures.
 
-12. **Frontend Nginx proxy** - The production Nginx config is at `deployment/docker/nginx.conf`, NOT `frontend/nginx.conf`. It proxies `/api/*` to `http://backend:8000`.
+12. **`security_config.json`** - Required by `security.py` at startup. Contains SQL/XSS regex patterns. Must be in the Docker image or mounted via ConfigMap.
 
-13. **Ingress is deleted** - The Jenkinsfile removes legacy Ingress objects. All routing is via frontend Nginx (VPN) and Traefik HTTPRoutes (public/Cloudflare).
+13. **App secrets** - Backend uses K8s Secrets (`app-secrets`, `twilio-secrets`, `anthropic-secrets`). Create via `deployment/k8s/create-secrets.sh` or Jenkins: `Ensure App Secrets` uses `secret-key`, `allowed-origins`, `supabase-db-url`; `Ensure Twilio Secrets` uses `twilio-auth-token` (Twilio Auth Token for webhook signature validation).
 
-14. **SSH connection limits** - The server may drop SSH connections if too many are opened rapidly. Combine kubectl commands into single SSH sessions when possible.
+14. **Frontend Nginx proxy** - The production Nginx config is at `deployment/docker/nginx.conf`, NOT `frontend/nginx.conf`. It proxies `/api/*` to `http://backend:8000`.
 
-15. **K3s NetworkPolicy + DNAT** — `ipBlock` rules with ClusterIPs (e.g. `10.43.0.1/32`) don't work because kube-proxy DNATs them to pod IPs before policy evaluation. Service port → container port mapping also breaks `port` rules. Avoid restrictive egress policies on Traefik and cloudflared.
+15. **Ingress is deleted** - The Jenkinsfile removes legacy Ingress objects. All routing is via frontend Nginx (VPN) and Traefik HTTPRoutes (public/Cloudflare).
 
-16. **Traefik CRD middlewares + Gateway API** — Traefik v3.6 cannot resolve Middleware CRDs referenced via `ExtensionRef` in HTTPRoutes, even with `kubernetesCRD.enabled=true`. Use native Gateway API filters (`URLRewrite`, `RequestHeaderModifier`) instead.
+16. **SSH connection limits** - The server may drop SSH connections if too many are opened rapidly. Combine kubectl commands into single SSH sessions when possible.
 
-17. **Twilio webhook path** — Twilio sends to `https://twilio.kozytherocket.space/lb-automotive/api/twilio/webhook`. The HTTPRoute uses `URLRewrite` `ReplacePrefixMatch` to strip `/lb-automotive` → backend sees `/api/twilio/webhook`.
+17. **K3s NetworkPolicy + DNAT** — `ipBlock` rules with ClusterIPs (e.g. `10.43.0.1/32`) don't work because kube-proxy DNATs them to pod IPs before policy evaluation. Service port → container port mapping also breaks `port` rules. Avoid restrictive egress policies on Traefik and cloudflared.
 
-18. **Stale HTTPRoutes** — Delete any manually-created HTTPRoutes not in `lb-automotive-routes.yaml`. Stale routes referencing broken middlewares cause Traefik 502 errors for ALL routes.
+17. **Traefik CRD middlewares + Gateway API** — Traefik v3.6 cannot resolve Middleware CRDs referenced via `ExtensionRef` in HTTPRoutes, even with `kubernetesCRD.enabled=true`. Use native Gateway API filters (`URLRewrite`, `RequestHeaderModifier`) instead.
 
-19. **Traefik Service port** — The Traefik K8s Service maps port **80** → container port **8000**. All internal references (cloudflared config, NetworkPolicies) must use port 80 for the Service, not 8000.
+18. **Twilio webhook path** — Twilio sends to `https://twilio.kozytherocket.space/lb-automotive/api/twilio/webhook`. The HTTPRoute uses `URLRewrite` `ReplacePrefixMatch` to strip `/lb-automotive` → backend sees `/api/twilio/webhook`.
+
+19. **Stale HTTPRoutes** — Delete any manually-created HTTPRoutes not in `lb-automotive-routes.yaml`. Stale routes referencing broken middlewares cause Traefik 502 errors for ALL routes.
+
+20. **Traefik Service port** — The Traefik K8s Service maps port **80** → container port **8000**. All internal references (cloudflared config, NetworkPolicies) must use port 80 for the Service, not 8000.
 
 ---
 

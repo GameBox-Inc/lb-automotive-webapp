@@ -1,0 +1,50 @@
+---
+description: Supabase/Postgres migrations run on each pipeline deployment
+globs:
+  - "**/frontend/supabase/migrations/**"
+  - "**/deployment/scripts/run_supabase_migrations.sh"
+  - "**/Jenkinsfile"
+  - "**/CLAUDE.md"
+alwaysApply: false
+---
+
+# Deployment: Supabase Migrations
+
+## Key step on every deploy
+
+**Supabase/Postgres migrations are applied on each pipeline deployment.**
+
+- **Jenkins:** Stage `Run Supabase Migrations` runs after `Ensure App Secrets` and before `Deploy Manifests`. It uses the `supabase-db-url` credential (`DATABASE_URL`).
+- **Script:** `deployment/scripts/run_supabase_migrations.sh` applies every `frontend/supabase/migrations/*.sql` file in **sorted order** (by filename). Uses `psql` if available, otherwise `docker run postgres:15-alpine`.
+- **Purpose:** Keeps `business_hours`, `staff_schedules`, `blackouts`, and appointment/vehicle columns in sync for IVR, Kiosk, and web booking.
+
+## Adding schema changes
+
+1. Add a new `.sql` file under `frontend/supabase/migrations/` with a timestamped name (e.g. `20260305123000_scheduling_engine_schema.sql`).
+2. Keep migrations **idempotent**: use `CREATE TABLE IF NOT EXISTS`, `ADD COLUMN IF NOT EXISTS`, `ON CONFLICT DO NOTHING`, etc., so re-running is safe.
+3. Do **not** remove or reorder existing migration files; the pipeline runs them in sorted order.
+
+## Architecture
+
+- Single source of truth for availability: `business_hours` + `staff_schedules` + `appointments` + `services` (see `python-backend/scheduling/engine.py`).
+- IVR, Kiosk, and Appointments page all use `GET /api/appointments/available-slots` backed by this schema.
+
+## Supabase table connections (routing)
+
+The backend expects these tables and columns in the same Postgres DB that `DATABASE_URL` points to. Ensure migrations create and keep them in sync.
+
+| Backend use | Table(s) | Migration(s) | Notes |
+|-------------|----------|--------------|--------|
+| Availability / IVR / Kiosk | `business_hours`, `staff_schedules`, `blackouts`, `services` (duration_minutes), `appointments` (start_time, end_time, service_id, vehicle_*) | `20260305123000_scheduling_engine_schema.sql`, `20260305140000_seed_business_hours_and_routing.sql` | `business_hours` must be **seeded** (e.g. 20260305140000) or the engine uses in-memory Mon–Fri only → weekend shows "fully booked". |
+| IVR call state | `call_states`, `ivr_logs` | Early migrations (e.g. 20240509, 20250504) | Backend reads/writes by `call_sid`. |
+| Auth / users | `users` | Backend `init_db()` or separate migration | Not in scheduling migration. |
+| Staff CRUD / schedules | `staff`, `staff_schedules` | `20260305123000` creates; backend may seed staff | `staff.id` is UUID; backend uses string UUIDs. |
+| Appointments CRUD | `appointments` | Early + `20260305123000` (adds columns) | Has `service_type` (text) and `service_id` (uuid). |
+| Settings / IVR config | `settings` | `20260305120000_ivr_and_calendar_support.sql` | Keys for IVR disclaimer, retries, etc. |
+| Customers, cases | `customers`, `cases`, `case_notes`, `case_parts` | Various earlier migrations | Used by dashboard/reports. |
+
+**Connection requirements**
+
+- `DATABASE_URL` must be the **Supabase Postgres** connection string (direct or pooler). Use the **service role** or **postgres** connection so the backend can read/write all tables without RLS blocking (RLS policies in migrations are often `TO authenticated`; server-side backend typically does not set a JWT).
+- If the backend uses a pooler URL, ensure it connects to the same database where migrations were applied (e.g. `postgres` database, not a separate schema).
+- After deploying, run migrations then (if needed) restart the backend so it sees the seeded `business_hours` and new columns.
