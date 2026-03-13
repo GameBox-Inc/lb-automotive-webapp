@@ -561,21 +561,31 @@ def handle_booking(user_input, language, CallSid, metadata, response):
     if chosen_slot:
         appt_time = f"{target_date}T{chosen_slot}:00"
         aid = str(uuid.uuid4())
-        
+        # Start/end for scheduling engine conflict detection (same slot so duration from service or 60)
+        duration_min = int(svc.get("duration") or svc.get("duration_minutes") or 60)
+        start_ts = f"{target_date}T{chosen_slot}:00"
+        try:
+            start_dt = datetime.strptime(start_ts.replace("Z", ""), "%Y-%m-%dT%H:%M:%S")
+            end_dt = start_dt + timedelta(minutes=duration_min)
+            end_ts = end_dt.strftime("%Y-%m-%dT%H:%M:%S")
+        except Exception:
+            end_ts = start_ts
+        service_id_val = svc.get("id") or None
+
         # Build comprehensive notes
         notes_parts = []
         if metadata.get("vehicle_info"): notes_parts.append(f"Vehicle: {metadata['vehicle_info']}")
         if metadata.get("license_plate"): notes_parts.append(f"Plate: {metadata['license_plate']}")
         if metadata.get("symptoms"): notes_parts.append(f"Issue: {metadata['symptoms']}")
         final_notes = " | ".join(notes_parts)
-        
-        # Use Primary for write
+
+        # Use Primary for write; set start_time/end_time/service_id/source so scheduling engine includes this in conflict detection
         with DatabaseContextManager(read_only=False) as conn:
             cursor = conn.cursor()
             cursor.execute(fmt_query("""
-                INSERT INTO appointments (id, customer_name, phone_number, appointment_time, service_type, status, notes)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
-            """), (aid, metadata.get("customer_name", "Voice Customer"), metadata.get("from_phone"), appt_time, svc.get('name', 'General Service'), 'pending', final_notes))
+                INSERT INTO appointments (id, customer_name, phone_number, appointment_time, service_type, status, notes, start_time, end_time, service_id, source)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """), (aid, metadata.get("customer_name", "Voice Customer"), metadata.get("from_phone"), appt_time, svc.get("name", "General Service"), "pending", final_notes, start_ts, end_ts, service_id_val, "ivr"))
             conn.commit()
         
         upsert_call_state(CallSid, "completed", language, metadata, aid)

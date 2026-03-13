@@ -48,3 +48,4 @@ The backend expects these tables and columns in the same Postgres DB that `DATAB
 - `DATABASE_URL` must be the **Supabase Postgres** connection string (direct or pooler). Use the **service role** or **postgres** connection so the backend can read/write all tables without RLS blocking (RLS policies in migrations are often `TO authenticated`; server-side backend typically does not set a JWT).
 - If the backend uses a pooler URL, ensure it connects to the same database where migrations were applied (e.g. `postgres` database, not a separate schema).
 - After deploying, run migrations then (if needed) restart the backend so it sees the seeded `business_hours` and new columns.
+- **IVR/booking routing:** IVR booking INSERT sets `start_time`, `end_time`, `service_id`, and `source='ivr'` so the scheduling engine’s conflict detection includes IVR-created appointments. See `docs/supabase-ivr-booking-schema-assessment.md` for full schema assessment.
