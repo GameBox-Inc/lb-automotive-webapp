@@ -6,6 +6,7 @@ import { LoadingSpinner } from '../components/LoadingSpinner'
 import { useNavigate } from 'react-router-dom'
 import toast from 'react-hot-toast'
 import { format, parseISO } from 'date-fns'
+import { VEHICLE_MAKE_MODEL_OPTIONS } from '../constants/vehicleData'
 
 export default function CheckIn() {
     const navigate = useNavigate()
@@ -21,6 +22,8 @@ export default function CheckIn() {
     const [selectedDate, setSelectedDate] = useState(() => format(new Date(), 'yyyy-MM-dd'))
     const [availableSlots, setAvailableSlots] = useState<string[]>([])
     const [selectedTime, setSelectedTime] = useState<string | null>(null)
+    const [vehicleMake, setVehicleMake] = useState<string>('')
+    const [vehicleModel, setVehicleModel] = useState<string>('')
 
     // Request fullscreen on mount
     useEffect(() => {
@@ -158,8 +161,8 @@ export default function CheckIn() {
                 customer_id: customer.id,
                 service_id: selectedService.id,
                 appointment_time: fullDateTime,
-                vehicle_make: 'Unknown',
-                vehicle_model: 'Unknown',
+                vehicle_make: vehicleMake || undefined,
+                vehicle_model: vehicleModel || undefined,
                 vehicle_year: new Date().getFullYear(),
                 notes: 'Kiosk Appointment',
                 customer_name: customer.name,
@@ -178,6 +181,8 @@ export default function CheckIn() {
                 setSelectedService(null)
                 setSelectedTime(null)
                 setAvailableSlots([])
+                setVehicleMake('')
+                setVehicleModel('')
             }, 7000)
         } catch (error) {
             console.error('Error creating appointment:', error)
@@ -384,6 +389,49 @@ export default function CheckIn() {
                                         ))}
                                     </div>
                                 )}
+                            </div>
+
+                            {/* Optional vehicle make/model selection */}
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                                        Vehicle Make (optional)
+                                    </label>
+                                    <select
+                                        value={vehicleMake}
+                                        onChange={(e) => {
+                                            setVehicleMake(e.target.value)
+                                            setVehicleModel('')
+                                        }}
+                                        className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-red-500 focus:ring-red-500"
+                                    >
+                                        <option value="">Select make</option>
+                                        {VEHICLE_MAKE_MODEL_OPTIONS.map(option => (
+                                            <option key={option.make} value={option.make}>
+                                                {option.make}
+                                            </option>
+                                        ))}
+                                    </select>
+                                </div>
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                                        Vehicle Model (optional)
+                                    </label>
+                                    <select
+                                        value={vehicleModel}
+                                        onChange={(e) => setVehicleModel(e.target.value)}
+                                        className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-red-500 focus:ring-red-500"
+                                        disabled={!vehicleMake}
+                                    >
+                                        <option value="">Select model</option>
+                                        {vehicleMake &&
+                                            VEHICLE_MAKE_MODEL_OPTIONS.find(o => o.make === vehicleMake)?.models.map(model => (
+                                                <option key={model} value={model}>
+                                                    {model}
+                                                </option>
+                                            ))}
+                                    </select>
+                                </div>
                             </div>
 
                             <button
