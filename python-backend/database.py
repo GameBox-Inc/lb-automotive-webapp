@@ -159,6 +159,10 @@ def init_db():
             appointment_time TEXT NOT NULL,
             service_type TEXT NOT NULL,
             notes TEXT,
+            vehicle_make TEXT,
+            vehicle_model TEXT,
+            vehicle_color TEXT,
+            vehicle_year INTEGER,
             status TEXT DEFAULT 'pending',
             emergency_request INTEGER DEFAULT 0,
             assigned_staff_id TEXT,
@@ -315,6 +319,25 @@ def init_db():
             updated_by TEXT
         )
     """)
+
+    # ---- Schema migrations for central scheduling engine (idempotent) ----
+    # Services: ensure duration_minutes exists to support variable durations
+    cursor.execute(fmt_query("ALTER TABLE services ADD COLUMN IF NOT EXISTS duration_minutes INTEGER"))
+
+    # Staff: ensure role and active flags exist (for legacy DBs that predate staff table evolution)
+    cursor.execute(fmt_query("ALTER TABLE staff ADD COLUMN IF NOT EXISTS role TEXT DEFAULT 'mechanic'"))
+    cursor.execute(fmt_query("ALTER TABLE staff ADD COLUMN IF NOT EXISTS active INTEGER DEFAULT 1"))
+
+    # Appointments: enrich with scheduling engine + vehicle fields
+    cursor.execute(fmt_query("ALTER TABLE appointments ADD COLUMN IF NOT EXISTS service_id TEXT"))
+    cursor.execute(fmt_query("ALTER TABLE appointments ADD COLUMN IF NOT EXISTS technician_id TEXT"))
+    cursor.execute(fmt_query("ALTER TABLE appointments ADD COLUMN IF NOT EXISTS start_time TEXT"))
+    cursor.execute(fmt_query("ALTER TABLE appointments ADD COLUMN IF NOT EXISTS end_time TEXT"))
+    cursor.execute(fmt_query("ALTER TABLE appointments ADD COLUMN IF NOT EXISTS source TEXT"))
+    cursor.execute(fmt_query("ALTER TABLE appointments ADD COLUMN IF NOT EXISTS vehicle_make TEXT"))
+    cursor.execute(fmt_query("ALTER TABLE appointments ADD COLUMN IF NOT EXISTS vehicle_model TEXT"))
+    cursor.execute(fmt_query("ALTER TABLE appointments ADD COLUMN IF NOT EXISTS vehicle_color TEXT"))
+    cursor.execute(fmt_query("ALTER TABLE appointments ADD COLUMN IF NOT EXISTS vehicle_year INTEGER"))
 
     conn.commit()
 

@@ -65,6 +65,10 @@ class AppointmentRepository:
                 emergency_request=bool(row["emergency_request"]),
                 assigned_staff_id=row["assigned_staff_id"] if "assigned_staff_id" in row.keys() else None,
                 user_id=row["user_id"] if "user_id" in row.keys() else None,
+                vehicle_make=row["vehicle_make"] if "vehicle_make" in row.keys() else None,
+                vehicle_model=row["vehicle_model"] if "vehicle_model" in row.keys() else None,
+                vehicle_color=row["vehicle_color"] if "vehicle_color" in row.keys() else None,
+                vehicle_year=row["vehicle_year"] if "vehicle_year" in row.keys() else None,
                 created_at=row["created_at"],
                 updated_at=row["updated_at"],
                 started_at=row["started_at"] if "started_at" in row.keys() else None
@@ -104,6 +108,10 @@ class AppointmentRepository:
             emergency_request=bool(row["emergency_request"]),
             assigned_staff_id=row["assigned_staff_id"] if "assigned_staff_id" in row.keys() else None,
             user_id=row["user_id"] if "user_id" in row.keys() else None,
+            vehicle_make=row["vehicle_make"] if "vehicle_make" in row.keys() else None,
+            vehicle_model=row["vehicle_model"] if "vehicle_model" in row.keys() else None,
+            vehicle_color=row["vehicle_color"] if "vehicle_color" in row.keys() else None,
+            vehicle_year=row["vehicle_year"] if "vehicle_year" in row.keys() else None,
             created_at=row["created_at"],
             updated_at=row["updated_at"]
         )
@@ -116,8 +124,9 @@ class AppointmentRepository:
             cursor.execute(fmt_query("""
                 INSERT INTO appointments (
                     id, customer_name, phone_number, appointment_time,
-                    service_type, notes, emergency_request, user_id, assigned_staff_id
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    service_type, notes, emergency_request, user_id, assigned_staff_id,
+                    vehicle_make, vehicle_model, vehicle_color, vehicle_year
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """), (
                 appointment_id,
                 appointment_data["customer_name"],
@@ -127,7 +136,11 @@ class AppointmentRepository:
                 appointment_data.get("notes"),
                 int(appointment_data.get("emergency_request", False)),
                 user_id,
-                None
+                None,
+                appointment_data.get("vehicle_make"),
+                appointment_data.get("vehicle_model"),
+                appointment_data.get("vehicle_color"),
+                appointment_data.get("vehicle_year"),
             ))
             conn.commit()
         
@@ -180,6 +193,22 @@ class AppointmentRepository:
         if updates.emergency_request is not None:
             update_fields.append("emergency_request = ?")
             params.append(int(updates.emergency_request))
+
+        if updates.vehicle_make is not None:
+            update_fields.append("vehicle_make = ?")
+            params.append(updates.vehicle_make)
+
+        if updates.vehicle_model is not None:
+            update_fields.append("vehicle_model = ?")
+            params.append(updates.vehicle_model)
+
+        if updates.vehicle_color is not None:
+            update_fields.append("vehicle_color = ?")
+            params.append(updates.vehicle_color)
+
+        if updates.vehicle_year is not None:
+            update_fields.append("vehicle_year = ?")
+            params.append(updates.vehicle_year)
         
         if not update_fields:
             return self.get_appointment(appointment_id)

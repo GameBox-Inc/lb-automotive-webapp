@@ -70,6 +70,11 @@ class AppointmentCreate(BaseModel):
     service_type: str
     notes: Optional[str] = None
     emergency_request: bool = False
+     # Optional vehicle details to align with IVR and kiosk flows
+    vehicle_make: Optional[str] = None
+    vehicle_model: Optional[str] = None
+    vehicle_color: Optional[str] = None
+    vehicle_year: Optional[int] = None
 
 
 class AppointmentUpdate(BaseModel):
@@ -80,6 +85,10 @@ class AppointmentUpdate(BaseModel):
     notes: Optional[str] = None
     status: Optional[str] = None
     emergency_request: Optional[bool] = None
+    vehicle_make: Optional[str] = None
+    vehicle_model: Optional[str] = None
+    vehicle_color: Optional[str] = None
+    vehicle_year: Optional[int] = None
     assigned_staff_id: Optional[str] = None
 
 
@@ -92,6 +101,10 @@ class Appointment(BaseModel):
     notes: Optional[str] = None
     status: str = "pending"
     emergency_request: bool = False
+    vehicle_make: Optional[str] = None
+    vehicle_model: Optional[str] = None
+    vehicle_color: Optional[str] = None
+    vehicle_year: Optional[int] = None
     assigned_staff_id: Optional[str] = None
     user_id: Optional[str] = None
     created_at: Optional[datetime] = None

@@ -49,7 +49,11 @@ export function Appointments() {
     appointment_time: '',
     service_type: '',
     notes: '',
-    emergency_request: false
+    emergency_request: false,
+    vehicle_make: '',
+    vehicle_model: '',
+    vehicle_color: '',
+    vehicle_year: new Date().getFullYear(),
   })
 
   useEffect(() => {
@@ -215,7 +219,11 @@ export function Appointments() {
       appointment_time: '',
       service_type: '',
       notes: '',
-      emergency_request: false
+      emergency_request: false,
+      vehicle_make: '',
+      vehicle_model: '',
+      vehicle_color: '',
+      vehicle_year: new Date().getFullYear(),
     })
     setSelectedCategory('')
     setCustomerQuery('')
@@ -704,6 +712,61 @@ export function Appointments() {
                   )}
                 </div>
               )}
+
+              {/* Optional Vehicle Details */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
+                    Vehicle Make (optional)
+                  </label>
+                  <input
+                    type="text"
+                    value={newAppointment.vehicle_make}
+                    onChange={e => setNewAppointment({ ...newAppointment, vehicle_make: e.target.value })}
+                    className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+                    placeholder="e.g. Toyota"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
+                    Vehicle Model (optional)
+                  </label>
+                  <input
+                    type="text"
+                    value={newAppointment.vehicle_model}
+                    onChange={e => setNewAppointment({ ...newAppointment, vehicle_model: e.target.value })}
+                    className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+                    placeholder="e.g. Camry"
+                  />
+                </div>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
+                    Vehicle Color (optional)
+                  </label>
+                  <input
+                    type="text"
+                    value={newAppointment.vehicle_color}
+                    onChange={e => setNewAppointment({ ...newAppointment, vehicle_color: e.target.value })}
+                    className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+                    placeholder="e.g. Blue"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
+                    Vehicle Year (optional)
+                  </label>
+                  <input
+                    type="number"
+                    value={newAppointment.vehicle_year}
+                    onChange={e => setNewAppointment({ ...newAppointment, vehicle_year: Number(e.target.value) || new Date().getFullYear() })}
+                    className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+                    min={1900}
+                    max={new Date().getFullYear() + 1}
+                  />
+                </div>
+              </div>
 
               <div>
                 <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
