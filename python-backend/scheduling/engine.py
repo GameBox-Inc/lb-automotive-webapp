@@ -100,6 +100,14 @@ def compute_availability(
                 "closing_time": r["closing_time"],
                 "is_closed": r["is_closed"],
             }
+        # If no business_hours rows (e.g. fresh DB), use default Mon-Fri 8-6 so slots still show
+        if not business_hours:
+            for dow in range(7):
+                if dow < 5:  # Mon-Fri
+                    business_hours[dow] = {"opening_time": "08:00", "closing_time": "18:00", "is_closed": 0}
+                else:
+                    business_hours[dow] = {"opening_time": None, "closing_time": None, "is_closed": 1}
+            logger.info("business_hours empty; using default Mon-Fri 08:00-18:00")
 
         # Load staff schedules (filter by technician if provided)
         if technician_id:
@@ -244,31 +252,49 @@ def compute_availability(
             if technician_id:
                 technicians_for_day = [s for s in technicians_for_day if s["staff_id"] == technician_id]
 
-            for sched in technicians_for_day:
-                if sched["is_off"]:
-                    continue
-
-                try:
-                    tech_start = _parse_time(f"{day.isoformat()} {sched['start_time']}")
-                    tech_end = _parse_time(f"{day.isoformat()} {sched['end_time']}")
-                except Exception:
-                    continue
-
-                window_start = max(open_dt, tech_start)
-                window_end = min(close_dt, tech_end)
+            # If no staff schedules for this day, fall back to business-hours-only slots
+            # so Kiosk and appointment forms show times when the shop is open.
+            if not technicians_for_day:
+                window_start = open_dt
+                window_end = close_dt
                 cursor_time = window_start
-
                 while cursor_time + timedelta(minutes=service_duration_min) <= window_end:
                     candidate_end = cursor_time + timedelta(minutes=service_duration_min)
                     candidate = TimeSlot(
                         start=cursor_time,
                         end=candidate_end,
-                        technician_id=sched["staff_id"],
+                        technician_id=None,
                         service_id=service_id,
                     )
                     if not _has_conflict(candidate, existing, blackouts):
                         slots.append(candidate)
                     cursor_time = cursor_time + timedelta(minutes=15)
+            else:
+                for sched in technicians_for_day:
+                    if sched["is_off"]:
+                        continue
+
+                    try:
+                        tech_start = _parse_time(f"{day.isoformat()} {sched['start_time']}")
+                        tech_end = _parse_time(f"{day.isoformat()} {sched['end_time']}")
+                    except Exception:
+                        continue
+
+                    window_start = max(open_dt, tech_start)
+                    window_end = min(close_dt, tech_end)
+                    cursor_time = window_start
+
+                    while cursor_time + timedelta(minutes=service_duration_min) <= window_end:
+                        candidate_end = cursor_time + timedelta(minutes=service_duration_min)
+                        candidate = TimeSlot(
+                            start=cursor_time,
+                            end=candidate_end,
+                            technician_id=sched["staff_id"],
+                            service_id=service_id,
+                        )
+                        if not _has_conflict(candidate, existing, blackouts):
+                            slots.append(candidate)
+                        cursor_time = cursor_time + timedelta(minutes=15)
 
             day = day + timedelta(days=1)
 

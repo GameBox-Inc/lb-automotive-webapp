@@ -13,7 +13,15 @@ from fastapi import HTTPException, Header, BackgroundTasks, APIRouter, Request, 
 from database import get_db_connection, update_appointment_status, fmt_query, DatabaseContextManager
 from services.llm import classify_intent, generate_response
 from services.call_state import get_call_state, upsert_call_state, get_setting, log_ivr_interaction, track_decision, update_decision_path
-from utils.ivr_helper import get_random_filler, get_redis_result_key, clear_ivr_state, parse_filler_phrases_setting, apply_latency_mask
+from utils.ivr_helper import (
+    get_random_filler,
+    get_redis_result_key,
+    clear_ivr_state,
+    parse_filler_phrases_setting,
+    apply_latency_mask,
+    is_actionable_transcript,
+    get_first_turn_intent,
+)
 from utils.background_tasks import process_ivr_intent_async
 from security import redis_client
 from routes.twilio.smart_jump import process_smart_jump
@@ -215,7 +223,7 @@ DECISION_TREE = {
         "gather_config": {
             "num_digits": 1,
             "timeout": 8,
-            "bargein": True,
+            "bargein": False,
             "speech_timeout": "auto",
             "input": "speech dtmf"
         },
@@ -688,6 +696,7 @@ def twilio_webhook(
     From: str = Form(...),
     Digits: Optional[str] = Form(None),
     SpeechResult: Optional[str] = Form(None),
+    Confidence: Optional[str] = Form(None),
     step: str = "start"
 ):
     """Handle incoming Twilio calls with speech and DTMF support."""
@@ -711,33 +720,127 @@ def twilio_webhook(
             upsert_call_state(CallSid, step, language, metadata)
         
         input_data = Digits if Digits else SpeechResult
-        if input_data: log_ivr_interaction(CallSid, step, input_data)
+        if input_data:
+            log_ivr_interaction(CallSid, step, input_data)
         intent = None
         llm_result = {}
         masking_enabled = get_setting("ivr_latency_masking_enabled", "true").lower() == "true"
+
+        # Start step: DTMF 1/2/3 -> redirect to transition (no re-gather).
+        if step == "start" and Digits and Digits in ("1", "2", "3"):
+            transitions = {"1": "collect_vehicle", "2": "emergency_services", "3": "transfer_representative"}
+            next_step = transitions.get(Digits, "start")
+            upsert_call_state(CallSid, next_step, language, metadata)
+            response.redirect(f"{WEBHOOK_BASE_URL}?step={next_step}")
+            logger.info(
+                "IVR response",
+                extra={**get_trace_context(), "step": step, "route": "dtmf", "next_step": next_step},
+            )
+            return Response(content=str(response), media_type="application/xml")
+
+        # Speech at start: validate, direct-match, or send to LLM.
+        go_to_processing = False
         if SpeechResult and step != "processing":
             update_phase(PHASE_STT_STARTED)
-            if masking_enabled:
-                trace_ctx = get_trace_context()
-                conv_ctx = f"Last intent: {metadata.get('last_intent', 'none')}, step: {step}"
-                background_tasks.add_task(process_ivr_intent_async, CallSid, SpeechResult, trace_ctx, conv_ctx)
-                filler_mode = get_setting("ivr_filler_mode", "voice_only").lower()
-                thinking_url = get_setting("ivr_thinking_sound_url", "") if filler_mode in ("sound_only", "hybrid") else None
-                phrases = parse_filler_phrases_setting(get_setting("ivr_filler_phrases", ""))
-                filler_phrase = get_random_filler(phrases) if phrases else get_random_filler()
-                apply_latency_mask(response, voice, filler_mode, thinking_url or None, filler_phrase)
-                update_phase(PHASE_TTS_READY)
-                response.redirect(f"{WEBHOOK_BASE_URL}?step=processing")
-                logger.info("IVR response", extra={**get_trace_context(), "step": step, "intent": "masking_redirect"})
-                return Response(content=str(response), media_type="application/xml")
+            transcript = (SpeechResult or "").strip()
+            try:
+                confidence = float(Confidence) if Confidence else None
+            except (TypeError, ValueError):
+                confidence = None
+
+            if step == "start":
+                min_confidence = float(get_setting("ivr_min_confidence", "0") or "0")
+                # Duplicate guard: same transcript already sent to LLM
+                if transcript and transcript == metadata.get("last_sent_to_llm"):
+                    logger.info(
+                        "IVR start speech",
+                        extra={
+                            **get_trace_context(),
+                            "step": step,
+                            "transcript": transcript,
+                            "confidence": confidence,
+                            "validation_passed": False,
+                            "route": "reject",
+                            "processing_skipped_reason": "duplicate",
+                            "repair_played": metadata.get("start_gather_played", False),
+                            "retry_count": (metadata.get("step_repair_count") or {}).get("start", 0),
+                        },
+                    )
+                    go_to_processing = False
+                else:
+                    direct_intent = get_first_turn_intent(transcript)
+                    if direct_intent:
+                        llm_result = {"intent": direct_intent}
+                        if process_smart_jump(direct_intent, llm_result, CallSid, metadata, response, language):
+                            update_phase(PHASE_TTS_READY)
+                            logger.info(
+                                "IVR start speech",
+                                extra={
+                                    **get_trace_context(),
+                                    "step": step,
+                                    "transcript": transcript,
+                                    "confidence": confidence,
+                                    "route": "direct_match",
+                                    "intent": direct_intent,
+                                },
+                            )
+                            return Response(content=str(response), media_type="application/xml")
+                        go_to_processing = False
+                    elif not is_actionable_transcript(transcript, confidence, min_confidence=min_confidence):
+                        logger.info(
+                            "IVR start speech",
+                            extra={
+                                **get_trace_context(),
+                                "step": step,
+                                "transcript": transcript,
+                                "confidence": confidence,
+                                "validation_passed": False,
+                                "route": "reject",
+                                "processing_skipped_reason": "invalid_or_filler",
+                                "repair_played": metadata.get("start_gather_played", False),
+                                "retry_count": (metadata.get("step_repair_count") or {}).get("start", 0),
+                            },
+                        )
+                        go_to_processing = False
+                    else:
+                        metadata["last_sent_to_llm"] = transcript
+                        go_to_processing = True
+                        logger.info(
+                            "IVR start speech",
+                            extra={
+                                **get_trace_context(),
+                                "step": step,
+                                "transcript": transcript,
+                                "confidence": confidence,
+                                "validation_passed": True,
+                                "route": "llm",
+                            },
+                        )
             else:
-                try:
-                    update_phase(PHASE_LLM_STARTED)
-                    llm_result = classify_intent(SpeechResult)
-                    update_phase(PHASE_LLM_COMPLETE)
-                    intent = llm_result.get("intent")
-                except Exception:
-                    intent = "unknown"
+                go_to_processing = True
+
+            if go_to_processing:
+                if masking_enabled:
+                    trace_ctx = get_trace_context()
+                    conv_ctx = f"Last intent: {metadata.get('last_intent', 'none')}, step: {step}"
+                    background_tasks.add_task(process_ivr_intent_async, CallSid, SpeechResult, trace_ctx, conv_ctx)
+                    filler_mode = get_setting("ivr_filler_mode", "voice_only").lower()
+                    thinking_url = get_setting("ivr_thinking_sound_url", "") if filler_mode in ("sound_only", "hybrid") else None
+                    phrases = parse_filler_phrases_setting(get_setting("ivr_filler_phrases", ""))
+                    filler_phrase = get_random_filler(phrases) if phrases else get_random_filler()
+                    apply_latency_mask(response, voice, filler_mode, thinking_url or None, filler_phrase)
+                    update_phase(PHASE_TTS_READY)
+                    response.redirect(f"{WEBHOOK_BASE_URL}?step=processing")
+                    logger.info("IVR response", extra={**get_trace_context(), "step": step, "intent": "masking_redirect"})
+                    return Response(content=str(response), media_type="application/xml")
+                else:
+                    try:
+                        update_phase(PHASE_LLM_STARTED)
+                        llm_result = classify_intent(SpeechResult)
+                        update_phase(PHASE_LLM_COMPLETE)
+                        intent = llm_result.get("intent")
+                    except Exception:
+                        intent = "unknown"
         elif step == "processing":
             update_phase(PHASE_LLM_COMPLETE)
             result_key = get_redis_result_key(CallSid)
@@ -745,9 +848,11 @@ def twilio_webhook(
             if result_data:
                 llm_result = json.loads(result_data)
                 intent = llm_result.get("intent")
-                if redis_client: redis_client.delete(result_key)
+                if redis_client:
+                    redis_client.delete(result_key)
                 metadata["wait_count"] = 0
                 metadata["last_intent"] = intent
+                metadata.pop("last_sent_to_llm", None)
                 upsert_call_state(CallSid, "processing", language, metadata)
             else:
                 wait_count = int(metadata.get("wait_count", 0))
@@ -781,6 +886,8 @@ def twilio_webhook(
                     response.redirect(f"{WEBHOOK_BASE_URL}?step=main_menu_{language}")
                     return Response(content=str(response), media_type="application/xml")
             else:
+                metadata.pop("last_sent_to_llm", None)
+                upsert_call_state(CallSid, f"main_menu_{language}", language, metadata)
                 update_phase(PHASE_TTS_READY)
                 response.redirect(f"{WEBHOOK_BASE_URL}?step=main_menu_{language}")
                 return Response(content=str(response), media_type="application/xml")
@@ -792,25 +899,57 @@ def twilio_webhook(
                 gc = node.get("gather_config", {})
                 # Timeout / no input: repair or transfer after max retries
                 if not input_data:
-                    step_repair = metadata.get("step_repair_count") or {}
-                    repair_count = step_repair.get(step, 0) + 1
-                    step_repair[step] = repair_count
-                    metadata["step_repair_count"] = step_repair
-                    upsert_call_state(CallSid, step, language, metadata)
-                    max_repairs = int(get_setting("ivr_repair_max_retries", "3"))
-                    if repair_count > max_repairs:
-                        response.say(
+                    # First-turn at start: do not play repair on the very first request (no user input yet).
+                    if step == "start" and not metadata.get("start_gather_played"):
+                        metadata["start_gather_played"] = True
+                        upsert_call_state(CallSid, step, language, metadata)
+                        next_s = step
+                        logger.info(
+                            "IVR response",
+                            extra={
+                                **get_trace_context(),
+                                "step": step,
+                                "repair_played": False,
+                                "reason": "first_gather",
+                            },
+                        )
+                    else:
+                        step_repair = metadata.get("step_repair_count") or {}
+                        repair_count = step_repair.get(step, 0) + 1
+                        step_repair[step] = repair_count
+                        metadata["step_repair_count"] = step_repair
+                        upsert_call_state(CallSid, step, language, metadata)
+                        max_repairs = int(get_setting("ivr_repair_max_retries", "3"))
+                        if repair_count > max_repairs:
+                            response.say(
                             "I’m having trouble hearing you. Let me connect you to someone who can help.",
                             voice=voice,
+                            )
+                            response.redirect(f"{WEBHOOK_BASE_URL}?step=transfer_representative")
+                            logger.info(
+                                "IVR response",
+                                extra={
+                                    **get_trace_context(),
+                                    "step": step,
+                                    "repair": "transfer",
+                                    "repair_played": True,
+                                    "repair_count": repair_count,
+                                },
+                            )
+                            return Response(content=str(response), media_type="application/xml")
+                        if language == "es":
+                            response.say("No alcancé a escucharle bien. Intentemos de nuevo.", voice=voice)
+                        else:
+                            response.say("I didn't quite catch that. No problem, let's try that again.", voice=voice)
+                        logger.info(
+                            "IVR response",
+                            extra={
+                                **get_trace_context(),
+                                "step": step,
+                                "repair_played": True,
+                                "repair_count": repair_count,
+                            },
                         )
-                        response.redirect(f"{WEBHOOK_BASE_URL}?step=transfer_representative")
-                        logger.info("IVR response", extra={**get_trace_context(), "step": step, "repair": "transfer"})
-                        return Response(content=str(response), media_type="application/xml")
-                    if language == "es":
-                        response.say("No alcancé a escucharle bien. Intentemos de nuevo.", voice=voice)
-                    else:
-                        response.say("I didn’t quite catch that. No problem, let’s try that again.", voice=voice)
-                    # Fall through to re-present same gather below (next_s = step, so we re-gather same step)
                     next_s = step
                 else:
                     next_s = node.get("transitions", {}).get(Digits or SpeechResult or "default", node.get("default", step))
@@ -838,7 +977,10 @@ def twilio_webhook(
                     action=f"{WEBHOOK_BASE_URL}?step={next_s}",
                 )
                 if "speech" in gc.get("input", ""):
-                    gather_kw["barge_in"] = gc.get("bargein", True)
+                    if step == "start":
+                        gather_kw["barge_in"] = get_setting("ivr_start_bargein", "false").lower() == "true"
+                    else:
+                        gather_kw["barge_in"] = gc.get("bargein", True)
                     gather_kw["speech_timeout"] = gc.get("speech_timeout") or get_setting("ivr_speech_timeout", "auto")
                 gather = Gather(**gather_kw)
                 prompt_text = node.get(f"prompt_{language}", node.get("prompt_en")) or "Please continue."
