@@ -182,11 +182,17 @@ TA=$(printf %s "$1" | base64 -d)
 # Single-line base64 for K8s secret data (strip any whitespace so patch JSON is valid)
 TA_B64_LOCAL=$(printf %s "$TA" | base64 -w 0 2>/dev/null || printf %s "$TA" | base64 | tr -d '[:space:]')
 if sudo k3s kubectl get secret twilio-secrets -n lb-automotive &>/dev/null; then
-  PATCH_FILE=$(mktemp)
-  printf '"'"'{"data":{"TWILIO_AUTH_TOKEN":"%s"}}'"'"' "$TA_B64_LOCAL" > "$PATCH_FILE"
-  sudo k3s kubectl patch secret twilio-secrets -n lb-automotive --type=merge --patch-file="$PATCH_FILE"
-  rm -f "$PATCH_FILE"
-  echo "✅ twilio-secrets patched (TWILIO_AUTH_TOKEN updated)"
+  # k3s kubectl often lacks --patch-file; use get + jq + replace to avoid patch JSON parsing issues
+  if command -v jq &>/dev/null; then
+    SECRET_JSON=$(sudo k3s kubectl get secret twilio-secrets -n lb-automotive -o json)
+    echo "$SECRET_JSON" | jq --arg b64 "$TA_B64_LOCAL" '.data.TWILIO_AUTH_TOKEN = $b64 | del(.metadata.resourceVersion, .metadata.uid, .metadata.managedFields, .metadata.creationTimestamp)' | sudo k3s kubectl replace -f -
+    echo "✅ twilio-secrets updated (TWILIO_AUTH_TOKEN) via jq+replace"
+  else
+    # No jq: overwrite secret with only TWILIO_AUTH_TOKEN (other keys like TWILIO_ACCOUNT_SID are lost)
+    sudo k3s kubectl delete secret twilio-secrets -n lb-automotive --ignore-not-found
+    sudo k3s kubectl create secret generic twilio-secrets -n lb-automotive --from-literal=TWILIO_AUTH_TOKEN="$TA" --dry-run=client -o yaml | sudo k3s kubectl apply -f -
+    echo "✅ twilio-secrets recreated (TWILIO_AUTH_TOKEN; install jq to preserve other keys)"
+  fi
 else
   sudo k3s kubectl create secret generic twilio-secrets -n lb-automotive --from-literal=TWILIO_AUTH_TOKEN="$TA" --dry-run=client -o yaml | sudo k3s kubectl apply -f -
   echo "✅ twilio-secrets created (TWILIO_AUTH_TOKEN set)"
