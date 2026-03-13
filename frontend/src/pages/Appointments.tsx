@@ -1,5 +1,5 @@
 import React, { useState, useEffect, startTransition } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useLocation, useNavigate } from 'react-router-dom'
 import { useAppDispatch, useAppSelector } from '../store/hooks'
 import { fetchServices, fetchStaff } from '../store/slices/shopSlice'
 import { RootState } from '../store'
@@ -8,13 +8,14 @@ import { AppointmentCard } from '../components/AppointmentCard'
 import { AppointmentCalendar } from '../components/AppointmentCalendar'
 import { LoadingSpinner } from '../components/LoadingSpinner'
 import { VoicePrompt } from '../components/VoicePrompt'
-import { Plus, Search, Calendar, Clock, X } from 'lucide-react';
+import { Plus, Search, Calendar, Clock, X, Maximize2, Minimize2, RefreshCw } from 'lucide-react';
 import { format, parseISO } from 'date-fns';
 import toast from 'react-hot-toast'
 import { Appointment, Service, Customer } from '../types'
 
 export function Appointments() {
   const navigate = useNavigate()
+  const location = useLocation()
   const dispatch = useAppDispatch()
   const services = useAppSelector((state: RootState) => state.shop.services)
   const staff = useAppSelector((state: RootState) => state.shop.staff)
@@ -40,6 +41,8 @@ export function Appointments() {
   const [checkingAvailability, setCheckingAvailability] = useState(false)
   const [selectedDate, setSelectedDate] = useState(format(new Date(), 'yyyy-MM-dd'))
 
+  const isWallboardMode = location.pathname === '/wallboard/calendar'
+
   const [newAppointment, setNewAppointment] = useState({
     customer_name: '',
     phone_number: '',
@@ -55,6 +58,18 @@ export function Appointments() {
     if (services.length === 0) dispatch(fetchServices())
     if (staff.length === 0) dispatch(fetchStaff())
   }, [dispatch])
+
+  // Wallboard: force calendar view and refresh periodically
+  useEffect(() => {
+    if (!isWallboardMode) return
+    setViewMode('calendar')
+    const interval = globalThis.setInterval(() => {
+      fetchAppointments()
+    }, 30000)
+    return () => globalThis.clearInterval(interval)
+    // Intentionally exclude fetchAppointments from deps to avoid re-registering the interval.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isWallboardMode])
 
   // Customer Search
   useEffect(() => {
@@ -230,9 +245,44 @@ export function Appointments() {
   });
 
   return (
-    <div className="space-y-6">
+    <div className={isWallboardMode ? 'space-y-4' : 'space-y-6'}>
+      {isWallboardMode && (
+        <div className="flex items-center justify-between bg-white dark:bg-gray-800 rounded-2xl shadow-sm border border-gray-200/50 dark:border-gray-700/50 px-4 py-3">
+          <div className="flex items-center gap-3">
+            <div className="p-2 rounded-xl bg-indigo-50 dark:bg-indigo-900/30">
+              <Calendar className="h-5 w-5 text-indigo-600 dark:text-indigo-300" />
+            </div>
+            <div>
+              <div className="text-sm font-semibold text-gray-900 dark:text-white">Shop Calendar (Live)</div>
+              <div className="text-xs text-gray-500 dark:text-gray-400">Auto-refreshing every 30 seconds</div>
+            </div>
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => fetchAppointments()}
+              className="inline-flex items-center gap-2 px-3 py-2 rounded-xl border border-gray-200 dark:border-gray-700 text-sm font-medium text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700"
+              title="Refresh now"
+            >
+              <RefreshCw className="h-4 w-4" />
+              Refresh
+            </button>
+            <button
+              type="button"
+              onClick={() => navigate('/appointments')}
+              className="inline-flex items-center gap-2 px-3 py-2 rounded-xl bg-[#B91C1C] text-white text-sm font-medium hover:opacity-95"
+              title="Exit wallboard"
+            >
+              <Minimize2 className="h-4 w-4" />
+              Exit
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Enhanced Header Section */}
-      <div className="bg-white/80 dark:bg-gray-800/80 backdrop-blur-md sticky top-0 z-20 p-4 rounded-2xl shadow-sm border border-gray-200/50 dark:border-gray-700/50 transition-all duration-200">
+      {!isWallboardMode && (
+        <div className="bg-white/80 dark:bg-gray-800/80 backdrop-blur-md sticky top-0 z-20 p-4 rounded-2xl shadow-sm border border-gray-200/50 dark:border-gray-700/50 transition-all duration-200">
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
 
           {/* Title & Count */}
@@ -255,6 +305,18 @@ export function Appointments() {
               <Plus className="h-5 w-5 mr-2" />
               New Appointment
             </button>
+
+            {viewMode === 'calendar' && (
+              <button
+                type="button"
+                onClick={() => navigate('/wallboard/calendar')}
+                className="w-full sm:w-auto inline-flex items-center justify-center px-5 py-2.5 rounded-xl text-sm font-medium text-gray-900 dark:text-white bg-white/90 dark:bg-gray-700/70 border border-gray-200/70 dark:border-gray-600/70 hover:bg-white dark:hover:bg-gray-700 transition-colors"
+                title="Maximize calendar for shop monitor"
+              >
+                <Maximize2 className="h-5 w-5 mr-2" />
+                Maximize
+              </button>
+            )}
           </div>
         </div>
 
@@ -381,6 +443,7 @@ export function Appointments() {
           </div>
         </div>
       </div>
+      )}
 
       {loading ? (
         <div className="text-center py-12">
@@ -476,6 +539,7 @@ export function Appointments() {
               appointments={filteredAppointments}
               services={services}
               onDateClick={(date) => {
+                if (isWallboardMode) return
                 setSelectedDate(format(date, 'yyyy-MM-dd'))
                 setShowAddModal(true)
               }}

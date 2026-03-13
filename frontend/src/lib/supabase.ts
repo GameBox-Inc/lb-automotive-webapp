@@ -323,8 +323,8 @@ class APIClient {
     return this.request(`/reports/summary?timeframe=${timeframe}`);
   }
 
-  async getReportHistory(limit = 50) {
-    return this.request(`/reports/history?limit=${limit}`);
+  async getReportHistory(timeframe: '7d' | '30d' | '90d' | 'all' = '30d', limit = 50) {
+    return this.request(`/reports/history?timeframe=${timeframe}&limit=${limit}`);
   }
 
   /**

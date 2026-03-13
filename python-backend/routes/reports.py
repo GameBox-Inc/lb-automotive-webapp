@@ -58,6 +58,7 @@ def get_report_summary(
 
 @router.get("/history")
 def get_report_history(
+    timeframe: str = Query("30d", pattern="^(7d|30d|90d|all)$"),
     limit: int = 50,
     current_user: Dict[str, Any] = Depends(get_current_active_user)
 ):
@@ -66,6 +67,16 @@ def get_report_history(
     """
     conn = get_db_connection()
     cursor = conn.cursor()
+
+    # Calculate start date based on timeframe (shared logic with /summary)
+    if timeframe == "7d":
+        start_date = (datetime.now() - timedelta(days=7)).isoformat()
+    elif timeframe == "30d":
+        start_date = (datetime.now() - timedelta(days=30)).isoformat()
+    elif timeframe == "90d":
+        start_date = (datetime.now() - timedelta(days=90)).isoformat()
+    else:
+        start_date = "1970-01-01"  # All time
     
     query = """
         SELECT 
@@ -80,11 +91,12 @@ def get_report_history(
         JOIN appointments a ON c.appointment_id = a.id
         LEFT JOIN services s ON a.service_type = s.name
         WHERE c.status = 'completed'
+        AND c.closed_at >= ?
         ORDER BY c.closed_at DESC
         LIMIT ?
     """
     
-    cursor.execute(query, (limit,))
+    cursor.execute(query, (start_date, limit))
     rows = cursor.fetchall()
     conn.close()
     

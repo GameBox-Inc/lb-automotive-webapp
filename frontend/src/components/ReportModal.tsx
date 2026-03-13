@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect } from 'react';
-import { X, DollarSign, Wrench, Clock, Calendar } from 'lucide-react';
+import { X, DollarSign, Wrench, Clock, Calendar, Download } from 'lucide-react';
 import { apiClient } from '../lib/supabase';
 import { formatCurrency, formatNumber } from '../utils/format';
 import { LoadingSpinner } from './LoadingSpinner';
@@ -41,11 +41,58 @@ export function ReportModal({ isOpen, onClose }: ReportModalProps) {
         }
     }, [isOpen, timeframe]);
 
+    const downloadCsv = () => {
+        try {
+            const rows = history.map((item) => ({
+                date: item.date,
+                case_number: item.case_number,
+                customer: item.customer,
+                service: item.service,
+                price: item.price,
+                estimated_minutes: item.duration,
+                actual_minutes: item.actual_duration
+            }));
+
+            const header = Object.keys(rows[0] || {
+                date: '',
+                case_number: '',
+                customer: '',
+                service: '',
+                price: '',
+                estimated_minutes: '',
+                actual_minutes: ''
+            });
+
+            const escape = (value: unknown) => {
+                const s = value == null ? '' : String(value);
+                const needsQuotes = /[",\n]/.test(s);
+                const escaped = s.replaceAll('"', '""');
+                return needsQuotes ? `"${escaped}"` : escaped;
+            };
+
+            const csv = [
+                header.join(','),
+                ...rows.map(r => header.map(k => escape((r as any)[k])).join(','))
+            ].join('\n');
+
+            const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `lb-automotive-reports-${timeframe}.csv`;
+            a.click();
+            URL.revokeObjectURL(url);
+        } catch (e) {
+            console.error('CSV export failed', e);
+            toast.error('Failed to export CSV');
+        }
+    };
+
     const fetchReportData = async () => {
         setLoading(true);
         try {
             const summaryData = await apiClient.getReportSummary(timeframe);
-            const historyData = await apiClient.getReportHistory(50); // Get last 50 repairs
+            const historyData = await apiClient.getReportHistory(timeframe, 100); // Keep table consistent with timeframe
             setSummary(summaryData as any);
             setHistory(historyData as any);
         } catch (error) {
@@ -81,8 +128,8 @@ export function ReportModal({ isOpen, onClose }: ReportModalProps) {
                 <div className="flex-1 overflow-y-auto p-6 space-y-6">
 
                     {/* Controls */}
-                    <div className="flex justify-end">
-                        <div className="inline-flex rounded-md shadow-sm" role="group">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                        <div className="inline-flex rounded-md shadow-sm w-full sm:w-auto" role="group">
                             {(['7d', '30d', '90d', 'all'] as const).map((period) => (
                                 <button
                                     key={period}
@@ -98,6 +145,15 @@ export function ReportModal({ isOpen, onClose }: ReportModalProps) {
                                 </button>
                             ))}
                         </div>
+                        <button
+                            type="button"
+                            onClick={downloadCsv}
+                            className="inline-flex items-center justify-center gap-2 px-4 py-2 rounded-lg border border-gray-200 dark:border-gray-700 text-sm font-medium text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700"
+                            title="Export recent history as CSV"
+                        >
+                            <Download className="h-4 w-4" />
+                            Export CSV
+                        </button>
                     </div>
 
                     {loading ? (
@@ -107,7 +163,7 @@ export function ReportModal({ isOpen, onClose }: ReportModalProps) {
                     ) : (
                         <>
                             {/* Metrics Cards */}
-                            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
                                 <div className="bg-green-50 dark:bg-green-900/20 p-6 rounded-xl border border-green-100 dark:border-green-800">
                                     <div className="flex items-center justify-between">
                                         <div>
@@ -168,7 +224,8 @@ export function ReportModal({ isOpen, onClose }: ReportModalProps) {
                             {/* History Table */}
                             <div className="bg-white dark:bg-gray-800 rounded-lg shadow border border-gray-200 dark:border-gray-700 overflow-hidden">
                                 <div className="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
-                                    <h3 className="text-lg font-medium text-gray-900 dark:text-white">Recent Repair History</h3>
+                                    <h3 className="text-lg font-medium text-gray-900 dark:text-white">Repair History</h3>
+                                    <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">Filtered by timeframe (max 100 rows)</p>
                                 </div>
                                 <div className="overflow-x-auto">
                                     <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
@@ -186,7 +243,7 @@ export function ReportModal({ isOpen, onClose }: ReportModalProps) {
                                         <tbody className="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
                                             {history.length === 0 ? (
                                                 <tr>
-                                                    <td colSpan={6} className="px-6 py-8 text-center text-gray-500 dark:text-gray-400">
+                                                    <td colSpan={7} className="px-6 py-8 text-center text-gray-500 dark:text-gray-400">
                                                         No completed repair history found for the selected period.
                                                     </td>
                                                 </tr>

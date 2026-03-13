@@ -132,10 +132,10 @@ function App() {
       case '/services': return 'Services';
       case '/settings': return 'Settings';
       case '/repairs': return 'My Repairs';
-      case '/admin/services': return 'Manage Services';
       case '/admin/ivr': return 'IVR Settings';
       case '/admin/customers': return 'Customers';
       case '/admin/staff': return 'Staff & Schedule';
+      case '/wallboard/calendar': return 'Calendar';
       default:
         if (pathname.startsWith('/cases/')) return 'Case Details';
         return 'Dashboard';
@@ -145,6 +145,7 @@ function App() {
   // User is authenticated - show dashboard
   // Check if we're in kiosk mode (customer-facing, no sidebar/header)
   const isKioskMode = location.pathname === '/checkin'
+  const isWallboardMode = location.pathname === '/wallboard/calendar'
 
   return (
     <div className="min-h-screen bg-gray-100">
@@ -158,8 +159,8 @@ function App() {
         />
       )}
 
-      {/* Sidebar - Responsive Classes - Hidden in kiosk mode */}
-      {!isKioskMode && (
+      {/* Sidebar - Responsive Classes - Hidden in kiosk/wallboard modes */}
+      {!isKioskMode && !isWallboardMode && (
         <div className={`
           fixed top-0 left-0 min-h-screen w-64 bg-[#1F2937] border-r border-[#374151] z-30
           transform transition-transform duration-300 ease-in-out
@@ -194,7 +195,6 @@ function App() {
                   <div className="pt-4 pb-2 px-6 text-xs font-semibold text-gray-500 uppercase tracking-wider">
                     Admin
                   </div>
-                  <NavItem icon={<Tool className="h-5 w-5" />} text="Manage Services" to="/admin/services" />
                   <NavItem icon={<Phone className="h-5 w-5" />} text="IVR Settings" to="/admin/ivr" />
                   <NavItem icon={<Users className="h-5 w-5" />} text="Customers" to="/admin/customers" />
                   <NavItem icon={<Users className="h-5 w-5" />} text="Staff & Schedule" to="/admin/staff" />
@@ -211,8 +211,9 @@ function App() {
         </div>
       )}
 
-      <div className={isKioskMode ? '' : 'lg:pl-64 flex flex-col min-h-screen'}>
-        <header className="bg-white dark:bg-gray-800 shadow-sm border-b border-gray-200 dark:border-gray-700 sticky top-0 z-10">
+      <div className={(isKioskMode || isWallboardMode) ? '' : 'lg:pl-64 flex flex-col min-h-screen'}>
+        {!isKioskMode && !isWallboardMode && (
+          <header className="bg-white dark:bg-gray-800 shadow-sm border-b border-gray-200 dark:border-gray-700 sticky top-0 z-10">
           <div className="flex items-center justify-between px-4 sm:px-6 py-4">
             <div className="flex items-center gap-4">
               {/* Hamburger Menu Button */}
@@ -245,7 +246,8 @@ function App() {
               </button>
             </div>
           </div>
-        </header>
+          </header>
+        )}
 
         <main className="flex-1 overflow-x-hidden overflow-y-auto bg-gray-50 p-4 sm:p-8">
           <Suspense fallback={<PageLoader />}>
@@ -256,9 +258,8 @@ function App() {
               <Route path="/settings" element={<SettingsPage />} />
               <Route path="/repairs" element={<StaffDashboard />} />
               <Route path="/cases/:id" element={<CaseDetails />} />
-              <Route path="/checkin" element={<CheckIn />} />
-              {/* <Route path="/ivr-logs" element={<IVRLogs />} /> */}
-              {/* <Route path="/admin/services" element={user?.is_admin ? <AdminServices /> : <Navigate to="/" />} /> */}
+              <Route path="/checkin" element={user?.is_admin ? <CheckIn /> : <Navigate to="/" replace />} />
+              <Route path="/wallboard/calendar" element={<Appointments />} />
               <Route path="/admin/ivr" element={user?.is_admin ? <AdminIVR /> : <Navigate to="/" />} />
               <Route path="/admin/customers" element={user?.is_admin ? <AdminCustomers /> : <Navigate to="/" />} />
               <Route path="/admin/staff" element={user?.is_admin ? <AdminStaff /> : <Navigate to="/" />} />
