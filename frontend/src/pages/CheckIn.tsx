@@ -5,10 +5,11 @@ import { formatCurrency } from '../utils/format'
 import { LoadingSpinner } from '../components/LoadingSpinner'
 import { useNavigate } from 'react-router-dom'
 import toast from 'react-hot-toast'
+import { format, parseISO } from 'date-fns'
 
 export default function CheckIn() {
     const navigate = useNavigate()
-    const [step, setStep] = useState<'phone' | 'confirm' | 'services' | 'success'>('phone')
+    const [step, setStep] = useState<'phone' | 'confirm' | 'services' | 'time' | 'success'>('phone')
     const [phoneNumber, setPhoneNumber] = useState('')
     const [loading, setLoading] = useState(false)
     const [customer, setCustomer] = useState<Customer | null>(null)
@@ -16,6 +17,10 @@ export default function CheckIn() {
     const [customerName, setCustomerName] = useState('')
     const [showExitPrompt, setShowExitPrompt] = useState(false)
     const [exitClickCount, setExitClickCount] = useState(0)
+    const [selectedService, setSelectedService] = useState<Service | null>(null)
+    const [selectedDate, setSelectedDate] = useState(() => format(new Date(), 'yyyy-MM-dd'))
+    const [availableSlots, setAvailableSlots] = useState<string[]>([])
+    const [selectedTime, setSelectedTime] = useState<string | null>(null)
 
     // Request fullscreen on mount
     useEffect(() => {
@@ -108,23 +113,58 @@ export default function CheckIn() {
     }
 
     const handleServiceSelect = async (service: Service) => {
+        if (!customer) return
+        setSelectedService(service)
+        setSelectedDate(format(new Date(), 'yyyy-MM-dd'))
+        setSelectedTime(null)
+        setStep('time')
+    }
+
+    useEffect(() => {
+        const loadSlots = async () => {
+            if (!selectedService || step !== 'time') return
+            setLoading(true)
+            try {
+                const slots = await apiClient.getAvailableSlots(selectedDate, selectedService.id)
+                // Filter to future times if selecting for today
+                const now = new Date()
+                const todayKey = format(now, 'yyyy-MM-dd')
+                const filtered = selectedDate === todayKey
+                    ? slots.filter(t => {
+                        const dt = parseISO(`${selectedDate}T${t}`)
+                        return dt > now
+                    })
+                    : slots
+                setAvailableSlots(filtered)
+            } catch (error) {
+                console.error('Error loading kiosk availability', error)
+                toast.error('Failed to load available times')
+            } finally {
+                setLoading(false)
+            }
+        }
+        loadSlots()
+    }, [selectedService, selectedDate, step])
+
+    const handleBookTime = async () => {
+        if (!customer || !selectedService || !selectedTime) {
+            toast.error('Please choose a time')
+            return
+        }
         setLoading(true)
         try {
-            if (!customer) return
-
-            // Create appointment (Walk-in)
+            const fullDateTime = `${selectedDate}T${selectedTime}`
             await apiClient.createAppointment({
                 customer_id: customer.id,
-                service_id: service.id,
-                appointment_time: new Date().toISOString(),
-                vehicle_make: 'Unknown', // Kiosk simplified
+                service_id: selectedService.id,
+                appointment_time: fullDateTime,
+                vehicle_make: 'Unknown',
                 vehicle_model: 'Unknown',
                 vehicle_year: new Date().getFullYear(),
-                notes: 'Kiosk Walk-in',
-                // Required fields for interface
+                notes: 'Kiosk Appointment',
                 customer_name: customer.name,
                 phone_number: customer.phone,
-                service_type: service.name,
+                service_type: selectedService.name,
                 emergency_request: false
             })
 
@@ -135,7 +175,10 @@ export default function CheckIn() {
                 setPhoneNumber('')
                 setCustomer(null)
                 setCustomerName('')
-            }, 5000)
+                setSelectedService(null)
+                setSelectedTime(null)
+                setAvailableSlots([])
+            }, 7000)
         } catch (error) {
             console.error('Error creating appointment:', error)
             toast.error('Failed to create appointment')
@@ -297,6 +340,74 @@ export default function CheckIn() {
                         </div>
                     )}
 
+                    {step === 'time' && selectedService && (
+                        <div className="space-y-6">
+                            <div className="text-center">
+                                <h2 className="text-2xl font-semibold text-gray-900">Choose a Time</h2>
+                                <p className="text-gray-500 mt-2">Select an available time for your visit today.</p>
+                            </div>
+
+                            <div className="space-y-3">
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                                        Date
+                                    </label>
+                                    <input
+                                        type="date"
+                                        value={selectedDate}
+                                        onChange={(e) => {
+                                            setSelectedDate(e.target.value)
+                                            setSelectedTime(null)
+                                        }}
+                                        className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-red-500 focus:ring-red-500"
+                                    />
+                                </div>
+
+                                {availableSlots.length === 0 ? (
+                                    <p className="text-sm text-red-500">
+                                        No times are currently available for this date. Please try another day or speak with a service advisor.
+                                    </p>
+                                ) : (
+                                    <div className="grid grid-cols-3 gap-2">
+                                        {availableSlots.map(time => (
+                                            <button
+                                                key={time}
+                                                type="button"
+                                                onClick={() => setSelectedTime(time)}
+                                                className={`px-3 py-2 rounded-lg text-sm font-medium border ${selectedTime === time
+                                                    ? 'bg-red-600 text-white border-red-600'
+                                                    : 'bg-white text-gray-800 border-gray-300 hover:bg-red-50'
+                                                    }`}
+                                            >
+                                                {format(parseISO(`${selectedDate}T${time}`), 'h:mm a')}
+                                            </button>
+                                        ))}
+                                    </div>
+                                )}
+                            </div>
+
+                            <button
+                                onClick={handleBookTime}
+                                disabled={!selectedTime}
+                                className="w-full flex items-center justify-center py-4 px-4 border border-transparent rounded-lg shadow-sm text-xl font-medium text-white bg-red-600 hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                            >
+                                Confirm Time
+                            </button>
+
+                            <button
+                                onClick={() => {
+                                    setSelectedService(null)
+                                    setSelectedTime(null)
+                                    setAvailableSlots([])
+                                    setStep('services')
+                                }}
+                                className="w-full py-3 text-gray-500 hover:text-gray-700"
+                            >
+                                Back
+                            </button>
+                        </div>
+                    )}
+
                     {step === 'success' && (
                         <div className="text-center space-y-6 py-8">
                             <div className="mx-auto flex items-center justify-center h-24 w-24 rounded-full bg-green-100">
@@ -304,9 +415,21 @@ export default function CheckIn() {
                             </div>
                             <div>
                                 <h2 className="text-3xl font-bold text-gray-900">You're Checked In!</h2>
-                                <p className="text-gray-500 mt-2">Please take a seat, we'll be with you shortly.</p>
+                                {selectedTime ? (
+                                    <p className="text-gray-500 mt-2">
+                                        Your appointment is scheduled for{' '}
+                                        <span className="font-semibold">
+                                            {format(parseISO(`${selectedDate}T${selectedTime}`), 'h:mm a')}
+                                        </span>
+                                        . Please take a seat, we'll be with you shortly.
+                                    </p>
+                                ) : (
+                                    <p className="text-gray-500 mt-2">
+                                        Please take a seat, we'll be with you shortly.
+                                    </p>
+                                )}
                             </div>
-                            <p className="text-sm text-gray-400">Resetting in 5 seconds...</p>
+                            <p className="text-sm text-gray-400">Resetting in a few seconds...</p>
                         </div>
                     )}
                 </div>

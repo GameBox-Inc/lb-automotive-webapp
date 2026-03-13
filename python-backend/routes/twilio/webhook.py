@@ -134,40 +134,11 @@ async def validate_twilio_request(request: Request):
         if call_sid:
             set_twilio_context(call_sid, account_sid)
         
-        # Get the signature header
+        # Get the signature header and validate
         signature = request.headers.get("X-Twilio-Signature", "")
-        
-        # DEBUG LOGGING
-        # Log headers to debug proxy strippings
-        safe_headers = {k: v for k, v in request.headers.items() if k.lower() not in ["authorization", "x-twilio-signature"]}
-        logger.info(f"Twilio Validation Debug: Headers={safe_headers}")
-        logger.info(f"Validating URL={url}")
-        
-        # #region agent log
-        _debug_log = os.getenv("DEBUG_LOG_PATH")
-        _parsed_final = urlparse(url)
-        import json as _json
-        _payload = {"sessionId": "49c9c0", "hypothesisId": "B,C,D,E", "location": "webhook.py:validate_twilio", "message": "Twilio validation inputs", "data": {"url_has_query": bool(_parsed_final.query), "url_query_len": len(_parsed_final.query or ""), "signature_present": bool(signature), "signature_len": len(signature), "param_count": len(params), "param_keys": list(params.keys())[:20], "used_fallback_base": used_fallback_base}, "timestamp": int(__import__("time").time() * 1000)}
-        logger.info("DEBUG_TWILIO_403 %s", _json.dumps(_payload))
-        if _debug_log:
-            try:
-                with open(_debug_log, "a") as _f:
-                    _f.write(_json.dumps(_payload) + "\n")
-            except Exception:
-                pass
-        # #endregion
+        logger.info(f"Validating Twilio signature for URL={url}")
 
         if not validator.validate(url, params, signature):
-            # #region agent log
-            _fail = {"sessionId": "49c9c0", "hypothesisId": "A", "location": "webhook.py:validate_twilio", "message": "Twilio signature invalid", "data": {"url_has_query": bool(_parsed_final.query)}, "timestamp": int(__import__("time").time() * 1000)}
-            logger.info("DEBUG_TWILIO_403 %s", _json.dumps(_fail))
-            if _debug_log:
-                try:
-                    with open(_debug_log, "a") as _f:
-                        _f.write(_json.dumps(_fail) + "\n")
-                except Exception:
-                    pass
-            # #endregion
             logger.warning(f"Invalid Twilio Signature. URL: {url}")
             raise HTTPException(status_code=403, detail="Invalid Twilio Signature")
             
@@ -200,6 +171,40 @@ def check_rate_limit(phone_number: str) -> bool:
 # --- Helper Functions ---
 # get_call_state, get_setting, log_ivr_interaction, track_decision, update_decision_path
 # are imported from services.call_state
+
+
+def ensure_recording_disclaimer_once(response: VoiceResponse, voice: str, language: str, metadata: dict) -> None:
+    """
+    Play recording disclaimer once per call using settings:
+      - ivr_recording_disclaimer_en
+      - ivr_recording_disclaimer_es
+    """
+    try:
+        if metadata.get("disclaimer_played"):
+            return
+        key = "ivr_recording_disclaimer_es" if language == "es" else "ivr_recording_disclaimer_en"
+        default_msg = "This call may be recorded for quality and training purposes."
+        text = get_setting(key, default_msg) or default_msg
+        if text:
+            response.say(text, voice=voice)
+            metadata["disclaimer_played"] = True
+    except Exception as e:
+        logger.error(f"Error playing recording disclaimer: {e}")
+
+
+def smooth_hangup(response: VoiceResponse, voice: str, language: str, message: Optional[str] = None, pause_seconds: int = 2) -> None:
+    """
+    Say an optional message, pause briefly, then hang up for a smoother end.
+    """
+    try:
+        if message:
+            response.say(message, voice=voice)
+        # Twilio supports <Pause>; use a short pause before hangup
+        response.pause(length=pause_seconds)
+    except Exception:
+        # Even if pause fails, we still want to hang up cleanly
+        pass
+    response.hangup()
 
 # --- Decision Tree Structure ---
 DECISION_TREE = {
@@ -685,6 +690,9 @@ def twilio_webhook(
         voice = "Polly.Lupe" if language == "es" else "Polly.Matthew"
         metadata = call_state.get("metadata", {})
         metadata["from_phone"] = From
+
+        # Play recording disclaimer once per call at entry.
+        ensure_recording_disclaimer_once(response, voice, language, metadata)
         
         # Analytic Fix: Ensure call_state exists before track_decision
         if not get_call_state(CallSid):
@@ -779,11 +787,17 @@ def twilio_webhook(
                     upsert_call_state(CallSid, step, language, metadata)
                     max_repairs = int(get_setting("ivr_repair_max_retries", "3"))
                     if repair_count > max_repairs:
-                        response.say("Let me connect you to someone who can help.", voice=voice)
+                        response.say(
+                            "I’m having trouble hearing you. Let me connect you to someone who can help.",
+                            voice=voice,
+                        )
                         response.redirect(f"{WEBHOOK_BASE_URL}?step=transfer_representative")
                         logger.info("IVR response", extra={**get_trace_context(), "step": step, "repair": "transfer"})
                         return Response(content=str(response), media_type="application/xml")
-                    response.say("Sorry, I didn't catch that. Let's try again.", voice=voice)
+                    if language == "es":
+                        response.say("No alcancé a escucharle bien. Intentemos de nuevo.", voice=voice)
+                    else:
+                        response.say("I didn’t quite catch that. No problem, let’s try that again.", voice=voice)
                     # Fall through to re-present same gather below (next_s = step, so we re-gather same step)
                     next_s = step
                 else:
@@ -836,20 +850,18 @@ def twilio_webhook(
                 elif handler_name == "handle_select_service_detail": handle_select_service_detail(input_data, language, CallSid, metadata, response)
                 elif handler_name == "handle_confirm_emergency": handle_confirm_emergency(input_data, language, CallSid, metadata, response)
             elif node_type == "terminal":
-                response.say(node.get(f"prompt_{language}", node.get("prompt_en")), voice=voice)
-                response.hangup()
+                prompt_text = node.get(f"prompt_{language}", node.get("prompt_en"))
+                smooth_hangup(response, voice, language, message=prompt_text)
             track_decision(CallSid, step, input_data)
             update_phase(PHASE_TTS_READY)
             logger.info("IVR response", extra={**get_trace_context(), "step": step, "node_type": node_type})
             return Response(content=str(response), media_type="application/xml")
         update_phase(PHASE_TTS_READY)
-        response.say("Goodbye.", voice=voice)
-        response.hangup()
+        smooth_hangup(response, voice, language, message="Goodbye.")
         logger.info("IVR response", extra={**get_trace_context(), "step": step, "fallback": "goodbye"})
         return Response(content=str(response), media_type="application/xml")
     except Exception as e:
         update_phase("error")
         logger.error(f"IVR Error: {e}", extra=get_trace_context())
-        response.say("An error occurred.", voice="Polly.Matthew")
-        response.hangup()
+        smooth_hangup(response, "Polly.Matthew", language, message="An error occurred.")
         return Response(content=str(response), media_type="application/xml")

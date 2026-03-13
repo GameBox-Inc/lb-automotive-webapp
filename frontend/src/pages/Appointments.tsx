@@ -5,7 +5,7 @@ import { fetchServices, fetchStaff } from '../store/slices/shopSlice'
 import { RootState } from '../store'
 import { apiClient } from '../lib/supabase'
 import { AppointmentCard } from '../components/AppointmentCard'
-import { AppointmentCalendar } from '../components/AppointmentCalendar'
+import { DailyTimeline } from '../components/DailyTimeline'
 import { LoadingSpinner } from '../components/LoadingSpinner'
 import { VoicePrompt } from '../components/VoicePrompt'
 import { Plus, Search, Calendar, Clock, X, Maximize2, Minimize2, RefreshCw } from 'lucide-react';
@@ -535,14 +535,9 @@ export function Appointments() {
           )}
 
           {viewMode === 'calendar' && (
-            <AppointmentCalendar
+            <DailyTimeline
               appointments={filteredAppointments}
               services={services}
-              onDateClick={(date) => {
-                if (isWallboardMode) return
-                setSelectedDate(format(date, 'yyyy-MM-dd'))
-                setShowAddModal(true)
-              }}
             />
           )}
         </>
