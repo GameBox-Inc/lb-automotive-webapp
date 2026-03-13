@@ -486,6 +486,8 @@ def check_shop_bandwidth(date_str, slot_time):
 
 def handle_time_selection(user_input, language, CallSid, metadata, response):
     """Handler for selecting an appointment time using central scheduling engine."""
+    import json
+    from pathlib import Path
     from services.llm import analyze_schedule
     from scheduling.engine import compute_availability
 
@@ -508,7 +510,17 @@ def handle_time_selection(user_input, language, CallSid, metadata, response):
     # Normalize to "HH:MM" strings and apply simple bandwidth check per exact time
     raw_slots = sorted({s.start.strftime("%H:%M") for s in engine_slots})
     available_slots = [s for s in raw_slots if check_shop_bandwidth(tomorrow_date, s)]
-    
+
+    # #region agent log
+    try:
+        sample_bw = check_shop_bandwidth(tomorrow_date, raw_slots[0]) if raw_slots else None
+        _log = Path(__file__).resolve().parent.parent.parent.parent / "debug-49c9c0.log"
+        with open(_log, "a", encoding="utf-8") as f:
+            f.write(json.dumps({"sessionId": "49c9c0", "timestamp": int(datetime.now().timestamp() * 1000), "location": "webhook.py:handle_time_selection", "message": "IVR time selection slots", "data": {"service_id": str(selected_service.get("id")), "service_name": selected_service.get("name"), "tomorrow_date": tomorrow_date, "day_of_week": day.weekday(), "engine_slots_count": len(engine_slots), "raw_slots_count": len(raw_slots), "available_slots_count": len(available_slots), "saying_fully_booked": not available_slots, "sample_bandwidth_ok": sample_bw}, "hypothesisId": "H1"}) + "\n")
+    except Exception:
+        pass
+    # #endregion
+
     if not available_slots:
         voice = "Polly.Lupe" if language == "es" else "Polly.Matthew"
         response.say("I'm sorry, we are fully booked for tomorrow. Please try another day online. Goodbye.", voice=voice)

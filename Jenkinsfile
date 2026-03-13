@@ -205,6 +205,24 @@ REMOTEOF
             }
         }
 
+        stage('Run Supabase Migrations') {
+            when {
+                anyOf {
+                    branch 'main'
+                    branch 'master'
+                    expression { env.BRANCH_NAME ==~ /.*release\/.*/ || env.GIT_BRANCH ==~ /.*release\/.*/ }
+                }
+            }
+            steps {
+                echo '🗄️ Applying Supabase/Postgres migrations (scheduling engine, IVR, Kiosk schema)...'
+                script {
+                    withCredentials([string(credentialsId: 'supabase-db-url', variable: 'DATABASE_URL')]) {
+                        sh 'bash deployment/scripts/run_supabase_migrations.sh'
+                    }
+                }
+            }
+        }
+
         stage('Deploy Manifests') {
             // Syncs K8s manifests to server and applies them.
             // Replaces ArgoCD — Jenkins is now the GitOps mechanism.

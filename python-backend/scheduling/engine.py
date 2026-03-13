@@ -1,12 +1,24 @@
+import json
 import logging
 from dataclasses import dataclass
 from datetime import datetime, timedelta
+from pathlib import Path
 from typing import List, Optional, Dict, Any
 
 from database import get_db_connection, fmt_query
 from observability.tracing import update_phase, PHASE_AVAILABILITY_COMPUTE
 
 logger = logging.getLogger(__name__)
+
+# #region agent log
+def _ivr_debug(data: dict) -> None:
+    try:
+        log_path = Path(__file__).resolve().parent.parent.parent / "debug-49c9c0.log"
+        with open(log_path, "a", encoding="utf-8") as f:
+            f.write(json.dumps({"sessionId": "49c9c0", "timestamp": int(datetime.now().timestamp() * 1000), **data}) + "\n")
+    except Exception:
+        pass
+# #endregion
 
 
 @dataclass
@@ -49,6 +61,9 @@ def compute_availability(
     rules.
     """
     update_phase(PHASE_AVAILABILITY_COMPUTE)
+    # #region agent log
+    _ivr_debug({"location": "engine.py:compute_availability:entry", "message": "IVR availability entry", "data": {"service_id": str(service_id) if service_id else None, "date_str": date.strftime("%Y-%m-%d"), "day_of_week": date.weekday()}, "hypothesisId": "H1"})
+    # #endregion
     conn = get_db_connection()
     try:
         cursor = conn.cursor()
@@ -101,6 +116,7 @@ def compute_availability(
                 "is_closed": r["is_closed"],
             }
         # If no business_hours rows (e.g. fresh DB), use default Mon-Fri 8-6 so slots still show
+        bh_empty = not business_hours
         if not business_hours:
             for dow in range(7):
                 if dow < 5:  # Mon-Fri
@@ -108,6 +124,9 @@ def compute_availability(
                 else:
                     business_hours[dow] = {"opening_time": None, "closing_time": None, "is_closed": 1}
             logger.info("business_hours empty; using default Mon-Fri 08:00-18:00")
+        # #region agent log
+        _ivr_debug({"location": "engine.py:compute_availability:bh", "message": "business_hours state", "data": {"bh_empty": bh_empty, "using_default_bh": bh_empty, "day_of_week_for_date": start_day.weekday()}, "hypothesisId": "H2"})
+        # #endregion
 
         # Load staff schedules (filter by technician if provided)
         if technician_id:
@@ -298,9 +317,15 @@ def compute_availability(
 
             day = day + timedelta(days=1)
 
+        # #region agent log
+        _ivr_debug({"location": "engine.py:compute_availability:return", "message": "slots computed", "data": {"slots_count": len(slots)}, "hypothesisId": "H3"})
+        # #endregion
         return slots
     except Exception as e:
         logger.exception("compute_availability failed: %s", e)
+        # #region agent log
+        _ivr_debug({"location": "engine.py:compute_availability:exception", "message": "compute_availability exception", "data": {"error": str(e)}, "hypothesisId": "H3"})
+        # #endregion
         # Fail closed (no slots) rather than 500 to callers like kiosk/IVR.
         return []
     finally:
