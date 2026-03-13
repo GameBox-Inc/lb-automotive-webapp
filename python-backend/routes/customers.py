@@ -44,15 +44,19 @@ class CustomerBase(BaseModel):
         return v
 
 class CustomerCreate(CustomerBase):
-    pass
+    vehicle_make: Optional[str] = None
+    vehicle_model: Optional[str] = None
+    vehicle_color: Optional[str] = None
+    vehicle_year: Optional[int] = None
+
 
 class Customer(CustomerBase):
     id: str
     created_at: str
-
-class Customer(CustomerBase):
-    id: str
-    created_at: str
+    vehicle_make: Optional[str] = None
+    vehicle_model: Optional[str] = None
+    vehicle_color: Optional[str] = None
+    vehicle_year: Optional[int] = None
 
 def normalize_phone(phone: str) -> str:
     # Remove all non-digit characters
@@ -185,9 +189,21 @@ def update_customer(customer_id: str, customer: CustomerCreate, current_user: di
     try:
         cursor.execute(fmt_query("""
             UPDATE customers 
-            SET name = ?, phone = ?, email = ?, updated_at = CURRENT_TIMESTAMP
+            SET name = ?, phone = ?, email = ?,
+                vehicle_make = COALESCE(?, vehicle_make),
+                vehicle_model = COALESCE(?, vehicle_model),
+                vehicle_color = COALESCE(?, vehicle_color),
+                vehicle_year = COALESCE(?, vehicle_year),
+                updated_at = CURRENT_TIMESTAMP
             WHERE id = ?
-        """), (customer.name, clean_phone, customer.email, customer_id))
+        """), (
+            customer.name, clean_phone, customer.email,
+            customer.vehicle_make,
+            customer.vehicle_model,
+            customer.vehicle_color,
+            customer.vehicle_year,
+            customer_id,
+        ))
         conn.commit()
     except Exception as e:
         conn.close()

@@ -75,6 +75,10 @@ export interface Customer {
     phone: string;
     email?: string;
     created_at?: string;
+    vehicle_make?: string;
+    vehicle_model?: string;
+    vehicle_color?: string;
+    vehicle_year?: number;
 }
 
 export interface BusinessHours {

@@ -82,3 +82,9 @@ export const VEHICLE_MAKE_MODEL_OPTIONS: VehicleModelOption[] = [
   },
 ];
 
+/** Common vehicle colors for dropdowns */
+export const COMMON_COLORS = [
+  'Black', 'White', 'Silver', 'Gray', 'Red', 'Blue', 'Navy', 'Brown', 'Green',
+  'Beige', 'Orange', 'Yellow', 'Gold', 'Burgundy', 'Charcoal', 'Pearl', 'Other',
+];
+

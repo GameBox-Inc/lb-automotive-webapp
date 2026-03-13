@@ -3,7 +3,7 @@ import logging
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import List, Optional, Dict, Any
+from typing import List, Optional, Dict, Any, Union
 
 from database import get_db_connection, fmt_query
 from observability.tracing import update_phase, PHASE_AVAILABILITY_COMPUTE
@@ -30,14 +30,15 @@ class TimeSlot:
     source: str = "engine"
 
 
-def _parse_time(value: str, *, default_tz: str = "America/New_York") -> datetime:
-    """Parse ISO or 'YYYY-MM-DD HH:MM' style strings into aware datetimes."""
-    # For now we treat stored TEXT timestamps as naive local times.
-    # The engine can be upgraded to use real timestamptz later.
+def _parse_time(value: Union[str, datetime], *, default_tz: str = "America/New_York") -> datetime:
+    """Parse ISO or 'YYYY-MM-DD HH:MM' style strings into naive datetimes. Accepts datetime from DB."""
+    if isinstance(value, datetime):
+        return value.replace(tzinfo=None) if value.tzinfo else value
+    if not isinstance(value, str):
+        raise ValueError(f"Unsupported time type: {type(value)}")
     try:
         return datetime.fromisoformat(value.replace("Z", ""))
     except Exception:
-        # Fallback: "YYYY-MM-DD HH:MM"
         return datetime.strptime(value, "%Y-%m-%d %H:%M")
 
 
@@ -271,6 +272,7 @@ def compute_availability(
             if technician_id:
                 technicians_for_day = [s for s in technicians_for_day if s["staff_id"] == technician_id]
 
+            slots_before = len(slots)
             # If no staff schedules for this day, fall back to business-hours-only slots
             # so Kiosk and appointment forms show times when the shop is open.
             if not technicians_for_day:
@@ -314,6 +316,21 @@ def compute_availability(
                         if not _has_conflict(candidate, existing, blackouts):
                             slots.append(candidate)
                         cursor_time = cursor_time + timedelta(minutes=15)
+
+            # If shop is open but we added no slots (e.g. all staff off or parse errors), use business-hours-only
+            if len(slots) == slots_before and (open_dt is not None and close_dt is not None):
+                cursor_time = open_dt
+                while cursor_time + timedelta(minutes=service_duration_min) <= close_dt:
+                    candidate_end = cursor_time + timedelta(minutes=service_duration_min)
+                    candidate = TimeSlot(
+                        start=cursor_time,
+                        end=candidate_end,
+                        technician_id=None,
+                        service_id=service_id,
+                    )
+                    if not _has_conflict(candidate, existing, blackouts):
+                        slots.append(candidate)
+                    cursor_time = cursor_time + timedelta(minutes=15)
 
             day = day + timedelta(days=1)
 

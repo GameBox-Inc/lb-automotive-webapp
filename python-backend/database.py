@@ -373,6 +373,9 @@ def seed_data():
             updated_at TEXT DEFAULT CURRENT_TIMESTAMP
         )
     """)
+    for col in ("vehicle_make", "vehicle_model", "vehicle_color"):
+        cursor.execute(fmt_query(f"ALTER TABLE customers ADD COLUMN IF NOT EXISTS {col} TEXT"))
+    cursor.execute(fmt_query("ALTER TABLE customers ADD COLUMN IF NOT EXISTS vehicle_year INTEGER"))
 
     # Ensure blackouts table exists for environments that only run seed_data()
     cursor.execute("""

@@ -21,6 +21,7 @@ export default function CheckIn() {
     const [selectedService, setSelectedService] = useState<Service | null>(null)
     const [selectedDate, setSelectedDate] = useState(() => format(new Date(), 'yyyy-MM-dd'))
     const [availableSlots, setAvailableSlots] = useState<string[]>([])
+    const [slotsLoading, setSlotsLoading] = useState(false)
     const [selectedTime, setSelectedTime] = useState<string | null>(null)
     const [vehicleMake, setVehicleMake] = useState<string>('')
     const [vehicleModel, setVehicleModel] = useState<string>('')
@@ -126,7 +127,9 @@ export default function CheckIn() {
     useEffect(() => {
         const loadSlots = async () => {
             if (!selectedService || step !== 'time') return
-            setLoading(true)
+            setSlotsLoading(true)
+            setAvailableSlots([])
+            setSelectedTime(null)
             try {
                 const slots = await apiClient.getAvailableSlots(selectedDate, selectedService.id)
                 // Filter to future times if selecting for today
@@ -143,7 +146,7 @@ export default function CheckIn() {
                 console.error('Error loading kiosk availability', error)
                 toast.error('Failed to load available times')
             } finally {
-                setLoading(false)
+                setSlotsLoading(false)
             }
         }
         loadSlots()
@@ -192,7 +195,9 @@ export default function CheckIn() {
         }
     }
 
-    if (loading) return (
+    // Full-page spinner only for steps that do a single blocking action (e.g. phone lookup); not for time step
+    const showFullPageSpinner = loading && step !== 'time'
+    if (showFullPageSpinner) return (
         <div className="min-h-screen bg-gray-50 flex items-center justify-center">
             <LoadingSpinner size="lg" />
         </div>
@@ -349,10 +354,10 @@ export default function CheckIn() {
                         <div className="space-y-6">
                             <div className="text-center">
                                 <h2 className="text-2xl font-semibold text-gray-900">Choose a Time</h2>
-                                <p className="text-gray-500 mt-2">Select an available time for your visit today.</p>
+                                <p className="text-gray-500 mt-2">Select a date and an available time for your visit.</p>
                             </div>
 
-                            <div className="space-y-3">
+                            <div className="space-y-4">
                                 <div>
                                     <label className="block text-sm font-medium text-gray-700 mb-1">
                                         Date
@@ -364,31 +369,41 @@ export default function CheckIn() {
                                             setSelectedDate(e.target.value)
                                             setSelectedTime(null)
                                         }}
-                                        className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-red-500 focus:ring-red-500"
+                                        className="mt-1 block w-full rounded-md border border-gray-300 shadow-sm focus:border-red-500 focus:ring-red-500"
                                     />
                                 </div>
 
-                                {availableSlots.length === 0 ? (
-                                    <p className="text-sm text-red-500">
-                                        No times are currently available for this date. Please try another day or speak with a service advisor.
-                                    </p>
-                                ) : (
-                                    <div className="grid grid-cols-3 gap-2">
-                                        {availableSlots.map(time => (
-                                            <button
-                                                key={time}
-                                                type="button"
-                                                onClick={() => setSelectedTime(time)}
-                                                className={`px-3 py-2 rounded-lg text-sm font-medium border ${selectedTime === time
-                                                    ? 'bg-red-600 text-white border-red-600'
-                                                    : 'bg-white text-gray-800 border-gray-300 hover:bg-red-50'
-                                                    }`}
-                                            >
-                                                {format(parseISO(`${selectedDate}T${time}`), 'h:mm a')}
-                                            </button>
-                                        ))}
-                                    </div>
-                                )}
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                                        Available times
+                                    </label>
+                                    {slotsLoading ? (
+                                        <div className="flex items-center gap-2 py-4 text-gray-500">
+                                            <LoadingSpinner size="sm" />
+                                            <span>Loading available times…</span>
+                                        </div>
+                                    ) : availableSlots.length === 0 ? (
+                                        <p className="text-sm text-red-500 py-2">
+                                            No times are currently available for this date. Please try another day or speak with a service advisor.
+                                        </p>
+                                    ) : (
+                                        <div className="grid grid-cols-3 gap-2">
+                                            {availableSlots.map(time => (
+                                                <button
+                                                    key={time}
+                                                    type="button"
+                                                    onClick={() => setSelectedTime(time)}
+                                                    className={`px-3 py-2.5 rounded-lg text-sm font-medium border transition-colors ${selectedTime === time
+                                                        ? 'bg-red-600 text-white border-red-600'
+                                                        : 'bg-white text-gray-800 border-gray-300 hover:bg-red-50 hover:border-red-200'
+                                                        }`}
+                                                >
+                                                    {format(parseISO(`${selectedDate}T${time}`), 'h:mm a')}
+                                                </button>
+                                            ))}
+                                        </div>
+                                    )}
+                                </div>
                             </div>
 
                             {/* Optional vehicle make/model selection */}

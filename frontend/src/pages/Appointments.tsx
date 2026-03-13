@@ -12,6 +12,7 @@ import { Plus, Search, Calendar, Clock, X, Maximize2, Minimize2, RefreshCw } fro
 import { format, parseISO } from 'date-fns';
 import toast from 'react-hot-toast'
 import { Appointment, Service, Customer } from '../types'
+import { VEHICLE_MAKE_MODEL_OPTIONS, COMMON_COLORS } from '../constants/vehicleData'
 
 export function Appointments() {
   const navigate = useNavigate()
@@ -31,10 +32,11 @@ export function Appointments() {
   const [sortOrder, setSortOrder] = useState<'desc' | 'asc'>('desc')
   const [hideCompleted, setHideCompleted] = useState(true)
 
-  // Customer Search State
+  // Customer Search State (selectedCustomerId used to save vehicle to profile)
   const [customerQuery, setCustomerQuery] = useState('')
   const [customerResults, setCustomerResults] = useState<Customer[]>([])
   const [showCustomerResults, setShowCustomerResults] = useState(false)
+  const [selectedCustomerId, setSelectedCustomerId] = useState<string | null>(null)
 
   // Availability State
   const [availableSlots, setAvailableSlots] = useState<string[]>([])
@@ -96,10 +98,10 @@ export function Appointments() {
     return () => clearTimeout(debounce)
   }, [customerQuery])
 
-  // Check Availability
+  // Check Availability (service_type stores service id from dropdown)
   useEffect(() => {
     const checkAvailability = async () => {
-      const service = services.find(s => s.name === newAppointment.service_type)
+      const service = services.find(s => s.id === newAppointment.service_type)
       if (selectedDate && service) {
         setCheckingAvailability(true)
         try {
@@ -110,6 +112,8 @@ export function Appointments() {
         } finally {
           setCheckingAvailability(false)
         }
+      } else {
+        setAvailableSlots([])
       }
     }
 
@@ -176,7 +180,8 @@ export function Appointments() {
     }
   };
 
-  const handleSelectCustomer = (customer: Customer) => {
+  const handleSelectCustomer = async (customer: Customer) => {
+    setSelectedCustomerId(customer.id)
     setNewAppointment(prev => ({
       ...prev,
       customer_name: customer.name,
@@ -184,6 +189,23 @@ export function Appointments() {
     }))
     setCustomerQuery('')
     setShowCustomerResults(false)
+    // Pre-fill vehicle from customer profile when available
+    try {
+      const full = await apiClient.getCustomer(customer.id)
+      if (full.vehicle_make || full.vehicle_model || full.vehicle_color || full.vehicle_year) {
+        setNewAppointment(prev => ({
+          ...prev,
+          customer_name: customer.name,
+          phone_number: customer.phone,
+          vehicle_make: full.vehicle_make ?? prev.vehicle_make,
+          vehicle_model: full.vehicle_model ?? prev.vehicle_model,
+          vehicle_color: full.vehicle_color ?? prev.vehicle_color,
+          vehicle_year: full.vehicle_year ?? prev.vehicle_year,
+        }))
+      }
+    } catch {
+      // Profile may not have vehicle fields yet
+    }
   }
 
   const handleAddAppointment = async (e: React.FormEvent) => {
@@ -195,12 +217,32 @@ export function Appointments() {
     }
 
     const fullDateTime = `${selectedDate}T${newAppointment.appointment_time}`
+    const payload = {
+      ...newAppointment,
+      appointment_time: fullDateTime,
+      ...(selectedService && { service_id: selectedService.id }),
+    }
 
     try {
-      await apiClient.createAppointment({
-        ...newAppointment,
-        appointment_time: fullDateTime
-      })
+      await apiClient.createAppointment(payload)
+
+      // Save vehicle to customer profile when a customer was selected and vehicle details provided
+      if (selectedCustomerId && (newAppointment.vehicle_make || newAppointment.vehicle_model || newAppointment.vehicle_color || newAppointment.vehicle_year)) {
+        try {
+          const existing = await apiClient.getCustomer(selectedCustomerId)
+          await apiClient.updateCustomer(selectedCustomerId, {
+            name: existing.name,
+            phone: existing.phone,
+            email: existing.email,
+            vehicle_make: newAppointment.vehicle_make || undefined,
+            vehicle_model: newAppointment.vehicle_model || undefined,
+            vehicle_color: newAppointment.vehicle_color || undefined,
+            vehicle_year: newAppointment.vehicle_year || undefined,
+          })
+        } catch (err) {
+          console.warn('Could not update customer vehicle profile', err)
+        }
+      }
 
       toast.success('Appointment created successfully')
       setShowAddModal(false)
@@ -213,6 +255,7 @@ export function Appointments() {
   }
 
   const resetForm = () => {
+    setSelectedCustomerId(null)
     setNewAppointment({
       customer_name: '',
       phone_number: '',
@@ -239,7 +282,7 @@ export function Appointments() {
   }, {} as Record<string, Service[]>)
 
   const categories = Object.keys(servicesByCategory)
-  const selectedService = services.find(s => s.name === newAppointment.service_type)
+  const selectedService = services.find(s => s.id === newAppointment.service_type)
 
   const filteredAppointments = appointments.filter(apt => {
     const matchDate = filterDate ? apt.appointment_time.startsWith(filterDate) : true;
@@ -646,7 +689,7 @@ export function Appointments() {
                   </label>
                   <select
                     value={newAppointment.service_type}
-                    onChange={e => setNewAppointment({ ...newAppointment, service_type: e.target.value })}
+                    onChange={e => setNewAppointment({ ...newAppointment, service_type: e.target.value, appointment_time: '' })}
                     className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 dark:bg-gray-700 dark:border-gray-600 dark:text-white"
                     required
                   >
@@ -713,31 +756,38 @@ export function Appointments() {
                 </div>
               )}
 
-              {/* Optional Vehicle Details */}
+              {/* Optional Vehicle Details (dropdowns; pre-filled from customer profile when set) */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
                     Vehicle Make (optional)
                   </label>
-                  <input
-                    type="text"
+                  <select
                     value={newAppointment.vehicle_make}
-                    onChange={e => setNewAppointment({ ...newAppointment, vehicle_make: e.target.value })}
+                    onChange={e => setNewAppointment({ ...newAppointment, vehicle_make: e.target.value, vehicle_model: '' })}
                     className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 dark:bg-gray-700 dark:border-gray-600 dark:text-white"
-                    placeholder="e.g. Toyota"
-                  />
+                  >
+                    <option value="">Select make</option>
+                    {VEHICLE_MAKE_MODEL_OPTIONS.map(opt => (
+                      <option key={opt.make} value={opt.make}>{opt.make}</option>
+                    ))}
+                  </select>
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
                     Vehicle Model (optional)
                   </label>
-                  <input
-                    type="text"
+                  <select
                     value={newAppointment.vehicle_model}
                     onChange={e => setNewAppointment({ ...newAppointment, vehicle_model: e.target.value })}
                     className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 dark:bg-gray-700 dark:border-gray-600 dark:text-white"
-                    placeholder="e.g. Camry"
-                  />
+                    disabled={!newAppointment.vehicle_make}
+                  >
+                    <option value="">Select model</option>
+                    {VEHICLE_MAKE_MODEL_OPTIONS.find(m => m.make === newAppointment.vehicle_make)?.models.map(m => (
+                      <option key={m} value={m}>{m}</option>
+                    ))}
+                  </select>
                 </div>
               </div>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -745,26 +795,31 @@ export function Appointments() {
                   <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
                     Vehicle Color (optional)
                   </label>
-                  <input
-                    type="text"
+                  <select
                     value={newAppointment.vehicle_color}
                     onChange={e => setNewAppointment({ ...newAppointment, vehicle_color: e.target.value })}
                     className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 dark:bg-gray-700 dark:border-gray-600 dark:text-white"
-                    placeholder="e.g. Blue"
-                  />
+                  >
+                    <option value="">Select color</option>
+                    {COMMON_COLORS.map(c => (
+                      <option key={c} value={c}>{c}</option>
+                    ))}
+                  </select>
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
                     Vehicle Year (optional)
                   </label>
-                  <input
-                    type="number"
-                    value={newAppointment.vehicle_year}
+                  <select
+                    value={newAppointment.vehicle_year ?? ''}
                     onChange={e => setNewAppointment({ ...newAppointment, vehicle_year: Number(e.target.value) || new Date().getFullYear() })}
                     className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 dark:bg-gray-700 dark:border-gray-600 dark:text-white"
-                    min={1900}
-                    max={new Date().getFullYear() + 1}
-                  />
+                  >
+                    <option value="">Select year</option>
+                    {Array.from({ length: 32 }, (_, i) => new Date().getFullYear() + 1 - i).map(y => (
+                      <option key={y} value={y}>{y}</option>
+                    ))}
+                  </select>
                 </div>
               </div>
 
