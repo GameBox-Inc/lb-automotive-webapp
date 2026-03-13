@@ -178,10 +178,13 @@ TA_B64=$(printf %s "$TWILIO_AUTH_TOKEN" | base64 | tr -d "\n")
 ssh -o StrictHostKeyChecking=no "$DEPLOY_USER@$DEPLOY_HOST" bash -s -- "$TA_B64" << 'REMOTEOF'
 set -e
 TA=$(printf %s "$1" | base64 -d)
-# Ensure single-line base64 (no newlines) so kubectl patch JSON is valid
+# Single-line base64 for K8s secret data (avoid newlines breaking JSON)
 TA_B64_LOCAL=$(printf %s "$TA" | base64 -w 0 2>/dev/null || printf %s "$TA" | base64 | tr -d '\n')
 if sudo k3s kubectl get secret twilio-secrets -n lb-automotive &>/dev/null; then
-  sudo k3s kubectl patch secret twilio-secrets -n lb-automotive -p "{\"data\":{\"TWILIO_AUTH_TOKEN\":\"${TA_B64_LOCAL}\"}}"
+  PATCH_FILE=$(mktemp)
+  printf '"'"'{"data":{"TWILIO_AUTH_TOKEN":"%s"}}'"'"' "$TA_B64_LOCAL" > "$PATCH_FILE"
+  sudo k3s kubectl patch secret twilio-secrets -n lb-automotive --type=merge --patch-file="$PATCH_FILE"
+  rm -f "$PATCH_FILE"
   echo "✅ twilio-secrets patched (TWILIO_AUTH_TOKEN updated)"
 else
   sudo k3s kubectl create secret generic twilio-secrets -n lb-automotive --from-literal=TWILIO_AUTH_TOKEN="$TA" --dry-run=client -o yaml | sudo k3s kubectl apply -f -
