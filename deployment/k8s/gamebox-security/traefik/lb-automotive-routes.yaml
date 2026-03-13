@@ -35,12 +35,19 @@ spec:
             type: PathPrefix
             value: /api/twilio
           method: POST
+      filters:
+        - type: RequestHeaderModifier
+          requestHeaderModifier:
+            add:
+              - name: X-Forwarded-Proto
+                value: "https"
       backendRefs:
         - name: backend
           namespace: lb-automotive
           port: 8000
 
     # 2. Legacy path configured in the Twilio Console (rewritten to backend path)
+    #    RequestHeaderModifier ensures backend sees original scheme/path for Twilio signature validation.
     - matches:
         - path:
             type: PathPrefix
@@ -52,6 +59,13 @@ spec:
             path:
               type: ReplacePrefixMatch
               replacePrefixMatch: /api/twilio
+        - type: RequestHeaderModifier
+          requestHeaderModifier:
+            add:
+              - name: X-Forwarded-Proto
+                value: "https"
+              - name: X-Forwarded-Prefix
+                value: "/lb-automotive"
       backendRefs:
         - name: backend
           namespace: lb-automotive
