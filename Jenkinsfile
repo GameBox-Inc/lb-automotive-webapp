@@ -174,12 +174,13 @@ REMOTEOF
                     withCredentials([string(credentialsId: 'twilio-auth-token', variable: 'TWILIO_AUTH_TOKEN')]) {
                         sshagent(credentials: ['lb-server-ssh']) {
                             sh '''
-TA_B64=$(printf %s "$TWILIO_AUTH_TOKEN" | base64 | tr -d "\n")
+# Strip all whitespace from base64 so JSON patch is one line (avoids tr \\n vs space issues in pipelines)
+TA_B64=$(printf %s "$TWILIO_AUTH_TOKEN" | base64 | tr -d '[:space:]')
 ssh -o StrictHostKeyChecking=no "$DEPLOY_USER@$DEPLOY_HOST" bash -s -- "$TA_B64" << 'REMOTEOF'
 set -e
 TA=$(printf %s "$1" | base64 -d)
-# Single-line base64 for K8s secret data (avoid newlines breaking JSON)
-TA_B64_LOCAL=$(printf %s "$TA" | base64 -w 0 2>/dev/null || printf %s "$TA" | base64 | tr -d '\n')
+# Single-line base64 for K8s secret data (strip any whitespace so patch JSON is valid)
+TA_B64_LOCAL=$(printf %s "$TA" | base64 -w 0 2>/dev/null || printf %s "$TA" | base64 | tr -d '[:space:]')
 if sudo k3s kubectl get secret twilio-secrets -n lb-automotive &>/dev/null; then
   PATCH_FILE=$(mktemp)
   printf '"'"'{"data":{"TWILIO_AUTH_TOKEN":"%s"}}'"'"' "$TA_B64_LOCAL" > "$PATCH_FILE"
