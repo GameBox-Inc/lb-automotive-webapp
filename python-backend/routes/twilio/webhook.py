@@ -111,6 +111,7 @@ async def validate_twilio_request(request: Request):
         #    Use the configured WEBHOOK_BASE_URL + request query so validation matches Twilio console exactly.
         from urllib.parse import urlparse, urlunparse
         parsed = urlparse(url)
+        used_fallback_base = False
         if (
             parsed.path.startswith("/api/twilio")
             and not parsed.path.startswith("/lb-automotive")
@@ -118,6 +119,7 @@ async def validate_twilio_request(request: Request):
         ):
             base = (WEBHOOK_BASE_URL or "").rstrip("/") or "https://twilio.kozytherocket.space/lb-automotive/api/twilio/webhook"
             url = f"{base}?{parsed.query}" if parsed.query else base
+            used_fallback_base = True
 
         # Get the POST data
         form = await request.form()
@@ -141,7 +143,31 @@ async def validate_twilio_request(request: Request):
         logger.info(f"Twilio Validation Debug: Headers={safe_headers}")
         logger.info(f"Validating URL={url}")
         
+        # #region agent log
+        _debug_log = os.getenv("DEBUG_LOG_PATH")
+        _parsed_final = urlparse(url)
+        import json as _json
+        _payload = {"sessionId": "49c9c0", "hypothesisId": "B,C,D,E", "location": "webhook.py:validate_twilio", "message": "Twilio validation inputs", "data": {"url_has_query": bool(_parsed_final.query), "url_query_len": len(_parsed_final.query or ""), "signature_present": bool(signature), "signature_len": len(signature), "param_count": len(params), "param_keys": list(params.keys())[:20], "used_fallback_base": used_fallback_base}, "timestamp": int(__import__("time").time() * 1000)}
+        logger.info("DEBUG_TWILIO_403 %s", _json.dumps(_payload))
+        if _debug_log:
+            try:
+                with open(_debug_log, "a") as _f:
+                    _f.write(_json.dumps(_payload) + "\n")
+            except Exception:
+                pass
+        # #endregion
+
         if not validator.validate(url, params, signature):
+            # #region agent log
+            _fail = {"sessionId": "49c9c0", "hypothesisId": "A", "location": "webhook.py:validate_twilio", "message": "Twilio signature invalid", "data": {"url_has_query": bool(_parsed_final.query)}, "timestamp": int(__import__("time").time() * 1000)}
+            logger.info("DEBUG_TWILIO_403 %s", _json.dumps(_fail))
+            if _debug_log:
+                try:
+                    with open(_debug_log, "a") as _f:
+                        _f.write(_json.dumps(_fail) + "\n")
+                except Exception:
+                    pass
+            # #endregion
             logger.warning(f"Invalid Twilio Signature. URL: {url}")
             raise HTTPException(status_code=403, detail="Invalid Twilio Signature")
             

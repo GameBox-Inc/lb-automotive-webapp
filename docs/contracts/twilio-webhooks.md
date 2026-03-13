@@ -11,7 +11,7 @@
 https://twilio.kozytherocket.space/lb-automotive/api/twilio/webhook
 ```
 
-Traefik rewrites `/lb-automotive/api/twilio` → `/api/twilio` before forwarding to backend.
+Traefik rewrites `/lb-automotive/api/twilio` → `/api/twilio` before forwarding to backend. The HTTPRoute adds `X-Forwarded-Proto: https` and `X-Forwarded-Prefix: /lb-automotive` so the backend can reconstruct the full URL for Twilio signature validation.
 
 ---
 

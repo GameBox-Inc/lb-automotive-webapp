@@ -89,12 +89,34 @@ Apply: `vault policy write lb-automotive-policy - < lb-automotive-policy.hcl`
 
 **Fix:**
 - **503:** Create `twilio-secrets` with `TWILIO_AUTH_TOKEN` (and optionally `TWILIO_ACCOUNT_SID`, `TWILIO_PHONE_NUMBER`): run `deployment/k8s/create-secrets.sh` on the server or create the secret manually, then restart the backend.
-- **403 Invalid Signature:** Ensure `x-forwarded-proto`, `x-original-uri` (or `x-forwarded-prefix`) are passed; backend fallback injects `/lb-automotive` when host is `twilio.kozytherocket.space`. Twilio Console webhook URL must be `https://twilio.kozytherocket.space/lb-automotive/api/twilio/webhook`.
+- **403 Invalid Signature:** The backend must validate the request URL exactly as Twilio signed it (`https://twilio.kozytherocket.space/lb-automotive/api/twilio/webhook?...`). The HTTPRoute in `deployment/k8s/gamebox-security/traefik/lb-automotive-routes.yaml` must send **X-Forwarded-Proto: https** and **X-Forwarded-Prefix: /lb-automotive** (via `RequestHeaderModifier`) so the backend can reconstruct that URL. If you changed the route and removed those headers, add them back. Twilio Console webhook URL must be `https://twilio.kozytherocket.space/lb-automotive/api/twilio/webhook`.
 - **403 Validation Error:** Inspect backend logs for the exception type and message; fix the underlying cause (e.g. request body format, missing headers).
+- **Invalid Twilio Signature after deploy:** Ensure the new backend image is running: `kubectl get pods -n lb-automotive -l app=backend -o jsonpath='{.items[0].status.containerStatuses[0].image}'` and restart if the image tag is old: `kubectl rollout restart deployment/backend -n lb-automotive`. Ensure `TWILIO_WEBHOOK_BASE_URL` in twilio-secrets (or backend env) matches the Twilio Console webhook URL exactly (e.g. `https://twilio.kozytherocket.space/lb-automotive/api/twilio/webhook`). Check logs for `Validating URL=` to see the URL used for signature validation.
 
 ---
 
-## 5. Jenkins Pipeline — pytest / DATABASE_URL
+## 5. Traefik / Gateway configuration
+
+**Relevant when:** Twilio webhook returns 403 Invalid Signature, or public requests to `twilio.kozytherocket.space` get 404/502.
+
+**Flow:** Cloudflare Tunnel → cloudflared (connects to `traefik.gamebox-security.svc.cluster.local:80`) → Traefik Gateway (HTTPRoutes) → backend.
+
+**Key files:**
+- `deployment/k8s/gamebox-security/traefik/lb-automotive-routes.yaml` — HTTPRoutes for `twilio.kozytherocket.space`
+- `deployment/k8s/gamebox-security/traefik/gateway.yaml` — GatewayClass + Gateway (listener port 8000; Service may expose 80)
+- `deployment/k8s/gamebox-security/cloudflared.yaml` — tunnel ingress to Traefik on port **80**
+
+**Checks:**
+1. **Twilio 403:** The route for `/lb-automotive/api/twilio` must include a `RequestHeaderModifier` that adds `X-Forwarded-Proto: https` and `X-Forwarded-Prefix: /lb-automotive` so the backend can reconstruct the signed URL. See `lb-automotive-routes.yaml` rule 2.
+2. **Port mismatch:** cloudflared uses `http://traefik...:80`. The Traefik Service must expose port 80 (or the port the Gateway listener uses). Helm values use `ports.web.port: 8000`; the chart usually maps Service port 80 → 8000.
+3. **Route not attached:** `kubectl get httproute -n gamebox-security` and `kubectl describe httproute lb-automotive-twilio -n gamebox-security` to confirm the route is attached to the Gateway and has no status errors.
+4. **Backend unreachable:** From a pod in the cluster, `curl -v http://backend.lb-automotive.svc.cluster.local:8000/health` (or similar) to confirm the backend responds.
+
+**Apply route changes:** After editing `lb-automotive-routes.yaml`, run `kubectl apply -f deployment/k8s/gamebox-security/traefik/lb-automotive-routes.yaml` (or re-run Jenkins so manifests are synced and applied). No need to restart Traefik for HTTPRoute updates.
+
+---
+
+## 6. Jenkins Pipeline — pytest / DATABASE_URL
 
 **Symptoms:** Docker build fails with `ValueError: Valid PostgreSQL/Supabase connection string required`.
 
@@ -104,7 +126,7 @@ Apply: `vault policy write lb-automotive-policy - < lb-automotive-policy.hcl`
 
 ---
 
-## 6. Vault Uninitialized / CrashLoopBackOff
+## 7. Vault Uninitialized / CrashLoopBackOff
 
 **Symptoms:** `vault-0` in CrashLoopBackOff; logs: "stored unseal keys supported, but none were found".
 
@@ -119,7 +141,7 @@ Store recovery key and root token.
 
 ---
 
-## 7. Main Vault CrashLoopBackOff — Transit Token 403
+## 8. Main Vault CrashLoopBackOff — Transit Token 403
 
 **Symptoms:** `vault-0` in CrashLoopBackOff; logs:
 ```
@@ -201,7 +223,7 @@ sudo k3s kubectl rollout restart deploy/backend -n lb-automotive
 
 ---
 
-## 8. Main Vault — Transit Decrypt 400 (cipher: message authentication failed)
+## 9. Main Vault — Transit Decrypt 400 (cipher: message authentication failed)
 
 **Symptoms:** `vault-0` fails to start; logs:
 ```
@@ -251,7 +273,7 @@ Code: 400. Errors: * cipher: message authentication failed
 
 ---
 
-## 9. OOM / 2GB Server
+## 10. OOM / 2GB Server
 
 **Symptoms:** Pods evicted, OOMKilled.
 

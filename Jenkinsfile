@@ -157,6 +157,43 @@ REMOTEOF
             }
         }
 
+        stage('Ensure Twilio Secrets') {
+            // Push TWILIO_AUTH_TOKEN from Jenkins credential into K8s twilio-secrets so webhook signature validation works.
+            // Add Jenkins secret-text credential: twilio-auth-token (value = Twilio Console Auth Token).
+            // Patches existing twilio-secrets so TWILIO_ACCOUNT_SID / TWILIO_PHONE_NUMBER are not overwritten.
+            when {
+                anyOf {
+                    branch 'main'
+                    branch 'master'
+                    expression { env.BRANCH_NAME ==~ /.*release\/.*/ || env.GIT_BRANCH ==~ /.*release\/.*/ }
+                }
+            }
+            steps {
+                echo '🔐 Ensuring twilio-secrets (TWILIO_AUTH_TOKEN) on server from Jenkins credential...'
+                script {
+                    withCredentials([string(credentialsId: 'twilio-auth-token', variable: 'TWILIO_AUTH_TOKEN')]) {
+                        sshagent(credentials: ['lb-server-ssh']) {
+                            sh '''
+TA_B64=$(printf %s "$TWILIO_AUTH_TOKEN" | base64 | tr -d "\n")
+ssh -o StrictHostKeyChecking=no "$DEPLOY_USER@$DEPLOY_HOST" bash -s -- "$TA_B64" << 'REMOTEOF'
+set -e
+TA=$(printf %s "$1" | base64 -d)
+TA_B64_LOCAL=$(printf %s "$TA" | base64 -w 0 2>/dev/null || printf %s "$TA" | base64)
+if sudo k3s kubectl get secret twilio-secrets -n lb-automotive &>/dev/null; then
+  sudo k3s kubectl patch secret twilio-secrets -n lb-automotive -p "{\"data\":{\"TWILIO_AUTH_TOKEN\":\"$TA_B64_LOCAL\"}}"
+  echo "✅ twilio-secrets patched (TWILIO_AUTH_TOKEN updated)"
+else
+  sudo k3s kubectl create secret generic twilio-secrets -n lb-automotive --from-literal=TWILIO_AUTH_TOKEN="$TA" --dry-run=client -o yaml | sudo k3s kubectl apply -f -
+  echo "✅ twilio-secrets created (TWILIO_AUTH_TOKEN set)"
+fi
+REMOTEOF
+                            '''
+                        }
+                    }
+                }
+            }
+        }
+
         stage('Deploy Manifests') {
             // Syncs K8s manifests to server and applies them.
             // Replaces ArgoCD — Jenkins is now the GitOps mechanism.
