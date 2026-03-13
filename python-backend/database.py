@@ -413,7 +413,11 @@ def seed_data():
         ('ivr_thinking_sound_url', 'https://twilio.kozytherocket.space/audio/thinking.mp3', 'URL for background thinking sound'),
         ('ivr_processing_timeout', '10', 'Max seconds to wait for AI response before fallback'),
         ('ivr_speech_timeout', 'auto', 'Twilio speechTimeout: auto or seconds (e.g. 3)'),
-        ('ivr_repair_max_retries', '3', 'Max timeouts before offering transfer')
+        ('ivr_repair_max_retries', '2', 'Max timeouts before offering transfer'),
+        ('ivr_transfer_number', '', 'E.164 number for representative transfer (Dial)'),
+        ('ivr_language_prompt_enabled', 'false', 'Play language selection at start (true/false)'),
+        ('ivr_recording_disclaimer_en', 'This call may be recorded for quality purposes.', 'Recording disclaimer (English)'),
+        ('ivr_recording_disclaimer_es', 'Esta llamada puede ser grabada para fines de calidad.', 'Recording disclaimer (Spanish)'),
     ]
 
     for key, value, desc in default_settings:
