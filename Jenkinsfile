@@ -184,7 +184,7 @@ TA_B64_LOCAL=$(printf %s "$TA" | base64 -w 0 2>/dev/null || printf %s "$TA" | ba
 if sudo k3s kubectl get secret twilio-secrets -n lb-automotive &>/dev/null; then
   PATCH_FILE=$(mktemp)
   printf '"'"'{"data":{"TWILIO_AUTH_TOKEN":"%s"}}'"'"' "$TA_B64_LOCAL" > "$PATCH_FILE"
-  sudo k3s kubectl patch secret twilio-secrets -n lb-automotive --type=merge -p "$(cat "$PATCH_FILE")"
+  sudo k3s kubectl patch secret twilio-secrets -n lb-automotive --type=merge -p - < "$PATCH_FILE"
   rm -f "$PATCH_FILE"
   echo "✅ twilio-secrets patched (TWILIO_AUTH_TOKEN updated)"
 else

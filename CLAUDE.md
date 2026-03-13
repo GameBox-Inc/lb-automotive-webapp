@@ -664,7 +664,7 @@ When working on this project:
 
 10. **`security_config.json`** - Required by `security.py` at startup. Contains SQL/XSS regex patterns. Must be in the Docker image or mounted via ConfigMap.
 
-11. **App secrets** - Backend uses K8s Secrets (`app-secrets`, `twilio-secrets`, `anthropic-secrets`). Create via `deployment/k8s/create-secrets.sh` or Jenkins credentials `secret-key` and `allowed-origins`.
+11. **App secrets** - Backend uses K8s Secrets (`app-secrets`, `twilio-secrets`, `anthropic-secrets`). Create via `deployment/k8s/create-secrets.sh` or Jenkins: `Ensure App Secrets` uses `secret-key`, `allowed-origins`, `supabase-db-url`; `Ensure Twilio Secrets` uses `twilio-auth-token` (Twilio Auth Token for webhook signature validation).
 
 12. **Frontend Nginx proxy** - The production Nginx config is at `deployment/docker/nginx.conf`, NOT `frontend/nginx.conf`. It proxies `/api/*` to `http://backend:8000`.
 
