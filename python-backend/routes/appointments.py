@@ -1,11 +1,13 @@
 import uuid
 from typing import List, Optional, Dict, Any
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, Query
 from models import Appointment, AppointmentCreate, AppointmentUpdate
 from auth import get_current_active_user, get_optional_user
 from database import get_db_connection, current_user_context, fmt_query
 from security import sanitize_input, validate_appointment_data
 from repositories.appointment_repository import AppointmentRepository
+from scheduling.engine import compute_availability
+from observability.tracing import update_phase, PHASE_BOOKING_CREATE
 from utils.time_utils import get_current_business_time, get_business_timezone
 import traceback
 
@@ -30,146 +32,32 @@ def list_appointments(
 
 @router.get("/available-slots")
 def get_available_slots(
-    date: str,
-    service_id: str,
-    current_user: Optional[Dict[str, Any]] = Depends(get_optional_user)
+    date: str = Query(..., pattern=r"^\d{4}-\d{2}-\d{2}$"),
+    service_id: str = Query(...),
+    technician_id: Optional[str] = None,
+    current_user: Optional[Dict[str, Any]] = Depends(get_optional_user),
 ):
     """
-    Get available appointment slots for a given date and service.
-    (Kept as-is for now, complex logic requires Service/Schedule repositories)
+    Get available appointment slots for a given date and service using the
+    central scheduling engine. Returns a list of ISO timestamps.
     """
-    from database import DatabaseContextManager, fmt_query
-    from datetime import datetime, timedelta, date as d_date
-    
+    from datetime import datetime
+
     try:
-        target_date = datetime.strptime(date, "%Y-%m-%d").date()
+        day = datetime.strptime(date, "%Y-%m-%d")
     except ValueError:
         raise HTTPException(status_code=400, detail="Invalid date format. Use YYYY-MM-DD")
 
-    with DatabaseContextManager(read_only=True) as conn:
-        cursor = conn.cursor()
+    slots = compute_availability(
+        service_id=service_id,
+        date=day,
+        technician_id=technician_id,
+        horizon_days=1,
+    )
 
-        # 1. Get Service Duration
-        cursor.execute(fmt_query("SELECT duration FROM services WHERE id = ?"), (service_id,))
-        service_row = cursor.fetchone()
-        if not service_row:
-            raise HTTPException(status_code=404, detail="Service not found")
-        duration_minutes = service_row["duration"]
-
-        # 2. Get Staff Working on this day
-        day_of_week = target_date.weekday()
-        cursor.execute(fmt_query("""
-            SELECT s.id as staff_id, s.name, ss.start_time, ss.end_time 
-            FROM staff s
-            JOIN staff_schedules ss ON s.id = ss.staff_id
-            WHERE s.active = 1 AND ss.day_of_week = ? AND ss.is_off = 0
-        """), (day_of_week,))
-        staff_schedules = cursor.fetchall()
-        
-        if not staff_schedules:
-            return []
-
-        # 3. Get existing appointments for this date
-        date_fn = "DATE" if os.getenv("DATABASE_URL", "").startswith("postgres") else "date"
-        cursor.execute(fmt_query(f"""
-            SELECT appointment_time, service_type, duration 
-            FROM appointments a
-            JOIN services s ON a.service_type = s.id
-            WHERE {date_fn}(appointment_time) = ? AND status != 'cancelled'
-        """), (date,))
-        existing_appointments = cursor.fetchall()
-
-    # 4. Generate candidate slots
-    # We'll use a set of 15-minute intervals for start times
-    # Range is determined by the earilest start and latest end of all staff
-    
-    available_slots = []
-    
-    def parse_time(t_str):
-        h, m = map(int, t_str.split(':'))
-        return h, m
-
-    # Find global start and end time for the shop on this day
-    global_start_min = 24 * 60
-    global_end_min = 0
-
-    for schedule in staff_schedules:
-        sh, sm = parse_time(schedule["start_time"])
-        eh, em = parse_time(schedule["end_time"])
-        global_start_min = min(global_start_min, sh * 60 + sm)
-        global_end_min = max(global_end_min, eh * 60 + em)
-
-    # Generate slots logic
-    # Iterate from global_start to global_end - duration in 15 min steps
-    current_min = global_start_min
-    interval = timedelta(minutes=15)
-    
-    start_time_obj = datetime.combine(target_date, datetime.min.time())
-    
-    current_time = start_time_obj + timedelta(minutes=global_start_min)
-    end_time = start_time_obj + timedelta(minutes=global_end_min)
-
-    # Get current time in business timezone
-    now_business = get_current_business_time()
-    # If target_date is today, ensure we don't show past slots
-    # Convert naive current_time to business timezone for comparison
-    import pytz
-    business_tz = pytz.timezone(get_business_timezone())
-    
-    # We treat the "target_date" as being in the business timezone
-    # So we localize the slot times
-    
-    while current_time + timedelta(minutes=duration_minutes) <= end_time:
-        slot_start = current_time
-        slot_end = current_time + timedelta(minutes=duration_minutes)
-        
-        # Check if slot is in the past (with 30 min buffer)
-        slot_start_aware = business_tz.localize(slot_start)
-        if slot_start_aware < now_business + timedelta(minutes=30):
-             current_time += interval
-             continue
-
-        # Check if slot is viable
-        # A slot is viable if at least ONE staff member is working AND free
-        
-        # Simplification: We check if total concurrent appointments < total staff working at this time
-        # This assumes any staff can do any service (which is true for now)
-        
-        # Count overlapping appointments
-        conflicts = 0
-        for appt in existing_appointments:
-            try:
-                appt_start = datetime.fromisoformat(appt["appointment_time"])
-                # If stored as UTC or naive, we need to be careful.
-                # Convention: DB stores ISO string. If naive, assume it matches business timezone context of request?
-                # Actually, standardizing on Naive == Business Time is easiest for single-location apps.
-                # If DB has tz info, we compare properly.
-                if appt_start.tzinfo is None:
-                    appt_start = business_tz.localize(appt_start)
-            except ValueError:
-                continue 
-                
-            appt_end = appt_start + timedelta(minutes=appt["duration"])
-            
-            if slot_start_aware < appt_end and business_tz.localize(slot_end) > appt_start:
-                conflicts += 1
-        
-        # Count staff working covering this FULL slot
-        staff_working_count = 0
-        for s in staff_schedules:
-            sh, sm = parse_time(s["start_time"])
-            eh, em = parse_time(s["end_time"])
-            ss = datetime.combine(target_date, datetime.min.time().replace(hour=sh, minute=sm))
-            se = datetime.combine(target_date, datetime.min.time().replace(hour=eh, minute=em))
-            if slot_start >= ss and slot_end <= se:
-                staff_working_count += 1
-        
-        if conflicts < staff_working_count:
-            available_slots.append(slot_start.strftime("%H:%M"))
-            
-        current_time += interval
-
-    return available_slots
+    # Normalize response shape for existing frontend/Kiosk usage:
+    # return simple "HH:MM" strings for now.
+    return [s.start.strftime("%H:%M") for s in slots]
 
 
 @router.get("/{appointment_id}", response_model=Appointment)
@@ -243,6 +131,7 @@ def create_appointment(
         
         user_id = current_user["id"] if current_user else None
         
+        update_phase(PHASE_BOOKING_CREATE)
         return repo.create_appointment(appointment_data, user_id)
         
     except Exception as e:

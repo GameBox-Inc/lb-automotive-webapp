@@ -14,6 +14,10 @@ PHASE_STT_STARTED = "stt_started"
 PHASE_LLM_STARTED = "llm_started"
 PHASE_LLM_COMPLETE = "llm_complete"
 PHASE_TTS_READY = "tts_ready"
+
+# Availability / scheduling phases
+PHASE_AVAILABILITY_COMPUTE = "availability_compute"
+PHASE_BOOKING_CREATE = "booking_create"
 PHASE_RESPONSE_SENT = "response_sent"
 PHASE_ERROR = "error"
 

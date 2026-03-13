@@ -477,16 +477,28 @@ def check_shop_bandwidth(date_str, slot_time):
         return True # Fallback to allowing
 
 def handle_time_selection(user_input, language, CallSid, metadata, response):
-    """Handler for selecting an appointment time with bandwidth check."""
-    from utils_scheduler import get_available_slots_logic
+    """Handler for selecting an appointment time using central scheduling engine."""
     from services.llm import analyze_schedule
-    
+    from scheduling.engine import compute_availability
+
     selected_service = metadata.get("selected_service", {"id": "general", "name": "General Service"})
     tomorrow_date = (datetime.now() + timedelta(days=1)).strftime("%Y-%m-%d")
-    
-    raw_slots = get_available_slots_logic(tomorrow_date, selected_service.get('id'))
-    
-    # Filter slots based on bandwidth
+
+    # Use central scheduling engine to compute candidate slots (15-min grid)
+    try:
+        day = datetime.strptime(tomorrow_date, "%Y-%m-%d")
+    except ValueError:
+        day = datetime.now() + timedelta(days=1)
+
+    engine_slots = compute_availability(
+        service_id=selected_service.get('id'),
+        date=day,
+        technician_id=None,
+        horizon_days=1,
+    )
+
+    # Normalize to "HH:MM" strings and apply simple bandwidth check per exact time
+    raw_slots = sorted({s.start.strftime("%H:%M") for s in engine_slots})
     available_slots = [s for s in raw_slots if check_shop_bandwidth(tomorrow_date, s)]
     
     if not available_slots:

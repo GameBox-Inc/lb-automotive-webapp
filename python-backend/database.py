@@ -263,6 +263,36 @@ def init_db():
         )
     """)
 
+    # Blackout periods: shop-wide or per-technician blocks where no bookings allowed
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS blackouts (
+            id TEXT PRIMARY KEY,
+            reason TEXT,
+            start_time TEXT NOT NULL,
+            end_time TEXT NOT NULL,
+            scope TEXT DEFAULT 'shop', -- 'shop' | 'technician'
+            technician_id TEXT,
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+            updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (technician_id) REFERENCES staff (id)
+        )
+    """)
+
+    # ---- Schema migrations for central scheduling engine (idempotent) ----
+    # Services: ensure duration_minutes exists to support variable durations
+    cursor.execute(fmt_query("ALTER TABLE services ADD COLUMN IF NOT EXISTS duration_minutes INTEGER"))
+
+    # Staff: ensure role and active flags exist (for legacy DBs that predate staff table evolution)
+    cursor.execute(fmt_query("ALTER TABLE staff ADD COLUMN IF NOT EXISTS role TEXT DEFAULT 'mechanic'"))
+    cursor.execute(fmt_query("ALTER TABLE staff ADD COLUMN IF NOT EXISTS active INTEGER DEFAULT 1"))
+
+    # Appointments: enrich with scheduling engine fields
+    cursor.execute(fmt_query("ALTER TABLE appointments ADD COLUMN IF NOT EXISTS service_id TEXT"))
+    cursor.execute(fmt_query("ALTER TABLE appointments ADD COLUMN IF NOT EXISTS technician_id TEXT"))
+    cursor.execute(fmt_query("ALTER TABLE appointments ADD COLUMN IF NOT EXISTS start_time TEXT"))
+    cursor.execute(fmt_query("ALTER TABLE appointments ADD COLUMN IF NOT EXISTS end_time TEXT"))
+    cursor.execute(fmt_query("ALTER TABLE appointments ADD COLUMN IF NOT EXISTS source TEXT"))  # 'web' | 'ivr' | 'kiosk' | 'admin'
+
     # Create settings table
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS settings (
@@ -320,6 +350,47 @@ def seed_data():
             updated_at TEXT DEFAULT CURRENT_TIMESTAMP
         )
     """)
+
+    # Ensure blackouts table exists for environments that only run seed_data()
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS blackouts (
+            id TEXT PRIMARY KEY,
+            reason TEXT,
+            start_time TEXT NOT NULL,
+            end_time TEXT NOT NULL,
+            scope TEXT DEFAULT 'shop',
+            technician_id TEXT,
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+            updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (technician_id) REFERENCES staff (id)
+        )
+    """)
+
+    # ---- Data backfill for central scheduling engine (idempotent) ----
+    # 1) Services: copy duration into duration_minutes if empty
+    try:
+        cursor.execute(fmt_query("UPDATE services SET duration_minutes = duration WHERE duration_minutes IS NULL"))
+    except Exception:
+        # Column might not exist yet on very old SQLite; safe to ignore
+        pass
+
+    # 2) Appointments: populate start_time and source where missing
+    try:
+        cursor.execute(fmt_query("""
+            UPDATE appointments
+            SET start_time = appointment_time
+            WHERE start_time IS NULL
+        """))
+    except Exception:
+        pass
+
+    try:
+        cursor.execute(fmt_query("""
+            UPDATE appointments
+            SET source = COALESCE(source, 'web')
+        """))
+    except Exception:
+        pass
 
     # Check if services already exist
     cursor.execute("SELECT COUNT(*) as count FROM services")
