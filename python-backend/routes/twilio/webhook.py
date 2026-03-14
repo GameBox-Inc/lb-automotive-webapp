@@ -23,6 +23,7 @@ from utils.ivr_helper import (
     get_first_turn_intent,
     get_closest_slot,
 )
+from utils.ivr_prompts import get_step_prompt, get_response
 from utils.background_tasks import process_ivr_intent_async
 from security import redis_client
 from routes.twilio.smart_jump import process_smart_jump
@@ -435,7 +436,7 @@ def handle_service_category(user_input, language, CallSid, metadata, response):
     upsert_call_state(CallSid, "select_service_category", language, metadata)
     
     voice = "Polly.Lupe" if language == "es" else "Polly.Matthew"
-    message = "¿Qué tipo de servicio necesita?" if language == "es" else "What type of service do you need? Choose one of the following."
+    message = get_response("service_category_intro", language)
     response.say(message, voice=voice)
 
     for idx, cat in enumerate(categories, 1):
@@ -543,10 +544,7 @@ def handle_time_selection(user_input, language, CallSid, metadata, response):
     # #endregion
 
     if not available_slots or not target_date:
-        if language == "es":
-            response.say("Lamentamos no tener disponibilidad en los próximos días. Por favor reserve en línea. Gracias y hasta pronto.", voice=voice)
-        else:
-            response.say("We’re sorry we don’t have any openings in the next few days. We’d love to help—please try booking online, or call back another time. Goodbye.", voice=voice)
+        response.say(get_response("no_slots", language), voice=voice)
         response.hangup()
         return None
 
@@ -567,12 +565,7 @@ def handle_time_selection(user_input, language, CallSid, metadata, response):
         display_slots = available_slots
 
     # Ask what time they’d like instead of stating slot count; we’ll recommend closest when they answer
-    if language == "es":
-        prompt = "Tenemos disponibilidad ese día. ¿Qué horario le vendría mejor? Puede decir una hora, por ejemplo las 3 o las 10 de la mañana, o decir mañana o tarde. Si prefiere, marque 1 para mañana o 2 para tarde."
-    else:
-        prompt = "We have openings that day. What time would work best for you? You can say a specific time—like 3 o’clock or 10 in the morning—or just morning or afternoon, and I’ll find the closest opening for you. If you prefer, press 1 for morning or 2 for afternoon."
-    response.say(prompt, voice=voice)
-
+    response.say(get_response("time_ask", language), voice=voice)
     metadata["available_slots"] = display_slots
     metadata["target_date"] = target_date
     upsert_call_state(CallSid, "select_time", language, metadata)
@@ -630,25 +623,18 @@ def handle_booking(user_input, language, CallSid, metadata, response):
         
         upsert_call_state(CallSid, "completed", language, metadata, aid)
         time_spoken = _format_slot_for_speech(chosen_slot, language)
-        if language == "es":
-            response.say(f"Su cita quedó confirmada. La esperamos a las {time_spoken}. Gracias por elegir L-B Automotive. Hasta pronto.", voice=voice)
-        else:
-            response.say(f"Your appointment is confirmed. We’ll see you at {time_spoken}. Thank you for choosing L-B Automotive—we look forward to helping you. Goodbye.", voice=voice)
+        response.say(get_response("booking_confirmed", language, time_spoken=time_spoken), voice=voice)
         response.hangup()
     else:
-        if language == "es":
-            response.say("Ese horario ya no está disponible. Le pedimos que elija otro. Un momento.", voice=voice)
-        else:
-            response.say("That time is no longer available. No worries—let’s find another time that works for you.", voice=voice)
+        response.say(get_response("slot_unavailable", language), voice=voice)
         response.redirect(f"{WEBHOOK_BASE_URL}?step=select_time")
-    return None
 
 def handle_save_time_choice(user_input, language, CallSid, metadata, response):
     """Resolve preferred time (speech or 1/2) to closest slot, confirm it, then ask for reason for visit."""
     slots = metadata.get("available_slots", [])
     voice = "Polly.Lupe" if language == "es" else "Polly.Matthew"
     if not slots:
-        response.say("We couldn’t find that time. Let’s try again." if language != "es" else "No encontramos ese horario. Intentemos de nuevo.", voice=voice)
+        response.say(get_response("time_not_found", language), voice=voice)
         return "select_time"
 
     chosen_slot = get_closest_slot((user_input or "").strip(), slots)
@@ -668,10 +654,8 @@ def handle_save_time_choice(user_input, language, CallSid, metadata, response):
     except Exception:
         date_spoken = target_date
 
-    if language == "es":
-        response.say(f"Perfecto. Le reservamos a las {time_spoken} el {date_spoken}—es la hora más cercana a lo que pidió. Ahora, en pocas palabras, ¿por qué nos visita? Por ejemplo, cambio de aceite o frenos. Después del tono.", voice=voice)
-    else:
-        response.say(f"I’d be happy to get you in at {time_spoken} on {date_spoken}—that’s our closest opening to what you asked for. Next, in a few words, what are you coming in for? For example, oil change or brakes. After the beep.", voice=voice)
+    response.say(get_response("save_time_confirm", language, time_spoken=time_spoken, date_spoken=date_spoken), voice=voice)
+            response.say(f"I’d be happy to get you in at {time_spoken} on {date_spoken}—that’s our closest opening to what you asked for. Next, in a few words, what are you coming in for? For example, oil change or brakes. After the beep.", voice=voice)
     return "collect_symptoms"
 
 
@@ -704,11 +688,8 @@ def handle_emergency(user_input, language, CallSid, metadata, response):
     upsert_call_state(CallSid, "emergency_services", language, metadata)
     
     voice = "Polly.Lupe" if language == "es" else "Polly.Matthew"
-    if language == "es":
-        response.say("Entendemos que es urgente. Tenemos lo siguiente disponible:", voice=voice)
-    else:
-        response.say("We’re here to help. For urgent issues we have the following options:", voice=voice)
-    for idx, s in enumerate(services, 1):
+    response.say(get_response("emergency_intro", language), voice=voice)
+        for idx, s in enumerate(services, 1):
         response.say(f"For {s['name']}, press {idx}", voice=voice)
     
     gather = Gather(num_digits=1, input="dtmf", action=f"{WEBHOOK_BASE_URL}?step=confirm_emergency")
@@ -720,7 +701,7 @@ def handle_select_service_detail(user_input, language, CallSid, metadata, respon
     categories = metadata.get("categories", [])
     if not categories:
         voice = "Polly.Lupe" if language == "es" else "Polly.Matthew"
-        response.say("Please start over.", voice=voice)
+        response.say(get_response("start_over", language), voice=voice)
         response.redirect(f"{WEBHOOK_BASE_URL}?step=start")
         return None
     try:
@@ -736,10 +717,7 @@ def handle_select_service_detail(user_input, language, CallSid, metadata, respon
     metadata["selected_category"] = category
     upsert_call_state(CallSid, "select_service_detail", language, metadata)
     voice = "Polly.Lupe" if language == "es" else "Polly.Matthew"
-    if language == "es":
-        response.say(f"Servicios en {category.replace('_', ' ')}. Elija uno:", voice=voice)
-    else:
-        response.say(f"For {category.replace('_', ' ')}, we have these options. Choose one:", voice=voice)
+    response.say(get_response("service_detail_intro", language, category=category.replace("_", " ")), voice=voice)
     for i, s in enumerate(services, 1):
         response.say(f"For {s['name']}, press {i}", voice=voice)
     gather = Gather(num_digits=1, input="dtmf", action=f"{WEBHOOK_BASE_URL}?step=save_service_selection")
@@ -766,7 +744,7 @@ def handle_confirm_emergency(user_input, language, CallSid, metadata, response):
     services = metadata.get("services", [])
     if not services:
         voice = "Polly.Lupe" if language == "es" else "Polly.Matthew"
-        response.say("Please start over.", voice=voice)
+        response.say(get_response("start_over", language), voice=voice)
         response.redirect(f"{WEBHOOK_BASE_URL}?step=start")
         return None
     try:
@@ -775,7 +753,7 @@ def handle_confirm_emergency(user_input, language, CallSid, metadata, response):
     except (ValueError, TypeError):
         svc = services[0]
     voice = "Polly.Lupe" if language == "es" else "Polly.Matthew"
-    response.say(f"You selected {svc['name']}. A representative will call you shortly. Goodbye.", voice=voice)
+    response.say(get_response("emergency_selected", language, service_name=svc["name"]), voice=voice)
     response.hangup()
     return None
 
@@ -1081,7 +1059,7 @@ def twilio_webhook(
                         gather_kw["barge_in"] = gc.get("bargein", True)
                     gather_kw["speech_timeout"] = gc.get("speech_timeout") or get_setting("ivr_speech_timeout", "auto")
                 gather = Gather(**gather_kw)
-                prompt_text = node.get(f"prompt_{language}", node.get("prompt_en")) or "Please continue."
+                prompt_text = get_step_prompt(step, language) or node.get(f"prompt_{language}", node.get("prompt_en")) or "Please continue."
                 gather.say(prompt_text, voice=voice)
                 response.append(gather)
             elif node_type == "function":
@@ -1102,7 +1080,7 @@ def twilio_webhook(
                 elif handler_name == "handle_select_service_detail": handle_select_service_detail(input_data, language, CallSid, metadata, response)
                 elif handler_name == "handle_confirm_emergency": handle_confirm_emergency(input_data, language, CallSid, metadata, response)
             elif node_type == "terminal":
-                prompt_text = node.get(f"prompt_{language}", node.get("prompt_en"))
+                prompt_text = get_step_prompt(step, language) or node.get(f"prompt_{language}", node.get("prompt_en"))
                 smooth_hangup(response, voice, language, message=prompt_text)
             track_decision(CallSid, step, input_data)
             update_phase(PHASE_TTS_READY)

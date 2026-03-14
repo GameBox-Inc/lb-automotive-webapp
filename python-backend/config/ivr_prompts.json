@@ -1,0 +1,93 @@
+{
+  "_comment": "Matrix-driven IVR prompts. Edit this file to change copy without code changes. Use {placeholder} in responses for dynamic values.",
+  "steps": {
+    "start": {
+      "prompt_en": "Hi, thanks for calling L-B Automotive. We're here to help—would you like to schedule an appointment, get a status update on your vehicle, or speak with someone? Just say what you need.",
+      "prompt_es": "Hola, gracias por llamar a L-B Automotive. Estamos para ayudarle. ¿Le gustaría programar una cita, recibir una actualización de su vehículo o hablar con alguien? Diga lo que necesita."
+    },
+    "main_menu_en": {
+      "prompt_en": "What can we do for you today? Press 1 or say appointment to schedule a visit. For something urgent, press 2 or say emergency."
+    },
+    "main_menu_es": {
+      "prompt_es": "¿En qué podemos ayudarle? Presione 1 o diga cita para programar. Si es urgente, presione 2 o diga emergencia."
+    },
+    "collect_vehicle": {
+      "prompt_en": "So we can pull up the right info—what's the year, make and model of your vehicle? You can press star to skip if you'd like.",
+      "prompt_es": "Para tener todo listo, ¿nos dice el año, marca y modelo de su vehículo? Puede presionar asterisco para saltar."
+    },
+    "collect_plate": {
+      "prompt_en": "If you'd like, we can note your license plate—just say the number, or press star to skip.",
+      "prompt_es": "Si desea, podemos anotar su placa; diga el número o presione asterisco para saltar."
+    },
+    "confirm_details": {
+      "prompt_en": "Does that work for you? Press 1 to confirm your appointment, or 9 to choose a different time.",
+      "prompt_es": "¿Le queda bien? Presione 1 para confirmar su cita o 9 para elegir otro horario."
+    },
+    "collect_symptoms": {
+      "prompt_en": "In a few words, what are you coming in for? For example, oil change, brakes, or a check engine light. After the beep.",
+      "prompt_es": "En pocas palabras, ¿por qué nos visita? Por ejemplo, cambio de aceite, frenos o luz de motor. Después del tono."
+    },
+    "completed": {
+      "prompt_en": "Your appointment is all set. Thank you for choosing L-B Automotive—we look forward to seeing you. Goodbye.",
+      "prompt_es": "Su cita quedó confirmada. Gracias por elegir L-B Automotive. Lo esperamos. Adiós."
+    },
+    "transfer_representative": {
+      "prompt_en": "We're connecting you with a team member now. Thanks for your patience—one moment please.",
+      "prompt_es": "Le estamos conectando con un asesor. Gracias por su paciencia. Un momento por favor."
+    },
+    "check_status": {
+      "prompt_en": "A service advisor will call you back shortly with an update on your vehicle. Is there anything else we can help with? If not, thanks for calling—goodbye.",
+      "prompt_es": "Un asesor le llamará pronto con una actualización de su vehículo. ¿Algo más en lo que podamos ayudarle? Si no, gracias por llamar. Adiós."
+    }
+  },
+  "responses": {
+    "no_slots": {
+      "en": "We're sorry we don't have any openings in the next few days. We'd love to help—please try booking online, or call back another time. Goodbye.",
+      "es": "Lamentamos no tener disponibilidad en los próximos días. Por favor reserve en línea. Gracias y hasta pronto."
+    },
+    "time_ask": {
+      "en": "We have openings that day. What time would work best for you? You can say a specific time—like 3 o'clock or 10 in the morning—or just morning or afternoon, and I'll find the closest opening for you. If you prefer, press 1 for morning or 2 for afternoon.",
+      "es": "Tenemos disponibilidad ese día. ¿Qué horario le vendría mejor? Puede decir una hora, por ejemplo las 3 o las 10 de la mañana, o decir mañana o tarde. Si prefiere, marque 1 para mañana o 2 para tarde."
+    },
+    "save_time_confirm": {
+      "en": "I'd be happy to get you in at {time_spoken} on {date_spoken}—that's our closest opening to what you asked for. Next, in a few words, what are you coming in for? For example, oil change or brakes. After the beep.",
+      "es": "Perfecto. Le reservamos a las {time_spoken} el {date_spoken}—es la hora más cercana a lo que pidió. Ahora, en pocas palabras, ¿por qué nos visita? Por ejemplo, cambio de aceite o frenos. Después del tono."
+    },
+    "booking_confirmed": {
+      "en": "Your appointment is confirmed. We'll see you at {time_spoken}. Thank you for choosing L-B Automotive—we look forward to helping you. Goodbye.",
+      "es": "Su cita quedó confirmada. La esperamos a las {time_spoken}. Gracias por elegir L-B Automotive. Hasta pronto."
+    },
+    "slot_unavailable": {
+      "en": "That time is no longer available. No worries—let's find another time that works for you.",
+      "es": "Ese horario ya no está disponible. Le pedimos que elija otro. Un momento."
+    },
+    "time_not_found": {
+      "en": "We couldn't find that time. Let's try again.",
+      "es": "No encontramos ese horario. Intentemos de nuevo."
+    },
+    "service_category_intro": {
+      "en": "What type of service do you need? Choose one of the following.",
+      "es": "¿Qué tipo de servicio necesita?"
+    },
+    "emergency_intro": {
+      "en": "We're here to help. For urgent issues we have the following options:",
+      "es": "Entendemos que es urgente. Tenemos lo siguiente disponible:"
+    },
+    "service_detail_intro": {
+      "en": "For {category}, we have these options. Choose one:",
+      "es": "Servicios en {category}. Elija uno:"
+    },
+    "start_over": {
+      "en": "Please start over.",
+      "es": "Por favor comience de nuevo."
+    },
+    "emergency_selected": {
+      "en": "You selected {service_name}. A representative will call you shortly. Goodbye.",
+      "es": "Seleccionó {service_name}. Un representante le llamará pronto. Adiós."
+    },
+    "for_option_press": {
+      "en": "For {option}, press {digit}",
+      "es": "Para {option}, presione {digit}"
+    }
+  }
+}
