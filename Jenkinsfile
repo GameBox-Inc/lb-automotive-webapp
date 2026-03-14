@@ -21,6 +21,9 @@ pipeline {
         DEPLOY_DIR     = "${env.DEPLOY_DIR}"
         MANIFEST_DIR   = "${env.MANIFEST_DIR}"
 
+        // Supabase (optional: set SUPABASE_PROJECT_REF to enable migration stage)
+        SUPABASE_PROJECT_REF = "${env.SUPABASE_PROJECT_REF ?: ''}"
+
         // Python version
         PYTHON_VERSION = '3.11'
 
@@ -44,6 +47,36 @@ pipeline {
                         script: 'git log -1 --pretty=%B',
                         returnStdout: true
                     ).trim()
+                }
+            }
+        }
+
+        // Optional: push Supabase migrations so dashboard and IVR DB stay in sync.
+        // Requires: (1) Jenkins credential 'supabase-access-token' (Secret text),
+        // (2) SUPABASE_PROJECT_REF set in job/global env (e.g. qsptxuwvbvnrmhwacdso),
+        // (3) Supabase CLI on the agent (e.g. brew install supabase/tap/supabase).
+        stage('Supabase Migrations') {
+            when {
+                anyOf {
+                    branch 'main'
+                    branch 'master'
+                    expression { env.BRANCH_NAME ==~ /.*release\/.*/ || env.GIT_BRANCH ==~ /.*release\/.*/ }
+                }
+                expression { return env.SUPABASE_PROJECT_REF?.trim() }
+            }
+            steps {
+                echo '🗄️ Pushing Supabase migrations...'
+                withCredentials([string(credentialsId: 'supabase-access-token', variable: 'SUPABASE_ACCESS_TOKEN')]) {
+                    sh """
+                        export SUPABASE_ACCESS_TOKEN
+                        export SUPABASE_PROJECT_REF='${env.SUPABASE_PROJECT_REF}'
+                        if command -v supabase >/dev/null 2>&1; then
+                            supabase link --project-ref "\${SUPABASE_PROJECT_REF}" || true
+                            supabase db push --include-all || echo "⚠️ Supabase migration push failed or had nothing to do"
+                        else
+                            echo "⚠️ Supabase CLI not installed; skipping migrations. Install via: brew install supabase/tap/supabase"
+                        fi
+                    """
                 }
             }
         }
