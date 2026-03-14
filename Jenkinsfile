@@ -67,7 +67,7 @@ pipeline {
                 script {
                     // Catch Python syntax/indent errors before building (e.g. IndentationError in webhook.py)
                     sh """
-                        cd python-backend && python -m compileall -q . && cd ..
+                        cd python-backend && (python3 -m compileall -q . || python -m compileall -q .) && cd ..
                     """
                     // Build backend
                     sh """
