@@ -305,10 +305,15 @@ def compute_availability(
 
         slots: List[TimeSlot] = []
 
+        # Default for a day missing from business_hours (e.g. Sunday not in DB) so IVR/web still get slots
+        _default_day = {"opening_time": "08:00", "closing_time": "18:00", "is_closed": 0}
+
         day = start_day
         while day < end_day:
             dow = day.weekday()
             bh = business_hours.get(dow)
+            if bh is None and business_hours:
+                bh = _default_day
             if not bh or _is_day_closed(bh.get("is_closed")):
                 day = day + timedelta(days=1)
                 continue

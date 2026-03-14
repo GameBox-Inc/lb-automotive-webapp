@@ -494,10 +494,10 @@ def handle_time_selection(user_input, language, CallSid, metadata, response):
     selected_service = metadata.get("selected_service", {"id": "general", "name": "General Service"})
     voice = "Polly.Lupe" if language == "es" else "Polly.Matthew"
 
-    # Try up to 5 days ahead so we don't say "fully booked" when only tomorrow is closed (e.g. Saturday)
+    # Try up to 7 days ahead so we don't say "no openings" when only a few days are closed or missing from config
     available_slots = []
     target_date = None
-    for day_offset in range(1, 6):
+    for day_offset in range(1, 8):
         candidate = datetime.now() + timedelta(days=day_offset)
         candidate_date_str = candidate.strftime("%Y-%m-%d")
         engine_slots = compute_availability(
