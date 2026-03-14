@@ -27,9 +27,29 @@ const AdminIVR = () => {
     const [editHours, setEditHours] = useState<{ is_closed: boolean; opening_time: string | null; closing_time: string | null }>({ is_closed: false, opening_time: null, closing_time: null });
 
     useEffect(() => {
-        fetchSettings();
-        fetchAnalytics();
-        fetchBusinessHours();
+        let cancelled = false;
+        const timeoutId = setTimeout(() => {
+            if (!cancelled) setLoading(false);
+        }, 10000);
+
+        (async () => {
+            try {
+                await Promise.all([
+                    fetchSettings(),
+                    fetchAnalytics(),
+                    fetchBusinessHours(),
+                ]);
+            } finally {
+                if (!cancelled) {
+                    clearTimeout(timeoutId);
+                    setLoading(false);
+                }
+            }
+        })();
+        return () => {
+            cancelled = true;
+            clearTimeout(timeoutId);
+        };
     }, []);
 
     async function fetchAnalytics() {
@@ -48,7 +68,7 @@ const AdminIVR = () => {
     async function fetchSettings() {
         try {
             const data = await apiClient.getSettings();
-            setSettings(data);
+            setSettings(Array.isArray(data) ? data : []);
         } catch (error) {
             console.error('Error fetching settings:', error);
             // toast.error('Failed to load settings'); 
@@ -60,7 +80,7 @@ const AdminIVR = () => {
     async function fetchBusinessHours() {
         try {
             const data = await apiClient.getBusinessHours();
-            setBusinessHours(data);
+            setBusinessHours(Array.isArray(data) ? data : []);
         } catch (error) {
             console.error('Error fetching business hours:', error);
             toast.error('Failed to load business hours');
@@ -121,6 +141,14 @@ const AdminIVR = () => {
     };
 
     if (loading) return <LoadingSpinner />;
+
+    // Defensive: ensure we have an array (handles old builds where businessHours state was missing)
+    let businessHoursSafe: BusinessHours[] = [];
+    try {
+        businessHoursSafe = Array.isArray(businessHours) ? businessHours : [];
+    } catch {
+        businessHoursSafe = [];
+    }
 
     return (
         <div className="space-y-6">
@@ -241,7 +269,7 @@ const AdminIVR = () => {
                                         </tr>
                                     </thead>
                                     <tbody className="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
-                                        {businessHours.map((hours) => (
+                                        {businessHoursSafe.map((hours) => (
                                             <tr key={hours.day_of_week}>
                                                 <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900 dark:text-white">
                                                     {hours.day_name}
