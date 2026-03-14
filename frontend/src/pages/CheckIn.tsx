@@ -152,6 +152,18 @@ export default function CheckIn() {
         loadSlots()
     }, [selectedService, selectedDate, step])
 
+    // Today: show 30-min increments (:00, :30). Future dates: show hourly (:00 only).
+    const displaySlots = React.useMemo(() => {
+        const todayKey = format(new Date(), 'yyyy-MM-dd')
+        const isToday = selectedDate === todayKey
+        return availableSlots.filter(t => {
+            const [, minStr] = t.split(':')
+            const min = Number.parseInt(minStr, 10)
+            if (isToday) return min === 0 || min === 30
+            return min === 0
+        })
+    }, [availableSlots, selectedDate])
+
     const handleBookTime = async () => {
         if (!customer || !selectedService || !selectedTime) {
             toast.error('Please choose a time')
@@ -382,13 +394,13 @@ export default function CheckIn() {
                                             <LoadingSpinner size="sm" />
                                             <span>Loading available times…</span>
                                         </div>
-                                    ) : availableSlots.length === 0 ? (
+                                    ) : displaySlots.length === 0 ? (
                                         <p className="text-sm text-red-500 py-2">
                                             No times are currently available for this date. Please try another day or speak with a service advisor.
                                         </p>
                                     ) : (
                                         <div className="grid grid-cols-3 gap-2">
-                                            {availableSlots.map(time => (
+                                            {displaySlots.map(time => (
                                                 <button
                                                     key={time}
                                                     type="button"

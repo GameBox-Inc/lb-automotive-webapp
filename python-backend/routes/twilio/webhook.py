@@ -485,59 +485,68 @@ def check_shop_bandwidth(date_str, slot_time):
         return True # Fallback to allowing
 
 def handle_time_selection(user_input, language, CallSid, metadata, response):
-    """Handler for selecting an appointment time using central scheduling engine."""
+    """Handler for selecting an appointment time. Tries next open days (not only tomorrow) so weekend/closed days don't always say 'fully booked'."""
     import json
     from pathlib import Path
     from services.llm import analyze_schedule
     from scheduling.engine import compute_availability
 
     selected_service = metadata.get("selected_service", {"id": "general", "name": "General Service"})
-    tomorrow_date = (datetime.now() + timedelta(days=1)).strftime("%Y-%m-%d")
+    voice = "Polly.Lupe" if language == "es" else "Polly.Matthew"
 
-    # Use central scheduling engine to compute candidate slots (15-min grid)
-    try:
-        day = datetime.strptime(tomorrow_date, "%Y-%m-%d")
-    except ValueError:
-        day = datetime.now() + timedelta(days=1)
-
-    engine_slots = compute_availability(
-        service_id=selected_service.get('id'),
-        date=day,
-        technician_id=None,
-        horizon_days=1,
-    )
-
-    # Normalize to "HH:MM" strings and apply simple bandwidth check per exact time
-    raw_slots = sorted({s.start.strftime("%H:%M") for s in engine_slots})
-    available_slots = [s for s in raw_slots if check_shop_bandwidth(tomorrow_date, s)]
+    # Try up to 5 days ahead so we don't say "fully booked" when only tomorrow is closed (e.g. Saturday)
+    available_slots = []
+    target_date = None
+    for day_offset in range(1, 6):
+        candidate = datetime.now() + timedelta(days=day_offset)
+        candidate_date_str = candidate.strftime("%Y-%m-%d")
+        engine_slots = compute_availability(
+            service_id=selected_service.get('id'),
+            date=candidate,
+            technician_id=None,
+            horizon_days=1,
+        )
+        raw_slots = sorted({s.start.strftime("%H:%M") for s in engine_slots})
+        available_slots = [s for s in raw_slots if check_shop_bandwidth(candidate_date_str, s)]
+        if available_slots:
+            target_date = candidate_date_str
+            break
 
     # #region agent log
     try:
-        sample_bw = check_shop_bandwidth(tomorrow_date, raw_slots[0]) if raw_slots else None
         _log = Path(__file__).resolve().parent.parent.parent.parent / "debug-49c9c0.log"
         with open(_log, "a", encoding="utf-8") as f:
-            f.write(json.dumps({"sessionId": "49c9c0", "timestamp": int(datetime.now().timestamp() * 1000), "location": "webhook.py:handle_time_selection", "message": "IVR time selection slots", "data": {"service_id": str(selected_service.get("id")), "service_name": selected_service.get("name"), "tomorrow_date": tomorrow_date, "day_of_week": day.weekday(), "engine_slots_count": len(engine_slots), "raw_slots_count": len(raw_slots), "available_slots_count": len(available_slots), "saying_fully_booked": not available_slots, "sample_bandwidth_ok": sample_bw}, "hypothesisId": "H1"}) + "\n")
+            f.write(json.dumps({"sessionId": "49c9c0", "timestamp": int(datetime.now().timestamp() * 1000), "location": "webhook.py:handle_time_selection", "message": "IVR time selection slots", "data": {"service_id": str(selected_service.get("id")), "target_date": target_date, "available_slots_count": len(available_slots) if available_slots else 0, "saying_fully_booked": not available_slots}, "hypothesisId": "H1"}) + "\n")
     except Exception:
         pass
     # #endregion
 
-    if not available_slots:
-        voice = "Polly.Lupe" if language == "es" else "Polly.Matthew"
-        response.say("I'm sorry, we are fully booked for tomorrow. Please try another day online. Goodbye.", voice=voice)
+    if not available_slots or not target_date:
+        response.say("I'm sorry, we don't have any openings in the next few days. Please try booking online. Goodbye.", voice=voice)
         response.hangup()
         return None
 
-    slot_summary = analyze_schedule(available_slots, tomorrow_date, selected_service.get('name'))
-    
-    voice = "Polly.Lupe" if language == "es" else "Polly.Matthew"
+    # Match frontend: 30-min increments for tomorrow, hourly for later days
+    tomorrow_str = (datetime.now() + timedelta(days=1)).strftime("%Y-%m-%d")
+    is_tomorrow = target_date == tomorrow_str
+    display_slots = []
+    for t in available_slots:
+        parts = t.split(":")
+        min_val = int(parts[1], 10) if len(parts) > 1 else 0
+        if is_tomorrow:
+            if min_val == 0 or min_val == 30:
+                display_slots.append(t)
+        else:
+            if min_val == 0:
+                display_slots.append(t)
+    if not display_slots:
+        display_slots = available_slots  # fallback to all if downsampling removed everything
+
+    slot_summary = analyze_schedule(display_slots, target_date, selected_service.get('name'))
     response.say(slot_summary, voice=voice)
-    
-    if not available_slots:
-        response.hangup()
-        return None
 
-    metadata["available_slots"] = available_slots
-    metadata["target_date"] = tomorrow_date
+    metadata["available_slots"] = display_slots
+    metadata["target_date"] = target_date
     upsert_call_state(CallSid, "select_time", language, metadata)
     
     gather = Gather(num_digits=1, input="speech dtmf", action=f"{WEBHOOK_BASE_URL}?step=save_time_choice")
