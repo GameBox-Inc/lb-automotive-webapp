@@ -91,13 +91,31 @@ pipeline {
             steps {
                 echo '📤 Pushing images to GHCR...'
                 script {
-                    // Login to GHCR
-                    withCredentials([string(credentialsId: 'github-token', variable: 'GITHUB_TOKEN')]) {
-                        sh '''
-                            echo "$GITHUB_TOKEN" | docker login ghcr.io -u gamebox-inc --password-stdin
-                        '''
+                    // Login to GHCR using GitHub App (installation token); fallback to PAT if app creds missing
+                    def useApp = false
+                    try {
+                        withCredentials([
+                            file(credentialsId: 'github-app-ghcr-key', variable: 'GITHUB_APP_KEY'),
+                            string(credentialsId: 'github-app-id', variable: 'GITHUB_APP_ID'),
+                            string(credentialsId: 'github-app-installation-id', variable: 'GITHUB_APP_INSTALLATION_ID')
+                        ]) {
+                            sh '''
+                                chmod +x deployment/scripts/github_app_token.sh
+                                TOKEN=$(deployment/scripts/github_app_token.sh "$GITHUB_APP_ID" "$GITHUB_APP_INSTALLATION_ID" "$GITHUB_APP_KEY")
+                                echo "$TOKEN" | docker login ghcr.io -u "$GITHUB_APP_ID" --password-stdin
+                            '''
+                            useApp = true
+                        }
+                    } catch (Exception e) {
+                        echo "GitHub App credentials not found or script failed, falling back to github-token (PAT): ${e.message}"
                     }
-                    
+                    if (!useApp) {
+                        withCredentials([string(credentialsId: 'github-token', variable: 'GITHUB_TOKEN')]) {
+                            sh '''
+                                echo "$GITHUB_TOKEN" | docker login ghcr.io -u gamebox-inc --password-stdin
+                            '''
+                        }
+                    }
                     // Push images
                     sh """
                         docker push ${BACKEND_IMAGE}:${BUILD_TAG}

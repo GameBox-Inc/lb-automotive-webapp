@@ -95,6 +95,7 @@ sudo k3s kubectl get events -n lb-automotive --sort-by='.lastTimestamp' | tail -
 | Backend probe fails | App starts but `/health` returned 503 (DB/Redis down) | Readiness uses `/ready` (process up only). If still failing, check backend logs for DB connection errors; fix Supabase/Postgres URL and connectivity. |
 | Frontend pod not Ready | Image pull failure, OOM, or Nginx not listening on 80 | Check `describe pod` for `Failed`/`PullBackOff`; check logs for OOM or startup errors. |
 | "1 old replicas are pending termination" | New replica never becomes Ready, so old one is kept | Fix the new pod (secrets, DB, image); once new pod is Ready, rollout completes. |
+| Backend/frontend pod `ImagePullBackOff` or `ErrImagePull` | Cannot pull image from GHCR; events show **403 Forbidden** on `ghcr.io/token` | See [ImagePullBackOff (403 from GHCR)](#imagepullbackoff-403-from-ghcr) below. |
 
 **Quick recovery (if rollback is acceptable)**
 
@@ -102,6 +103,55 @@ sudo k3s kubectl get events -n lb-automotive --sort-by='.lastTimestamp' | tail -
 sudo k3s kubectl rollout undo deployment/backend -n lb-automotive
 sudo k3s kubectl rollout undo deployment/frontend -n lb-automotive
 ```
+
+**Recovery when image pull fails (use last known good tag)**
+
+```bash
+# List backend images already on the node (one of these can be used)
+sudo k3s crictl images | grep lb-automotive-backend
+
+# Point deployment at a tag that already exists on the node (e.g. 231-7495406)
+sudo k3s kubectl set image deployment/backend backend=ghcr.io/gamebox-inc/lb-automotive-backend:231-7495406 -n lb-automotive
+sudo k3s kubectl rollout status deployment/backend -n lb-automotive --timeout=3m
+```
+
+---
+
+## ImagePullBackOff (403 from GHCR)
+
+When events show **`failed to authorize: ... 403 Forbidden`** for `ghcr.io/token`, the node cannot pull the image because registry auth failed.
+
+**Diagnose**
+
+```bash
+sudo k3s kubectl get pods -n lb-automotive -l app=backend -o wide
+sudo k3s kubectl describe pod -n lb-automotive -l app=backend | grep -A2 "Events:"
+```
+
+Look for: `Failed to pull image ... 403 Forbidden` or `ErrImagePull` / `ImagePullBackOff`.
+
+**Causes**
+
+1. **Token expired or revoked** — `ghcr-secret` was created with a GitHub PAT that no longer works. Recreate the secret (see below).
+2. **Token lacks permission** — PAT must have `read:packages`. For org packages, use a PAT or GitHub App token that has access to the org.
+3. **Image tag not pushed or package private** — Jenkins may have set the deployment to a tag that was never pushed, or the package is private and the token cannot see it.
+
+**Fix: recreate GHCR pull secret**
+
+On your **local machine** (with a valid GitHub PAT that has `read:packages`):
+
+```bash
+kubectl create secret docker-registry ghcr-secret \
+  --docker-server=ghcr.io \
+  --docker-username=YOUR_GITHUB_USERNAME_OR_ORG \
+  --docker-password=YOUR_GITHUB_PAT \
+  --namespace=lb-automotive \
+  --dry-run=client -o yaml | kubectl apply -f -
+```
+
+Or on the server using `deployment/k8s/create-secrets.sh` (run the script and enter a new token when prompted for GHCR).
+
+Then retry the rollout or re-run the pipeline. To unblock immediately using an image already on the node, use the “Recovery when image pull fails” command in the previous section.
 
 ---
 
