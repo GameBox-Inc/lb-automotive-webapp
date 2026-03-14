@@ -165,16 +165,13 @@ def compute_availability(
                     "is_closed": r.get("is_closed"),
                 }
         except Exception as e:
-            logger.warning("business_hours table missing or error, using default Mon-Fri 08:00-18:00: %s", e)
-        # If no business_hours rows (e.g. fresh DB), use default Mon-Fri 8-6 so slots still show
+            logger.warning("business_hours table missing or error, using default all days 08:00-18:00: %s", e)
+        # If no business_hours rows (e.g. fresh DB), use default all 7 days open so slots show every day
         bh_empty = not business_hours
         if not business_hours:
             for dow in range(7):
-                if dow < 5:  # Mon-Fri
-                    business_hours[dow] = {"opening_time": "08:00", "closing_time": "18:00", "is_closed": 0}
-                else:
-                    business_hours[dow] = {"opening_time": None, "closing_time": None, "is_closed": 1}
-            logger.info("business_hours empty; using default Mon-Fri 08:00-18:00")
+                business_hours[dow] = {"opening_time": "08:00", "closing_time": "18:00", "is_closed": 0}
+            logger.info("business_hours empty; using default all days 08:00-18:00")
         # #region agent log
         _ivr_debug({"location": "engine.py:compute_availability:bh", "message": "business_hours state", "data": {"bh_empty": bh_empty, "using_default_bh": bh_empty, "day_of_week_for_date": start_day.weekday()}, "hypothesisId": "H2"})
         # #endregion
@@ -403,10 +400,15 @@ def compute_availability(
         _ivr_debug({"location": "engine.py:compute_availability:return", "message": "slots computed", "data": {"slots_count": len(slots)}, "hypothesisId": "H3"})
         # #endregion
         if len(slots) == 0:
+            dow = start_day.weekday()
+            bh = business_hours.get(dow)
+            reason = "day missing from config" if bh is None else ("day closed" if _is_day_closed(bh.get("is_closed")) else "no windows or conflicts")
             logger.info(
-                "compute_availability: 0 slots for date=%s service_id=%s (check business_hours and staff_schedules for that day)",
+                "compute_availability: 0 slots for date=%s (dow=%s) service_id=%s — %s",
                 date.strftime("%Y-%m-%d"),
+                dow,
                 service_id,
+                reason,
             )
         return slots
     except Exception as e:
