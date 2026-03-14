@@ -226,9 +226,23 @@ def smooth_hangup(response: VoiceResponse, voice: str, language: str, message: O
         pass
     response.hangup()
 
+
+def _ivr_pause(response: VoiceResponse, seconds: Optional[float] = None) -> None:
+    """Append a short pause when ivr_pause_seconds > 0. Use for natural pacing before/after prompts."""
+    try:
+        duration = float(seconds) if seconds is not None else float(get_setting("ivr_pause_seconds", "0.5"))
+        if duration > 0:
+            response.pause(length=int(round(duration)))
+    except (TypeError, ValueError):
+        pass
+
 # --- Decision Tree Structure ---
 # Prompts are written to be inquisitive and customer-service focused; future: extend to FAQ-style answers.
 DECISION_TREE = {
+    "language_choice": {
+        "type": "dynamic",
+        "handler": "handle_language_choice"
+    },
     "start": {
         "type": "gather",
         "prompt_en": "Hi, thanks for calling L-B Automotive. We’re here to help—would you like to schedule an appointment, get a status update on your vehicle, or speak with someone? Just say what you need.",
@@ -250,7 +264,55 @@ DECISION_TREE = {
     
     "main_menu_en": {
         "type": "gather",
-        "prompt_en": "What can we do for you today? Press 1 or say appointment to schedule a visit. For something urgent, press 2 or say emergency.",
+        "prompt_en": "What can we do for you? Press 1 or say appointment to schedule. Press 2 or say status for a vehicle update. Press 3 or say representative to speak with someone. For something urgent, say emergency.",
+        "gather_config": {
+            "num_digits": 1,
+            "timeout": 5,
+            "bargein": True,
+            "input": "speech dtmf"
+        },
+        "transitions": {
+            "1": "collect_vehicle",
+            "appointment": "collect_vehicle",
+            "2": "check_status",
+            "status": "check_status",
+            "3": "transfer_representative",
+            "representative": "transfer_representative",
+            "emergency": "emergency_services",
+        },
+        "default": "main_menu_en"
+    },
+    
+    "main_menu_es": {
+        "type": "gather",
+        "prompt_es": "¿En qué podemos ayudarle? Presione 1 o diga cita para programar. Presione 2 o diga estado para una actualización de su vehículo. Presione 3 o diga representante para hablar con alguien. Si es urgente, diga emergencia.",
+        "gather_config": {
+            "num_digits": 1,
+            "timeout": 5,
+            "bargein": True,
+            "input": "speech dtmf"
+        },
+        "transitions": {
+            "1": "collect_vehicle",
+            "cita": "collect_vehicle",
+            "2": "check_status",
+            "estado": "check_status",
+            "3": "transfer_representative",
+            "representative": "transfer_representative",
+            "representante": "transfer_representative",
+            "emergencia": "emergency_services",
+        },
+        "default": "main_menu_es"
+    },
+
+    "confirm_intent": {
+        "type": "dynamic",
+        "handler": "handle_confirm_intent"
+    },
+
+    "main_menu_after_no_en": {
+        "type": "gather",
+        "prompt_en": "No problem. Please state what you need: press 1 or say appointment to schedule, 2 or say emergency for something urgent, or say representative to speak with someone.",
         "gather_config": {
             "num_digits": 1,
             "timeout": 5,
@@ -262,13 +324,15 @@ DECISION_TREE = {
             "appointment": "collect_vehicle",
             "2": "emergency_services",
             "emergency": "emergency_services",
+            "3": "transfer_representative",
+            "representative": "transfer_representative",
         },
-        "default": "main_menu_en"
+        "default": "main_menu_after_no_en"
     },
-    
-    "main_menu_es": {
+
+    "main_menu_after_no_es": {
         "type": "gather",
-        "prompt_es": "¿En qué podemos ayudarle? Presione 1 o diga cita para programar. Si es urgente, presione 2 o diga emergencia.",
+        "prompt_es": "Sin problema. Diga lo que necesita: presione 1 o diga cita para programar, 2 o diga emergencia, o diga representante para hablar con alguien.",
         "gather_config": {
             "num_digits": 1,
             "timeout": 5,
@@ -280,8 +344,10 @@ DECISION_TREE = {
             "cita": "collect_vehicle",
             "2": "emergency_services",
             "emergencia": "emergency_services",
+            "3": "transfer_representative",
+            "representative": "transfer_representative",
         },
-        "default": "main_menu_es"
+        "default": "main_menu_after_no_es"
     },
     
     "collect_vehicle": {
@@ -400,6 +466,11 @@ DECISION_TREE = {
         "type": "function",
         "handler": "handle_symptoms_processing"
     },
+
+    "confirm_appointment": {
+        "type": "dynamic",
+        "handler": "handle_confirm_appointment"
+    },
     
     "confirm_booking": {
         "type": "function",
@@ -434,6 +505,48 @@ def handle_smart_jump(intent, llm_result, CallSid, metadata, response, language)
     if process_smart_jump(intent, llm_result, CallSid, metadata, response, language):
         return None # Jump occurred, redirect already added
     return "start"
+
+def handle_language_choice(user_input, language, CallSid, metadata, response):
+    """First step: bilingual prompt for language; 1=English, 2=Spanish. Invalid digits re-prompt; no-input uses repair count then transfer."""
+    inp = (user_input or "").strip()
+    voice = "Polly.Matthew"
+    if inp == "1":
+        upsert_call_state(CallSid, "start", "en", metadata)
+        response.redirect(f"{WEBHOOK_BASE_URL}?step=start")
+        return None
+    if inp == "2":
+        upsert_call_state(CallSid, "start", "es", metadata)
+        response.redirect(f"{WEBHOOK_BASE_URL}?step=start")
+        return None
+    if inp:
+        # Invalid digit: say invalid message, then prompt and gather (no repair count)
+        response.say(get_response("language_choice_invalid", "en"), voice=voice)
+        _ivr_pause(response)
+        response.say(get_response("language_choice", "en"), voice=voice)
+        _ivr_pause(response)
+        gather = Gather(num_digits=1, input="dtmf", action=f"{WEBHOOK_BASE_URL}?step=language_choice", timeout=8)
+        response.append(gather)
+        return None
+    # No input: repair/retry then transfer after max
+    repair_count = (metadata.get("step_repair_count") or {}).get("language_choice", 0)
+    max_repairs = int(get_setting("ivr_repair_max_retries", "3"))
+    if repair_count >= max_repairs:
+        response.say(get_response("language_choice_transfer", "en"), voice=voice)
+        response.redirect(f"{WEBHOOK_BASE_URL}?step=transfer_representative")
+        return None
+    if repair_count > 0:
+        response.say(get_response("language_choice_reprompt", "en"), voice=voice)
+    step_repair = metadata.get("step_repair_count") or {}
+    step_repair["language_choice"] = repair_count + 1
+    metadata["step_repair_count"] = step_repair
+    upsert_call_state(CallSid, "language_choice", language, metadata)
+    _ivr_pause(response)
+    response.say(get_response("language_choice", "en"), voice=voice)
+    _ivr_pause(response)
+    gather = Gather(num_digits=1, input="dtmf", action=f"{WEBHOOK_BASE_URL}?step=language_choice", timeout=8)
+    response.append(gather)
+    return None
+
 
 def handle_service_category(user_input, language, CallSid, metadata, response):
     """Handler for selecting a service category."""
@@ -558,9 +671,16 @@ def handle_time_selection(user_input, language, CallSid, metadata, response):
         response.hangup()
         return None
 
-    # Match frontend: 30-min increments for tomorrow, hourly for later days
+    # Spoken date for time_ask (e.g. "tomorrow" or "Tuesday, March 15")
     tomorrow_str = (datetime.now() + timedelta(days=1)).strftime("%Y-%m-%d")
     is_tomorrow = target_date == tomorrow_str
+    try:
+        d = datetime.strptime(target_date, "%Y-%m-%d")
+        date_spoken = "tomorrow" if is_tomorrow and language != "es" else ("mañana" if is_tomorrow else d.strftime("%A, %B %d") if language != "es" else d.strftime("%A %d de %B"))
+    except Exception:
+        date_spoken = target_date
+
+    # Match frontend: 30-min increments for tomorrow, hourly for later days
     display_slots = []
     for t in available_slots:
         parts = t.split(":")
@@ -575,7 +695,7 @@ def handle_time_selection(user_input, language, CallSid, metadata, response):
         display_slots = available_slots
 
     # Ask what time they’d like instead of stating slot count; we’ll recommend closest when they answer
-    response.say(get_response("time_ask", language), voice=voice)
+    response.say(get_response("time_ask", language, date_spoken=date_spoken), voice=voice)
     metadata["available_slots"] = display_slots
     metadata["target_date"] = target_date
     upsert_call_state(CallSid, "select_time", language, metadata)
@@ -683,8 +803,61 @@ def handle_symptoms_processing(user_input, language, CallSid, metadata, response
             pass
             
     metadata["symptoms"] = symptoms
-    upsert_call_state(CallSid, "confirm_booking", language, metadata)
-    return "confirm_booking"
+    upsert_call_state(CallSid, "confirm_appointment", language, metadata)
+    return "confirm_appointment"
+
+
+def handle_confirm_intent(user_input, language, CallSid, metadata, response):
+    """Confirm inferred appointment intent: 1 = yes (go to after_confirm_intent), 2 = no (main_menu_after_no)."""
+    voice = "Polly.Lupe" if language == "es" else "Polly.Matthew"
+    inp = (user_input or "").strip()
+    if inp == "1":
+        next_step = metadata.get("after_confirm_intent", "collect_vehicle")
+        response.redirect(f"{WEBHOOK_BASE_URL}?step={next_step}")
+        return None
+    if inp == "2":
+        response.redirect(f"{WEBHOOK_BASE_URL}?step=main_menu_after_no_{language}")
+        return None
+    prompt = get_step_prompt("confirm_intent", language) or (
+        "Did you say you want to schedule an appointment? Press 1 for yes, 2 for no."
+        if language != "es" else
+        "¿Dijo que desea programar una cita? Presione 1 para sí, 2 para no."
+    )
+    response.say(prompt, voice=voice)
+    gather = Gather(num_digits=1, input="dtmf", action=f"{WEBHOOK_BASE_URL}?step=confirm_intent", timeout=8)
+    response.append(gather)
+    upsert_call_state(CallSid, "confirm_intent", language, metadata)
+    return None
+
+
+def handle_confirm_appointment(user_input, language, CallSid, metadata, response):
+    """Play back appointment summary and gather 1 to confirm or 9 to pick a different time."""
+    voice = "Polly.Lupe" if language == "es" else "Polly.Matthew"
+    inp = (user_input or "").strip()
+    if inp == "1":
+        response.redirect(f"{WEBHOOK_BASE_URL}?step=confirm_booking")
+        return None
+    if inp == "9":
+        response.redirect(f"{WEBHOOK_BASE_URL}?step=select_time")
+        return None
+    # First time: say summary and gather
+    service_name = (metadata.get("selected_service") or {}).get("name", "General Service")
+    chosen_slot = metadata.get("chosen_slot", "")
+    target_date = metadata.get("target_date", "")
+    try:
+        from datetime import datetime as dt
+        d = dt.strptime(target_date, "%Y-%m-%d")
+        date_spoken = d.strftime("%A, %B %d") if language != "es" else d.strftime("%A %d de %B")
+    except Exception:
+        date_spoken = target_date
+    time_spoken = _format_slot_for_speech(chosen_slot, language)
+    text = get_response("confirm_appointment_ask", language, service_name=service_name, date_spoken=date_spoken, time_spoken=time_spoken)
+    response.say(text, voice=voice)
+    gather = Gather(num_digits=1, input="dtmf", action=f"{WEBHOOK_BASE_URL}?step=confirm_appointment", timeout=8)
+    response.append(gather)
+    upsert_call_state(CallSid, "confirm_appointment", language, metadata)
+    return None
+
 
 def handle_emergency(user_input, language, CallSid, metadata, response):
     """Emergency routing handler."""
@@ -789,19 +962,27 @@ def twilio_webhook(
     update_phase(PHASE_WEBHOOK_RECEIVED)
     response = VoiceResponse()
     try:
+        existing_state = get_call_state(CallSid)
+        if step == "start" and existing_state is None:
+            response.redirect(f"{WEBHOOK_BASE_URL}?step=language_choice")
+            return Response(content=str(response), media_type="application/xml")
         voice = get_setting("ivr_voice", "alice")
         language = get_setting("ivr_language", "en-US")
-        call_state = get_call_state(CallSid) or {"call_sid": CallSid, "current_step": "start", "language": "en", "metadata": {}}
+        call_state = existing_state or {"call_sid": CallSid, "current_step": "start", "language": "en", "metadata": {}}
         language = call_state.get("language", "en")
         voice = "Polly.Lupe" if language == "es" else "Polly.Matthew"
         metadata = call_state.get("metadata", {})
         metadata["from_phone"] = From
 
-        # Play recording disclaimer once per call at entry.
-        ensure_recording_disclaimer_once(response, voice, language, metadata)
-        
-        # Analytic Fix: Ensure call_state exists before track_decision
-        if not get_call_state(CallSid):
+        # Play recording disclaimer once per call at entry (skip at language_choice so it plays at start in chosen language).
+        if step != "language_choice":
+            ensure_recording_disclaimer_once(response, voice, language, metadata)
+        # Natural pause after disclaimer when played; skip when next content is a single gather prompt (start/language_choice) to avoid double-pause.
+        if metadata.get("disclaimer_played") and step not in ("start", "language_choice"):
+            _ivr_pause(response)
+
+        # Analytic Fix: Ensure call_state exists before track_decision (skip at language_choice until caller chooses)
+        if not get_call_state(CallSid) and step != "language_choice":
             upsert_call_state(CallSid, step, language, metadata)
         
         input_data = Digits if Digits else SpeechResult
@@ -902,7 +1083,8 @@ def twilio_webhook(
                             },
                         )
             else:
-                go_to_processing = True
+                # Only "start" uses LLM for intent; other steps (e.g. save_time_choice, save_service_selection) use their handlers with speech input
+                go_to_processing = False
 
             if go_to_processing:
                 if masking_enabled:
@@ -913,7 +1095,11 @@ def twilio_webhook(
                     thinking_url = get_setting("ivr_thinking_sound_url", "") if filler_mode in ("sound_only", "hybrid") else None
                     phrases = parse_filler_phrases_setting(get_setting("ivr_filler_phrases", ""))
                     filler_phrase = get_random_filler(phrases) if phrases else get_random_filler()
-                    apply_latency_mask(response, voice, filler_mode, thinking_url or None, filler_phrase)
+                    try:
+                        play_loop = min(9, max(1, int(get_setting("ivr_processing_play_loop", "5") or 5)))
+                    except (TypeError, ValueError):
+                        play_loop = 5
+                    apply_latency_mask(response, voice, filler_mode, thinking_url or None, filler_phrase, play_loop=play_loop)
                     update_phase(PHASE_TTS_READY)
                     response.redirect(f"{WEBHOOK_BASE_URL}?step=processing")
                     logger.info("IVR response", extra={**get_trace_context(), "step": step, "intent": "masking_redirect"})
@@ -949,7 +1135,11 @@ def twilio_webhook(
                     thinking_url = get_setting("ivr_thinking_sound_url", "") if filler_mode in ("sound_only", "hybrid") else None
                     phrases = parse_filler_phrases_setting(get_setting("ivr_filler_phrases", ""))
                     filler_phrase = get_random_filler(phrases) if phrases else get_random_filler()
-                    apply_latency_mask(response, voice, filler_mode, thinking_url or None, filler_phrase)
+                    try:
+                        play_loop = min(9, max(1, int(get_setting("ivr_processing_play_loop", "5") or 5)))
+                    except (TypeError, ValueError):
+                        play_loop = 5
+                    apply_latency_mask(response, voice, filler_mode, thinking_url or None, filler_phrase, play_loop=play_loop)
                     response.redirect(f"{WEBHOOK_BASE_URL}?step=processing")
                     logger.info("IVR response", extra={**get_trace_context(), "step": step, "intent": "processing_poll"})
                     return Response(content=str(response), media_type="application/xml")
@@ -1055,6 +1245,7 @@ def twilio_webhook(
                             return Response(content=str(response), media_type="application/xml")
 
                 next_s = node.get("transitions", {}).get(Digits or SpeechResult or "default", node.get("default", step))
+                _ivr_pause(response)
                 gather_kw = dict(
                     num_digits=gc.get("num_digits", 1),
                     timeout=gc.get("timeout", 5),
@@ -1083,11 +1274,14 @@ def twilio_webhook(
                 if ns: response.redirect(f"{WEBHOOK_BASE_URL}?step={ns}")
             elif node_type == "dynamic":
                 handler_name = node.get("handler")
-                if handler_name == "handle_service_category": handle_service_category(input_data, language, CallSid, metadata, response)
+                if handler_name == "handle_language_choice": handle_language_choice(input_data, language, CallSid, metadata, response)
+                elif handler_name == "handle_service_category": handle_service_category(input_data, language, CallSid, metadata, response)
                 elif handler_name == "handle_time_selection": handle_time_selection(input_data, language, CallSid, metadata, response)
                 elif handler_name == "handle_emergency": handle_emergency(input_data, language, CallSid, metadata, response)
                 elif handler_name == "handle_select_service_detail": handle_select_service_detail(input_data, language, CallSid, metadata, response)
                 elif handler_name == "handle_confirm_emergency": handle_confirm_emergency(input_data, language, CallSid, metadata, response)
+                elif handler_name == "handle_confirm_intent": handle_confirm_intent(input_data, language, CallSid, metadata, response)
+                elif handler_name == "handle_confirm_appointment": handle_confirm_appointment(input_data, language, CallSid, metadata, response)
             elif node_type == "terminal":
                 prompt_text = get_step_prompt(step, language) or node.get(f"prompt_{language}", node.get("prompt_en"))
                 smooth_hangup(response, voice, language, message=prompt_text)

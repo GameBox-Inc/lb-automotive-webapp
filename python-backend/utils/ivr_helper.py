@@ -44,22 +44,23 @@ def parse_filler_phrases_setting(value: Optional[str]) -> List[str]:
     return []
 
 
-def apply_latency_mask(response, voice: str, mode: str, thinking_url: Optional[str] = None, filler_phrase: Optional[str] = None):
+def apply_latency_mask(response, voice: str, mode: str, thinking_url: Optional[str] = None, filler_phrase: Optional[str] = None, play_loop: int = 1):
     """
     Add latency-masking content to the TwiML response.
     mode: voice_only | sound_only | hybrid
     - voice_only: one Say (filler_phrase or random default)
-    - sound_only: one Play(thinking_url) if URL present
+    - sound_only: one Play(thinking_url, loop=play_loop) if URL present
     - hybrid: short Say then Play if URL present
+    play_loop: times to play the thinking URL (1-9); used when waiting for processing.
     """
     phrase = filler_phrase or get_random_filler()
     if mode == "sound_only":
         if thinking_url:
-            response.play(thinking_url)
+            response.play(thinking_url, loop=play_loop)
     elif mode == "hybrid":
         response.say(phrase, voice=voice)
         if thinking_url:
-            response.play(thinking_url)
+            response.play(thinking_url, loop=play_loop)
     else:
         response.say(phrase, voice=voice)
 
