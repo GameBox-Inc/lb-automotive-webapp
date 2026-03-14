@@ -293,7 +293,7 @@ CSP_POLICY=strict  # or "development"
 - **staff** - Mechanics and advisors
 - **services** - Service catalog with pricing
 - **appointments** - Customer appointments with status tracking
-- **business_hours** - Per-day business hours (0=Monday, 6=Sunday)
+- **business_hours** - Per-day business hours (0=Monday, 6=Sunday). Together with **staff_schedules** (saved from Admin > Staff & Schedule > Schedules), these drive all appointment availability for Kiosk, IVR, and the Appointments page.
 - **settings** - System configuration (IVR messages, etc.)
 - **call_states** - IVR call state management
 - **ivr_logs** - IVR interaction logs

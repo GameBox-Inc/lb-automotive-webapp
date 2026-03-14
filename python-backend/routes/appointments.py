@@ -1,3 +1,4 @@
+import logging
 import uuid
 from typing import List, Optional, Dict, Any
 from fastapi import APIRouter, Depends, HTTPException, status, Query
@@ -39,7 +40,7 @@ def get_available_slots(
 ):
     """
     Get available appointment slots for a given date and service using the
-    central scheduling engine. Returns a list of ISO timestamps.
+    central scheduling engine. Returns a list of "HH:MM" strings.
     """
     from datetime import datetime
 
@@ -48,15 +49,21 @@ def get_available_slots(
     except ValueError:
         raise HTTPException(status_code=400, detail="Invalid date format. Use YYYY-MM-DD")
 
-    slots = compute_availability(
-        service_id=service_id,
-        date=day,
-        technician_id=technician_id,
-        horizon_days=1,
-    )
+    try:
+        slots = compute_availability(
+            service_id=service_id,
+            date=day,
+            technician_id=technician_id,
+            horizon_days=1,
+        )
+    except Exception as e:
+        logging.getLogger(__name__).exception("available-slots compute_availability failed: %s", e)
+        raise HTTPException(
+            status_code=500,
+            detail=f"Could not compute availability: {str(e)}",
+        ) from e
 
     # Normalize response shape for existing frontend/Kiosk usage:
-    # return simple "HH:MM" strings for now.
     return [s.start.strftime("%H:%M") for s in slots]
 
 

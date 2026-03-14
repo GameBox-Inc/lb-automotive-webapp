@@ -142,9 +142,10 @@ export default function CheckIn() {
                     })
                     : slots
                 setAvailableSlots(filtered)
-            } catch (error) {
+            } catch (error: unknown) {
                 console.error('Error loading kiosk availability', error)
-                toast.error('Failed to load available times')
+                const msg = error && typeof error === 'object' && 'message' in error ? String((error as { message?: string }).message) : 'Failed to load available times'
+                toast.error(msg)
             } finally {
                 setSlotsLoading(false)
             }

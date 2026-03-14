@@ -27,6 +27,7 @@ alwaysApply: false
 ## Architecture
 
 - Single source of truth for availability: `business_hours` + `staff_schedules` + `appointments` + `services` (see `python-backend/scheduling/engine.py`).
+- **Staff & Schedule (Admin):** The "Schedules" tab at `/admin/staff` reads/writes `staff_schedules`. Saving there is what the scheduling engine uses; if the table is empty or missing, the engine falls back to `business_hours`-only slots so Kiosk/IVR/Appointments still get times for open days.
 - IVR, Kiosk, and Appointments page all use `GET /api/appointments/available-slots` backed by this schema.
 
 ## Supabase table connections (routing)

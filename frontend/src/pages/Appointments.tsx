@@ -107,8 +107,11 @@ export function Appointments() {
         try {
           const slots = await apiClient.getAvailableSlots(selectedDate, service.id)
           setAvailableSlots(slots)
-        } catch (error) {
+        } catch (error: unknown) {
           console.error("Error fetching availability", error)
+          const msg = error && typeof error === 'object' && 'message' in error ? String((error as { message?: string }).message) : 'Failed to load available times'
+          toast.error(msg)
+          setAvailableSlots([])
         } finally {
           setCheckingAvailability(false)
         }
