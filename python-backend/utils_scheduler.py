@@ -97,6 +97,12 @@ def get_available_slots_logic(date_str: str, service_id: str):
         h, m = map(int, t_str.split(':'))
         return h, m
 
+    def end_minutes(eh: int, em: int) -> int:
+        """End time in minutes from midnight. Treat 00:00 as end of day (24:00)."""
+        if eh == 0 and em == 0:
+            return 24 * 60
+        return eh * 60 + em
+
     global_start_min = 24 * 60
     global_end_min = 0
 
@@ -104,7 +110,7 @@ def get_available_slots_logic(date_str: str, service_id: str):
         sh, sm = parse_time(schedule["start_time"])
         eh, em = parse_time(schedule["end_time"])
         global_start_min = min(global_start_min, sh * 60 + sm)
-        global_end_min = max(global_end_min, eh * 60 + em)
+        global_end_min = max(global_end_min, end_minutes(eh, em))
 
     # Use business hours to constrain slot generation
     # Ensure slots are within business hours, not just staff schedules
@@ -149,8 +155,10 @@ def get_available_slots_logic(date_str: str, service_id: str):
             sh, sm = parse_time(s["start_time"])
             eh, em = parse_time(s["end_time"])
             ss = datetime.combine(target_date, datetime.min.time().replace(hour=sh, minute=sm))
-            se = datetime.combine(target_date, datetime.min.time().replace(hour=eh, minute=em))
-            
+            if eh == 0 and em == 0:
+                se = datetime.combine(target_date + timedelta(days=1), datetime.min.time())
+            else:
+                se = datetime.combine(target_date, datetime.min.time().replace(hour=eh, minute=em))
             if slot_start >= ss and slot_end <= se:
                 staff_coverage += 1
         

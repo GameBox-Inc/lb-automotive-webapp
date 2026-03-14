@@ -3,7 +3,7 @@ from typing import List, Optional, Dict, Any
 from fastapi import APIRouter, Depends, HTTPException, status
 from models import Appointment, AppointmentCreate, AppointmentUpdate
 from auth import get_current_active_user, get_optional_user
-from database import get_db_connection, current_user_context
+from database import get_db_connection, current_user_context, DB_TYPE
 from security import sanitize_input, validate_appointment_data
 from repositories.appointment_repository import AppointmentRepository
 from utils.time_utils import get_current_business_time, get_business_timezone
@@ -36,9 +36,40 @@ def get_available_slots(
 ):
     """
     Get available appointment slots for a given date and service.
-    (Kept as-is for now, complex logic requires Service/Schedule repositories)
+    When USE_AVAILABILITY_TEST_DATA=1, returns slots from availability_test_slots table
+    so key functionality can be verified before relying on the calendar.
     """
+    import os
     from datetime import datetime, timedelta, date as d_date
+    use_test = os.environ.get("USE_AVAILABILITY_TEST_DATA", "").strip().lower() in ("1", "true", "yes")
+
+    if use_test:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        try:
+            target_date = datetime.strptime(date, "%Y-%m-%d").date()
+        except ValueError:
+            conn.close()
+            raise HTTPException(status_code=400, detail="Invalid date format. Use YYYY-MM-DD")
+        date_str = date  # YYYY-MM-DD
+        if DB_TYPE == "postgresql":
+            cursor.execute(
+                """SELECT slot_time FROM availability_test_slots
+                   WHERE slot_date = %s AND active = 1 AND (service_id IS NULL OR service_id = %s)
+                   ORDER BY slot_time""",
+                (date_str, service_id),
+            )
+        else:
+            cursor.execute(
+                """SELECT slot_time FROM availability_test_slots
+                   WHERE slot_date = ? AND active = 1 AND (service_id IS NULL OR service_id = ?)
+                   ORDER BY slot_time""",
+                (date_str, service_id),
+            )
+        rows = cursor.fetchall()
+        conn.close()
+        return [row["slot_time"] if isinstance(row, dict) else row[0] for row in rows]
+
     conn = get_db_connection()
     cursor = conn.cursor()
 
@@ -48,7 +79,10 @@ def get_available_slots(
         raise HTTPException(status_code=400, detail="Invalid date format. Use YYYY-MM-DD")
 
     # 1. Get Service Duration
-    cursor.execute("SELECT duration FROM services WHERE id = ?", (service_id,))
+    if DB_TYPE == "postgresql":
+        cursor.execute("SELECT duration FROM services WHERE id = %s", (service_id,))
+    else:
+        cursor.execute("SELECT duration FROM services WHERE id = ?", (service_id,))
     service_row = cursor.fetchone()
     if not service_row:
         conn.close()
@@ -95,6 +129,12 @@ def get_available_slots(
         h, m = map(int, t_str.split(':'))
         return h, m
 
+    def end_minutes(eh: int, em: int) -> int:
+        """End time in minutes from midnight. Treat 00:00 as end of day (24:00)."""
+        if eh == 0 and em == 0:
+            return 24 * 60  # 12:00 AM = end of previous day / end of current day
+        return eh * 60 + em
+
     # Find global start and end time for the shop on this day
     global_start_min = 24 * 60
     global_end_min = 0
@@ -103,7 +143,7 @@ def get_available_slots(
         sh, sm = parse_time(schedule["start_time"])
         eh, em = parse_time(schedule["end_time"])
         global_start_min = min(global_start_min, sh * 60 + sm)
-        global_end_min = max(global_end_min, eh * 60 + em)
+        global_end_min = max(global_end_min, end_minutes(eh, em))
 
     # Generate slots logic
     # Iterate from global_start to global_end - duration in 15 min steps
@@ -166,7 +206,11 @@ def get_available_slots(
             sh, sm = parse_time(s["start_time"])
             eh, em = parse_time(s["end_time"])
             ss = datetime.combine(target_date, datetime.min.time().replace(hour=sh, minute=sm))
-            se = datetime.combine(target_date, datetime.min.time().replace(hour=eh, minute=em))
+            # 00:00 as end time means end of day (midnight at end of this day)
+            if eh == 0 and em == 0:
+                se = datetime.combine(target_date + timedelta(days=1), datetime.min.time())
+            else:
+                se = datetime.combine(target_date, datetime.min.time().replace(hour=eh, minute=em))
             if slot_start >= ss and slot_end <= se:
                 staff_working_count += 1
         

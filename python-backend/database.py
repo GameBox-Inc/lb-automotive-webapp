@@ -278,6 +278,18 @@ def init_db():
         )
     """)
 
+    # Test data table for validating availability/booking before using calendar
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS availability_test_slots (
+            id TEXT PRIMARY KEY,
+            slot_date TEXT NOT NULL,
+            slot_time TEXT NOT NULL,
+            service_id TEXT,
+            active INTEGER DEFAULT 1,
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
+
     conn.commit()
 
     conn.commit()
@@ -435,7 +447,49 @@ def seed_data():
 
     conn.commit()
     conn.close()
+
+    # Seed availability test slots (used when USE_AVAILABILITY_TEST_DATA=1)
+    seed_availability_test_slots()
+
     print("Database seeded successfully!")
+
+
+def seed_availability_test_slots(days_ahead: int = 7, times_per_day: list = None):
+    """
+    Seed availability_test_slots so key functionality can be tested without calendar.
+    Set USE_AVAILABILITY_TEST_DATA=1 to have GET /appointments/available-slots use this table.
+    """
+    import uuid
+    from datetime import date, timedelta
+    if times_per_day is None:
+        times_per_day = ["09:00", "09:30", "10:00", "10:30", "11:00", "11:30", "13:00", "13:30", "14:00", "15:00", "16:00"]
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT COUNT(*) as n FROM availability_test_slots")
+    row = cursor.fetchone()
+    n = row["n"] if isinstance(row, dict) else row[0]
+    if n > 0:
+        conn.close()
+        return
+    today = date.today()
+    place = "%s" if DB_TYPE == "postgresql" else "?"
+    for d in range(days_ahead):
+        slot_date = (today + timedelta(days=d)).strftime("%Y-%m-%d")
+        for slot_time in times_per_day:
+            sid = str(uuid.uuid4())
+            if DB_TYPE == "postgresql":
+                cursor.execute("""
+                    INSERT INTO availability_test_slots (id, slot_date, slot_time, service_id, active)
+                    VALUES (%s, %s, %s, NULL, 1) ON CONFLICT DO NOTHING
+                """, (sid, slot_date, slot_time))
+            else:
+                cursor.execute("""
+                    INSERT OR IGNORE INTO availability_test_slots (id, slot_date, slot_time, service_id, active)
+                    VALUES (?, ?, ?, NULL, 1)
+                """, (sid, slot_date, slot_time))
+    conn.commit()
+    conn.close()
+    print("Availability test slots seeded (use USE_AVAILABILITY_TEST_DATA=1 to enable).")
 
 
 
