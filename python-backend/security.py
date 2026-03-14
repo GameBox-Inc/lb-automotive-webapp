@@ -167,7 +167,13 @@ def validate_appointment_data(data: Dict[str, Any]) -> Dict[str, Any]:
             )
 
     if "service_id" in data and data["service_id"]:
-        data["service_id"] = sanitize_input(str(data["service_id"]).strip(), "uuid")
+        try:
+            data["service_id"] = sanitize_input(str(data["service_id"]).strip(), "uuid")
+        except HTTPException as e:
+            if e.detail == "Invalid UUID format":
+                data.pop("service_id", None)  # allow create to proceed with service_type only
+            else:
+                raise
     if "source" in data and data["source"]:
         data["source"] = sanitize_input(str(data["source"]).strip(), "text")[:50]
 

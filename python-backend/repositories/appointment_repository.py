@@ -5,6 +5,16 @@ from datetime import datetime
 from models import Appointment, AppointmentCreate, AppointmentUpdate
 from database import DatabaseContextManager, fmt_query
 
+
+def _looks_like_uuid(s: str) -> bool:
+    """Return True if s parses as a valid UUID (any standard format)."""
+    try:
+        uuid.UUID(str(s).strip())
+        return True
+    except (ValueError, TypeError, AttributeError):
+        return False
+
+
 class AppointmentRepository:
     def __init__(self):
         pass
@@ -123,7 +133,8 @@ class AppointmentRepository:
         end_time = appointment_data.get("end_time")
         source = appointment_data.get("source")
 
-        # When service_id is provided, set service_type from services.name for display/backcompat
+        # When service_id is provided, set service_type from services.name for display/backcompat.
+        # When service_id is missing but service_type looks like a UUID (e.g. from Appointments dropdown), resolve it.
         service_type = appointment_data["service_type"]
         if service_id:
             with DatabaseContextManager(read_only=True) as conn:
@@ -132,6 +143,15 @@ class AppointmentRepository:
                 row = cur.fetchone()
                 if row:
                     r = dict(row) if row and not isinstance(row, dict) else (row or {})
+                    service_type = r.get("name") or service_type
+        elif service_type and _looks_like_uuid(str(service_type).strip()):
+            with DatabaseContextManager(read_only=True) as conn:
+                cur = conn.cursor()
+                cur.execute(fmt_query("SELECT id, name FROM services WHERE id = ?"), (str(service_type).strip(),))
+                row = cur.fetchone()
+                if row:
+                    r = dict(row) if row and not isinstance(row, dict) else (row or {})
+                    service_id = r.get("id")
                     service_type = r.get("name") or service_type
 
         # Normalize datetimes to ISO strings for DB
