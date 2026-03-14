@@ -66,6 +66,45 @@ sudo k3s kubectl rollout restart deploy/frontend -n lb-automotive
 
 ---
 
+## Rollout timeout (backend / frontend)
+
+When Jenkins reports **"Backend rollout timed out"** or **"Frontend rollout timed out"**, the new pod is not becoming Ready within the timeout (default 5m). Run these on the server:
+
+```bash
+# 1. Pod status and why they're not Ready
+sudo k3s kubectl get pods -n lb-automotive -o wide
+sudo k3s kubectl describe pod -n lb-automotive -l app=backend
+sudo k3s kubectl describe pod -n lb-automotive -l app=frontend
+
+# 2. Backend logs (startup / probe failures)
+sudo k3s kubectl logs -n lb-automotive -l app=backend -c backend --tail=200
+sudo k3s kubectl logs -n lb-automotive -l app=backend -c backend --previous --tail=100
+
+# 3. Frontend logs
+sudo k3s kubectl logs -n lb-automotive -l app=frontend -c frontend --tail=200
+
+# 4. Recent events
+sudo k3s kubectl get events -n lb-automotive --sort-by='.lastTimestamp' | tail -30
+```
+
+**Common causes**
+
+| Symptom | Likely cause | Fix |
+|--------|----------------|-----|
+| Backend pod `CrashLoopBackOff` or never Ready | Missing/invalid `DATABASE_URL` or `SECRET_KEY` in `app-secrets` | Check secret exists: `sudo k3s kubectl get secret app-secrets -n lb-automotive -o jsonpath='{.data}'`. Ensure Jenkins "Ensure App Secrets" stage ran and `supabase-db-url` (or equivalent) is set. |
+| Backend probe fails | App starts but `/health` returned 503 (DB/Redis down) | Readiness uses `/ready` (process up only). If still failing, check backend logs for DB connection errors; fix Supabase/Postgres URL and connectivity. |
+| Frontend pod not Ready | Image pull failure, OOM, or Nginx not listening on 80 | Check `describe pod` for `Failed`/`PullBackOff`; check logs for OOM or startup errors. |
+| "1 old replicas are pending termination" | New replica never becomes Ready, so old one is kept | Fix the new pod (secrets, DB, image); once new pod is Ready, rollout completes. |
+
+**Quick recovery (if rollback is acceptable)**
+
+```bash
+sudo k3s kubectl rollout undo deployment/backend -n lb-automotive
+sudo k3s kubectl rollout undo deployment/frontend -n lb-automotive
+```
+
+---
+
 ## Backend Init / CrashLoopBackOff
 
 Backend uses Vault Agent init to inject secrets. If init fails:

@@ -204,8 +204,15 @@ async def root():
         "version": "1.0.0",
         "build_tag": os.getenv("BUILD_TAG", "local-dev"),
         "docs": "/docs",
-        "health": "/health"
+        "health": "/health",
+        "ready": "/ready"
     }
+
+
+@app.get("/ready")
+async def ready_check():
+    """Lightweight readiness: 200 when the process is up. Use for K8s readinessProbe so rollout can complete even if DB is temporarily unreachable."""
+    return {"status": "ready"}
 
 
 @app.get("/health")
