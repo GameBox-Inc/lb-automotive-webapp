@@ -492,5 +492,3 @@ if __name__ == "__main__":
     print("Running schema migrations...")
     migrate_schema()
     seed_data()
-f r o m   d a t a b a s e   i m p o r t   g e t _ d b _ c o n n e c t i o n ;   c o n n   =   g e t _ d b _ c o n n e c t i o n ( ) ;   c u r s o r = c o n n . c u r s o r ( ) ;   c u r s o r . e x e c u t e ( ' P R A G M A   t a b l e _ i n f o ( a p p o i n t m e n t s ) ' ) ;   p r i n t ( [ r [ ' n a m e ' ]   f o r   r   i n   c u r s o r . f e t c h a l l ( ) ] ) ;   c o n n . c l o s e ( )  
- 
