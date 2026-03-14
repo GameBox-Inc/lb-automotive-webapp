@@ -22,10 +22,14 @@ const AdminIVR = () => {
     const [activeTab, setActiveTab] = useState<'config' | 'analytics'>('config');
     const [analyticsSummary, setAnalyticsSummary] = useState<any>(null);
     const [analyticsNodes, setAnalyticsNodes] = useState<any[]>([]);
+    const [businessHours, setBusinessHours] = useState<BusinessHours[]>([]);
+    const [editingDay, setEditingDay] = useState<number | null>(null);
+    const [editHours, setEditHours] = useState<{ is_closed: boolean; opening_time: string | null; closing_time: string | null }>({ is_closed: false, opening_time: null, closing_time: null });
 
     useEffect(() => {
         fetchSettings();
         fetchAnalytics();
+        fetchBusinessHours();
     }, []);
 
     async function fetchAnalytics() {

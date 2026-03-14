@@ -1,0 +1,20 @@
+# One-time patch: switch backend probes from /ready to /health so image 231 (no /ready) passes.
+# Apply: kubectl patch deployment backend -n lb-automotive --patch-file backend-probe-patch.yaml
+spec:
+  template:
+    spec:
+      containers:
+        - name: backend
+          startupProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            initialDelaySeconds: 10
+            periodSeconds: 5
+            failureThreshold: 24
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            periodSeconds: 10
+            failureThreshold: 3

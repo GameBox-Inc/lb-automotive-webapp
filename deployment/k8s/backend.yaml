@@ -50,16 +50,17 @@ spec:
             - name: REDIS_URL
               value: "redis://redis.lb-automotive.svc.cluster.local:6379/0"
 
+          # Use /health so older images (e.g. 231) without /ready still pass; newer images have both.
           startupProbe:
             httpGet:
-              path: /ready
+              path: /health
               port: 8000
-            initialDelaySeconds: 5
-            periodSeconds: 3
-            failureThreshold: 20
+            initialDelaySeconds: 10
+            periodSeconds: 5
+            failureThreshold: 24
           readinessProbe:
             httpGet:
-              path: /ready
+              path: /health
               port: 8000
             periodSeconds: 10
             failureThreshold: 3

@@ -75,3 +75,19 @@ ON CONFLICT (day_of_week) DO NOTHING;
 ```
 
 Then restart (or redeploy) the backend so it picks up the seeded data.
+
+## 5. Confirm which database the backend uses
+
+The backend reads `business_hours`, `staff_schedules`, etc. from the DB pointed to by **`DATABASE_URL`** (K8s `app-secrets` or Vault). Supabase MCP in Cursor is connected to a specific project (e.g. "user-supabase"). If they differ, updates made via MCP or Dashboard only affect the MCP-linked project; the app will keep showing "No slots available" until the **backend's** database is updated.
+
+**To confirm alignment:**
+
+1. **Backend DB:** On the server, read the backend's `DATABASE_URL` (mask the password):
+   ```bash
+   sudo k3s kubectl get secret app-secrets -n lb-automotive -o jsonpath='{.data.DATABASE_URL}' | base64 -d
+   ```
+   Note the host (e.g. `db.xxxx.supabase.co`) and project ref.
+
+2. **MCP project:** In Supabase Dashboard or Cursor MCP settings, note which project "user-supabase" (or your MCP connection) points to. Compare the host/project with the backend's `DATABASE_URL`.
+
+3. **Apply updates to the right place:** Run migrations and any manual SQL (e.g. `UPDATE business_hours`) against the **same** project the backend uses. Use the in-app **Admin → IVR → Configuration (Business Hours)** and **Admin → Staff (Schedules)** to change data in the backend's DB; or run SQL in the Supabase project that matches `DATABASE_URL`.

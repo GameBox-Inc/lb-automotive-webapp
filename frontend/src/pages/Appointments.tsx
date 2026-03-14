@@ -1,5 +1,5 @@
 import React, { useState, useEffect, startTransition } from 'react'
-import { useLocation, useNavigate } from 'react-router-dom'
+import { useLocation, useNavigate, Link } from 'react-router-dom'
 import { useAppDispatch, useAppSelector } from '../store/hooks'
 import { fetchServices, fetchStaff } from '../store/slices/shopSlice'
 import { RootState } from '../store'
@@ -753,7 +753,11 @@ export function Appointments() {
                     </div>
                   ) : (
                     <p className="text-sm text-red-500 dark:text-red-400">
-                      No slots available for this date. Check staff schedules.
+                      No slots available for this date.
+                      {selectedDate && (
+                        <> {format(parseISO(selectedDate), 'EEEE (M/d)')} may be closed or have no staff scheduled. Check <Link to="/admin/ivr" className="underline font-medium">Admin → IVR → Configuration (Business Hours)</Link> and <Link to="/admin/staff" className="underline font-medium">Admin → Staff (Schedules)</Link>.</>
+                      )}
+                      {!selectedDate && ' Check staff schedules.'}
                     </p>
                   )}
                 </div>
