@@ -21,10 +21,10 @@ async def get_repository():
 @router.get("", response_model=List[Appointment])
 def list_appointments(
     status_filter: Optional[str] = None,
-    current_user: Optional[Dict[str, Any]] = Depends(get_optional_user),
+    current_user: Dict[str, Any] = Depends(get_current_active_user),
     repo: AppointmentRepository = Depends(get_repository)
 ):
-    """List all appointments with optional status filter and proper RLS."""
+    """List appointments with optional status filter. Staff and admins see all; others see only their own."""
     return repo.list_appointments(status_filter, current_user)
 
 

@@ -25,17 +25,14 @@ class AppointmentRepository:
         params = []
         conditions = []
         
-        # Apply RLS based on user type
+        # Apply RLS based on user type.
+        # Only staff and admins have full app access; customers use the Kiosk (admin-assisted) only.
         if current_user:
-            if current_user.get("is_admin"):
-                # Admins see all appointments
+            if current_user.get("is_admin") or current_user.get("staff_id"):
+                # Admins and staff have full access to all appointment data
                 pass
-            elif current_user.get("staff_id"):
-                # Staff members see appointments assigned to them OR unassigned appointments
-                conditions.append("(a.assigned_staff_id = ? OR a.assigned_staff_id IS NULL)")
-                params.append(current_user["staff_id"])
             else:
-                # Regular customers see only their own appointments
+                # Non-staff users (e.g. customer account) see only their own appointments
                 conditions.append("(a.user_id = ? OR a.phone_number = ?)")
                 params.extend([current_user["id"], current_user.get("phone_number", "")])
         
