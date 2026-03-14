@@ -143,7 +143,8 @@ def sanitize_input(value: str, input_type: str = "text", max_length: int = None)
 def validate_appointment_data(data: Dict[str, Any]) -> Dict[str, Any]:
     """Validate and sanitize appointment data."""
     if "customer_name" in data:
-        data["customer_name"] = sanitize_input(data["customer_name"], "alphanumeric")
+        # Use "text" so names with apostrophes (O'Brien), accents, etc. are allowed; SQL/XSS checks still apply
+        data["customer_name"] = sanitize_input(data["customer_name"], "text")
     
     if "phone_number" in data:
         data["phone_number"] = sanitize_input(data["phone_number"], "phone")

@@ -253,7 +253,8 @@ export function Appointments() {
       fetchAppointments()
     } catch (error) {
       console.error('Error creating appointment:', error)
-      toast.error('Failed to create appointment')
+      const message = error instanceof Error ? error.message : 'Failed to create appointment'
+      toast.error(message)
     }
   }
 
