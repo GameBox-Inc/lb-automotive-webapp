@@ -159,6 +159,10 @@ withCredentials([
 | App permissions | Repository: **Packages** Read and write; **Contents** Read-only or No access |
 | Install app | Same app page → **Install App** → Install on **GameBox-Inc** → choose repos |
 | Installation ID | **Settings** → **Applications** → **Installed GitHub Apps** → app → URL or page |
-| Packages | Pushed/pulled as `ghcr.io/gamebox-inc/<image>:<tag>`; token from app works for both push (CI) and pull (cluster) |
+| Packages | Pushed/pulled as `ghcr.io/gamebox-inc/<image>:<tag>`; token from app works for pull; for push to org packages, prefer PAT (see below). |
+
+For **pull** (e.g. cluster), the app token works. For **push** from Jenkins to org packages, the pipeline prefers a PAT.
+
+**If you see "installation not allowed to Write organization package":** GitHub often does not allow App installation tokens to write to organization-scoped container packages. Ensure the Jenkins credential **`github-token`** is set to a **classic PAT** with scope **`write:packages`**. The PAT must belong to a user with write access to the org's packages. Re-run the pipeline; it will use the PAT for push.
 
 After this, GHCR auth is tied to the **organization** app, not a personal PAT, so configuring Git on a MacBook or rotating a user token won’t break image push or pull.

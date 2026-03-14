@@ -155,6 +155,26 @@ Then retry the rollout or re-run the pipeline. To unblock immediately using an i
 
 ---
 
+## Docker push: "installation not allowed to Write organization package"
+
+When Jenkins pushes images to GHCR you may see:
+
+```
+denied: permission_denied: installation not allowed to Write organization package
+```
+
+**Cause:** GitHub App installation tokens can log in to GHCR but often **cannot write** to organization-scoped packages (`ghcr.io/gamebox-inc/*`). This is a GitHub limitation for App-based auth to org packages.
+
+**Fix:** Use a **Personal Access Token (PAT)** for push:
+
+1. Create a **classic** PAT (or use an existing org member/bot account) with scope **`write:packages`** (and `read:packages` if you also pull from GHCR).
+2. In Jenkins, add or update the **Secret text** credential **`github-token`** with this PAT.
+3. The pipeline is configured to **prefer PAT** for GHCR push when `github-token` is present; re-run the pipeline.
+
+The PAT must belong to a user that has write access to the org's packages (e.g. org owner or member with package write). For pull-only on the cluster, you can use a separate PAT with `read:packages` in `ghcr-secret`.
+
+---
+
 ## Backend Init / CrashLoopBackOff
 
 Backend uses Vault Agent init to inject secrets. If init fails:

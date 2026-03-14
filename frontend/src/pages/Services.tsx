@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react'
 import { LoadingSpinner } from '../components/LoadingSpinner'
 import { Search, Plus, Edit2, Trash2, X, AlertTriangle, Filter, Clock, DollarSign, AlertCircle, Pencil, Tag, Save } from 'lucide-react'
 import { formatCurrency } from '../utils/format'
+import { format } from 'date-fns'
 import { apiClient, Service } from '../lib/supabase'
 import toast from 'react-hot-toast'
 
@@ -70,9 +71,14 @@ export function Services() {
       await apiClient.deleteService(id)
       toast.success('Service deleted successfully')
       fetchServices()
-    } catch (error) {
+    } catch (error: unknown) {
       console.error('Error deleting service:', error)
-      toast.error('Failed to delete service')
+      const msg = error instanceof Error ? error.message : ''
+      if (msg.includes('appointment') && msg.includes('reference')) {
+        toast.error(msg)
+      } else {
+        toast.error('Failed to delete service')
+      }
     }
   }
 
@@ -122,6 +128,9 @@ export function Services() {
           <p className="text-gray-500 text-sm mt-1">
             {isAdmin ? 'Manage and view available services' : 'View available services'}
           </p>
+          <p className="text-gray-400 text-xs mt-0.5">
+            Used in Appointments, IVR, and Kiosk.
+          </p>
         </div>
         {isAdmin && (
           <button
@@ -160,6 +169,12 @@ export function Services() {
                     )}
                   </div>
                   <p className="text-gray-600 mb-6 text-sm leading-relaxed min-h-[40px]">{service.description}</p>
+
+                  {(service as Service & { updated_at?: string }).updated_at && (
+                    <p className="text-gray-400 text-xs mb-2">
+                      Updated {format(new Date((service as Service & { updated_at?: string }).updated_at!), 'MMM d, yyyy')}
+                    </p>
+                  )}
 
                   <div className="flex items-center justify-between pt-4 border-t border-gray-50">
                     <div className="flex items-center gap-4 text-sm text-gray-500">
@@ -253,15 +268,19 @@ export function Services() {
                         Category
                       </div>
                     </label>
-                    <select
+                    <input
+                      type="text"
+                      list="service-categories"
                       value={currentService.category}
                       onChange={e => setCurrentService({ ...currentService, category: e.target.value })}
                       className="w-full px-4 py-2 rounded-lg border border-gray-300 focus:ring-2 focus:ring-red-500 focus:border-red-500 transition-all capitalize"
-                    >
+                      placeholder="e.g. maintenance, repair"
+                    />
+                    <datalist id="service-categories">
                       {categories.map(cat => (
-                        <option key={cat} value={cat} className="capitalize">{cat}</option>
+                        <option key={cat} value={cat} />
                       ))}
-                    </select>
+                    </datalist>
                   </div>
 
                   <div>
@@ -325,6 +344,19 @@ export function Services() {
                   </div>
                 </div>
               </div>
+
+              {isEditing && ((currentService as Service & { created_at?: string }).created_at || (currentService as Service & { updated_at?: string }).updated_at) && (
+                <div className="text-xs text-gray-500 border-t pt-4">
+                  {(currentService as Service & { created_at?: string }).created_at && (
+                    <span>Created {format(new Date((currentService as Service & { created_at?: string }).created_at!), 'MMM d, yyyy')}</span>
+                  )}
+                  {(currentService as Service & { updated_at?: string }).updated_at && (
+                    <span className={(currentService as Service & { created_at?: string }).created_at ? ' ml-4' : ''}>
+                      Updated {format(new Date((currentService as Service & { updated_at?: string }).updated_at!), 'MMM d, yyyy')}
+                    </span>
+                  )}
+                </div>
+              )}
 
               <div className="flex justify-end gap-3 pt-6 border-t mt-6">
                 <button

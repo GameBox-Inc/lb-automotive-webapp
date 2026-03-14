@@ -70,11 +70,16 @@ class AppointmentCreate(BaseModel):
     service_type: str
     notes: Optional[str] = None
     emergency_request: bool = False
-     # Optional vehicle details to align with IVR and kiosk flows
+    # Optional vehicle details to align with IVR and kiosk flows
     vehicle_make: Optional[str] = None
     vehicle_model: Optional[str] = None
     vehicle_color: Optional[str] = None
     vehicle_year: Optional[int] = None
+    # Scheduling engine: when provided, service_type is set from services.name for backcompat
+    service_id: Optional[str] = None
+    start_time: Optional[datetime] = None
+    end_time: Optional[datetime] = None
+    source: Optional[str] = None  # 'web' | 'ivr' | 'kiosk' | 'admin'
 
 
 class AppointmentUpdate(BaseModel):
@@ -90,6 +95,10 @@ class AppointmentUpdate(BaseModel):
     vehicle_color: Optional[str] = None
     vehicle_year: Optional[int] = None
     assigned_staff_id: Optional[str] = None
+    service_id: Optional[str] = None
+    start_time: Optional[datetime] = None
+    end_time: Optional[datetime] = None
+    source: Optional[str] = None
 
 
 class Appointment(BaseModel):

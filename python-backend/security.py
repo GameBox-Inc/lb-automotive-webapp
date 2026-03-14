@@ -159,7 +159,12 @@ def validate_appointment_data(data: Dict[str, Any]) -> Dict[str, Any]:
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Notes too long (max 1000 characters)"
             )
-    
+
+    if "service_id" in data and data["service_id"]:
+        data["service_id"] = sanitize_input(str(data["service_id"]).strip(), "uuid")
+    if "source" in data and data["source"]:
+        data["source"] = sanitize_input(str(data["source"]).strip(), "text")[:50]
+
     return data
 
 

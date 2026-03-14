@@ -35,6 +35,8 @@ export interface Service {
     price: number;
     is_emergency: boolean;
     category: string;
+    created_at?: string;
+    updated_at?: string;
 }
 
 export interface Setting {

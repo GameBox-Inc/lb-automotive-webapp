@@ -15,8 +15,8 @@ class AppointmentRepository:
     def list_appointments(self, status_filter: Optional[str] = None, current_user: Optional[Dict[str, Any]] = None) -> List[Appointment]:
         query = """
             SELECT a.*, s.name as service_name_joined, c.started_at
-            FROM appointments a 
-            LEFT JOIN services s ON a.service_type = s.id
+            FROM appointments a
+            LEFT JOIN services s ON a.service_id = s.id
             LEFT JOIN cases c ON a.id = c.appointment_id
         """
         
@@ -79,7 +79,7 @@ class AppointmentRepository:
         query = """
             SELECT a.*, s.name as service_name_joined
             FROM appointments a
-            LEFT JOIN services s ON a.service_type = s.id
+            LEFT JOIN services s ON a.service_id = s.id
             WHERE a.id = ?
         """
         with DatabaseContextManager(read_only=True) as conn:
@@ -118,21 +118,45 @@ class AppointmentRepository:
 
     def create_appointment(self, appointment_data: Dict[str, Any], user_id: Optional[str] = None) -> Appointment:
         appointment_id = str(uuid.uuid4())
-        
+        service_id = appointment_data.get("service_id")
+        start_time = appointment_data.get("start_time")
+        end_time = appointment_data.get("end_time")
+        source = appointment_data.get("source")
+
+        # When service_id is provided, set service_type from services.name for display/backcompat
+        service_type = appointment_data["service_type"]
+        if service_id:
+            with DatabaseContextManager(read_only=True) as conn:
+                cur = conn.cursor()
+                cur.execute(fmt_query("SELECT name FROM services WHERE id = ?"), (service_id,))
+                row = cur.fetchone()
+                if row:
+                    r = dict(row) if row and not isinstance(row, dict) else (row or {})
+                    service_type = r.get("name") or service_type
+
+        # Normalize datetimes to ISO strings for DB
+        start_ts = None
+        if start_time is not None:
+            start_ts = start_time.isoformat() if hasattr(start_time, "isoformat") else start_time
+        end_ts = None
+        if end_time is not None:
+            end_ts = end_time.isoformat() if hasattr(end_time, "isoformat") else end_time
+
         with DatabaseContextManager(read_only=False) as conn:
             cursor = conn.cursor()
             cursor.execute(fmt_query("""
                 INSERT INTO appointments (
                     id, customer_name, phone_number, appointment_time,
                     service_type, notes, emergency_request, user_id, assigned_staff_id,
-                    vehicle_make, vehicle_model, vehicle_color, vehicle_year
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    vehicle_make, vehicle_model, vehicle_color, vehicle_year,
+                    service_id, start_time, end_time, source
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """), (
                 appointment_id,
                 appointment_data["customer_name"],
                 appointment_data["phone_number"],
                 appointment_data["appointment_time"],
-                appointment_data["service_type"],
+                service_type,
                 appointment_data.get("notes"),
                 int(appointment_data.get("emergency_request", False)),
                 user_id,
@@ -141,9 +165,13 @@ class AppointmentRepository:
                 appointment_data.get("vehicle_model"),
                 appointment_data.get("vehicle_color"),
                 appointment_data.get("vehicle_year"),
+                service_id,
+                start_ts,
+                end_ts,
+                source,
             ))
             conn.commit()
-        
+
         return self.get_appointment(appointment_id)
 
     def update_appointment(self, appointment_id: str, updates: AppointmentUpdate) -> Optional[Appointment]:
@@ -209,7 +237,20 @@ class AppointmentRepository:
         if updates.vehicle_year is not None:
             update_fields.append("vehicle_year = ?")
             params.append(updates.vehicle_year)
-        
+
+        if updates.service_id is not None:
+            update_fields.append("service_id = ?")
+            params.append(updates.service_id)
+        if updates.start_time is not None:
+            update_fields.append("start_time = ?")
+            params.append(updates.start_time.isoformat() if hasattr(updates.start_time, "isoformat") else updates.start_time)
+        if updates.end_time is not None:
+            update_fields.append("end_time = ?")
+            params.append(updates.end_time.isoformat() if hasattr(updates.end_time, "isoformat") else updates.end_time)
+        if updates.source is not None:
+            update_fields.append("source = ?")
+            params.append(updates.source)
+
         if not update_fields:
             return self.get_appointment(appointment_id)
 

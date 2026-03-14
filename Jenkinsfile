@@ -91,32 +91,51 @@ pipeline {
             steps {
                 echo '📤 Pushing images to GHCR...'
                 script {
-                    // Login to GHCR using GitHub App (installation token); fallback to PAT if app creds missing
-                    def useApp = false
+                    // GHCR push: prefer PAT (REGISTRY_CREDENTIAL). Org packages reject App tokens with "installation not allowed to Write organization package".
+                    // Ensure Jenkins has a Secret text credential with ID matching REGISTRY_CREDENTIAL (default: github-token), value = classic PAT with write:packages.
+                    def credId = env.REGISTRY_CREDENTIAL ?: 'github-token'
+                    def loggedIn = false
+
+                    echo "Attempting GHCR login with PAT (credential ID: ${credId})..."
                     try {
-                        withCredentials([
-                            file(credentialsId: 'github-app-ghcr-key', variable: 'GITHUB_APP_KEY'),
-                            string(credentialsId: 'github-app-id', variable: 'GITHUB_APP_ID'),
-                            string(credentialsId: 'github-app-installation-id', variable: 'GITHUB_APP_INSTALLATION_ID')
-                        ]) {
-                            sh '''
-                                chmod +x deployment/scripts/github_app_token.sh
-                                TOKEN=$(deployment/scripts/github_app_token.sh "$GITHUB_APP_ID" "$GITHUB_APP_INSTALLATION_ID" "$GITHUB_APP_KEY")
-                                echo "$TOKEN" | docker login ghcr.io -u "$GITHUB_APP_ID" --password-stdin
-                            '''
-                            useApp = true
-                        }
-                    } catch (Exception e) {
-                        echo "GitHub App credentials not found or script failed, falling back to github-token (PAT): ${e.message}"
-                    }
-                    if (!useApp) {
-                        withCredentials([string(credentialsId: 'github-token', variable: 'GITHUB_TOKEN')]) {
+                        withCredentials([string(credentialsId: credId, variable: 'GITHUB_TOKEN')]) {
                             sh '''
                                 echo "$GITHUB_TOKEN" | docker login ghcr.io -u gamebox-inc --password-stdin
                             '''
+                            loggedIn = true
+                            echo '✅ GHCR login succeeded with PAT (github-token).'
+                        }
+                    } catch (Exception e) {
+                        echo "⚠️ PAT credential '${credId}' not found or failed: ${e.message}"
+                        echo 'Falling back to GitHub App (may fail with "installation not allowed to Write organization package" for org packages).'
+                    }
+
+                    if (!loggedIn) {
+                        echo 'Attempting GHCR login with GitHub App...'
+                        try {
+                            withCredentials([
+                                file(credentialsId: 'github-app-ghcr-key', variable: 'GITHUB_APP_KEY'),
+                                string(credentialsId: 'github-app-id', variable: 'GITHUB_APP_ID'),
+                                string(credentialsId: 'github-app-installation-id', variable: 'GITHUB_APP_INSTALLATION_ID')
+                            ]) {
+                                sh '''
+                                    chmod +x deployment/scripts/github_app_token.sh
+                                    TOKEN=$(deployment/scripts/github_app_token.sh "$GITHUB_APP_ID" "$GITHUB_APP_INSTALLATION_ID" "$GITHUB_APP_KEY")
+                                    echo "$TOKEN" | docker login ghcr.io -u "$GITHUB_APP_ID" --password-stdin
+                                '''
+                                loggedIn = true
+                                echo '✅ GHCR login succeeded with GitHub App token.'
+                            }
+                        } catch (Exception e2) {
+                            echo "GitHub App login failed: ${e2.message}"
                         }
                     }
-                    // Push images
+
+                    if (!loggedIn) {
+                        error("No GHCR credentials. Add a Jenkins Secret text credential with ID '${credId}' (PAT with write:packages) or configure GitHub App credentials.")
+                    }
+
+                    echo "Pushing images to ${BACKEND_IMAGE} and ${FRONTEND_IMAGE}..."
                     sh """
                         docker push ${BACKEND_IMAGE}:${BUILD_TAG}
                         docker push ${BACKEND_IMAGE}:latest

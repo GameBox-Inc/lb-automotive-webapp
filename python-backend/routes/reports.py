@@ -2,7 +2,7 @@
 from typing import List, Dict, Any, Optional
 from fastapi import APIRouter, Depends, Query
 from auth import get_current_active_user
-from database import get_db_connection
+from database import get_db_connection, fmt_query
 from datetime import datetime, timedelta
 
 router = APIRouter(prefix="/api/reports", tags=["reports"])
@@ -40,12 +40,11 @@ def get_report_summary(
             AVG((julianday(c.closed_at) - julianday(COALESCE(c.started_at, c.created_at))) * 1440) as avg_session_time
         FROM cases c
         JOIN appointments a ON c.appointment_id = a.id
-        JOIN services s ON a.service_type = s.name -- Linking by name as service_type is stored as name
+        LEFT JOIN services s ON (a.service_id = s.id OR (a.service_id IS NULL AND a.service_type = s.name))
         WHERE c.status = 'completed'
         AND c.closed_at >= ?
     """
-    
-    cursor.execute(query, (start_date,))
+    cursor.execute(fmt_query(query), (start_date,))
     row = cursor.fetchone()
     conn.close()
     
@@ -83,20 +82,19 @@ def get_report_history(
             c.case_number,
             c.closed_at,
             a.customer_name,
-            s.name as service_name,
+            COALESCE(s.name, a.service_type) as service_name,
             s.price,
             s.duration,
             CAST((julianday(c.closed_at) - julianday(COALESCE(c.started_at, c.created_at))) * 1440 AS INTEGER) as actual_duration
         FROM cases c
         JOIN appointments a ON c.appointment_id = a.id
-        LEFT JOIN services s ON a.service_type = s.name
+        LEFT JOIN services s ON (a.service_id = s.id OR (a.service_id IS NULL AND a.service_type = s.name))
         WHERE c.status = 'completed'
         AND c.closed_at >= ?
         ORDER BY c.closed_at DESC
         LIMIT ?
     """
-    
-    cursor.execute(query, (start_date, limit))
+    cursor.execute(fmt_query(query), (start_date, limit))
     rows = cursor.fetchall()
     conn.close()
     

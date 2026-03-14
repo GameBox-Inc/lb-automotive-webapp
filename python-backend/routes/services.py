@@ -2,7 +2,7 @@ from typing import List, Optional
 from fastapi import APIRouter, HTTPException
 from database import get_db_connection, fmt_query
 from models import Service, ServiceCreate
-from cache import get_cached, set_cached, TTL_SERVICES, TTL_CATEGORIES, cache_key
+from cache import get_cached, set_cached, invalidate_cache, TTL_SERVICES, TTL_CATEGORIES, cache_key
 from observability.monitoring import db_query_duration_seconds
 from time import time
 
@@ -172,7 +172,7 @@ from fastapi import Depends, status
 from typing import Dict, Any
 
 @router.post("", response_model=Service, status_code=status.HTTP_201_CREATED)
-def create_service(
+async def create_service(
     service: ServiceCreate,
     current_user: Dict[str, Any] = Depends(get_current_active_user)
 ):
@@ -221,6 +221,8 @@ def create_service(
 
     logger.info(f"Service created by {current_user['username']}: {service.name}")
 
+    await invalidate_cache("services:*")
+
     r = dict(row) if row and not isinstance(row, dict) else (row or {})
     duration_val = int(r.get("duration_minutes") or r.get("duration") or 60)
     return Service(
@@ -239,7 +241,7 @@ def create_service(
 from models import ServiceUpdate
 
 @router.put("/{service_id}", response_model=Service)
-def update_service(
+async def update_service(
     service_id: str,
     service_update: ServiceUpdate,
     current_user: Dict[str, Any] = Depends(get_current_active_user)
@@ -306,6 +308,8 @@ def update_service(
     
     logger.info(f"Service {service_id} updated by {current_user['username']}")
 
+    await invalidate_cache("services:*")
+
     r = dict(row) if row and not isinstance(row, dict) else (row or {})
     duration_val = int(r.get("duration_minutes") or r.get("duration") or 60)
     return Service(
@@ -322,7 +326,7 @@ def update_service(
 
 
 @router.delete("/{service_id}", status_code=status.HTTP_204_NO_CONTENT)
-def delete_service(
+async def delete_service(
     service_id: str,
     current_user: Dict[str, Any] = Depends(get_current_active_user)
 ):
@@ -336,12 +340,36 @@ def delete_service(
     conn = get_db_connection()
     cursor = conn.cursor()
     
-    # Check existence
-    cursor.execute(fmt_query("SELECT id FROM services WHERE id = ?"), (service_id,))
-    if not cursor.fetchone():
+    # Check existence and get name for appointment check
+    cursor.execute(fmt_query("SELECT id, name FROM services WHERE id = ?"), (service_id,))
+    row = cursor.fetchone()
+    if not row:
         conn.close()
         raise HTTPException(status_code=404, detail="Service not found")
-    
+    r = dict(row) if row and not isinstance(row, dict) else (row or {})
+    service_name = r.get("name") or ""
+
+    # Block delete if any appointments reference this service (by id or by name)
+    cursor.execute(
+        fmt_query(
+            "SELECT COUNT(*) as n FROM appointments WHERE service_id = ? OR service_type = ?"
+        ),
+        (service_id, service_name or ""),
+    )
+    count_row = cursor.fetchone()
+    if count_row:
+        ref_count = count_row.get("n", count_row[0] if isinstance(count_row, (tuple, list)) else 0) or 0
+    else:
+        ref_count = 0
+    if ref_count > 0:
+        conn.close()
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"Cannot delete service: {ref_count} appointment(s) reference it. Reassign or remove those appointments first.",
+        )
+
     cursor.execute(fmt_query("DELETE FROM services WHERE id = ?"), (service_id,))
     conn.commit()
     conn.close()
+
+    await invalidate_cache("services:*")

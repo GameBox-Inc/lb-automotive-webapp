@@ -179,7 +179,6 @@ function App() {
             <nav className="space-y-1">
               <NavItem icon={<LayoutDashboard className="h-5 w-5" />} text="Overview" to="/" />
               <NavItem icon={<Calendar className="h-5 w-5" />} text="Appointments" to="/appointments" />
-              <NavItem icon={<Tool className="h-5 w-5" />} text="Services" to="/services" />
               <NavItem icon={<Settings className="h-5 w-5" />} text="Settings" to="/settings" />
 
               {(user?.staff_id || user?.is_admin) && (
@@ -187,14 +186,12 @@ function App() {
               )}
 
               {user?.is_admin && (
-                <NavItem icon={<Tool className="h-5 w-5" />} text="Launch Kiosk" to="/checkin" />
-              )}
-
-              {user?.is_admin && (
                 <>
                   <div className="pt-4 pb-2 px-6 text-xs font-semibold text-gray-500 uppercase tracking-wider">
                     Admin
                   </div>
+                  <NavItem icon={<Tool className="h-5 w-5" />} text="Services" to="/services" />
+                  <NavItem icon={<Tool className="h-5 w-5" />} text="Launch Kiosk" to="/checkin" />
                   <NavItem icon={<Phone className="h-5 w-5" />} text="IVR Settings" to="/admin/ivr" />
                   <NavItem icon={<Users className="h-5 w-5" />} text="Customers" to="/admin/customers" />
                   <NavItem icon={<Users className="h-5 w-5" />} text="Staff & Schedule" to="/admin/staff" />
@@ -254,7 +251,7 @@ function App() {
             <Routes>
               <Route path="/" element={<Dashboard />} />
               <Route path="/appointments" element={<Appointments />} />
-              <Route path="/services" element={<Services />} />
+              <Route path="/services" element={user?.is_admin ? <Services /> : <Navigate to="/" replace />} />
               <Route path="/settings" element={<SettingsPage />} />
               <Route path="/repairs" element={<StaffDashboard />} />
               <Route path="/cases/:id" element={<CaseDetails />} />
