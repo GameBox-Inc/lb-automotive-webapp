@@ -6,6 +6,7 @@ import re
 import html
 import os
 import json
+import uuid as uuid_module
 from typing import Any, Dict
 from fastapi import Request, HTTPException, status
 from fastapi.responses import JSONResponse
@@ -124,7 +125,11 @@ def sanitize_input(value: str, input_type: str = "text", max_length: int = None)
             )
         return cleaned
     elif input_type == "uuid":
-        if not UUID_PATTERN.match(value.lower()):
+        try:
+            # Accept any valid UUID format (with/without hyphens, braces, uppercase)
+            normalized = str(uuid_module.UUID(value.strip()))
+            return html.escape(normalized) if normalized else value
+        except (ValueError, AttributeError):
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Invalid UUID format"

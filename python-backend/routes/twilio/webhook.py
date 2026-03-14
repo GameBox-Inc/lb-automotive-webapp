@@ -10,7 +10,7 @@ logger = logging.getLogger(__name__)
 from datetime import datetime, time, timedelta
 from typing import Optional, Dict, Any
 from fastapi import HTTPException, Header, BackgroundTasks, APIRouter, Request, Response, Depends, Form
-from database import get_db_connection, update_appointment_status, fmt_query, DatabaseContextManager
+from database import get_db_connection, update_appointment_status, fmt_query, DatabaseContextManager, service_request_context
 from services.llm import classify_intent, generate_response
 from services.call_state import get_call_state, upsert_call_state, get_setting, log_ivr_interaction, track_decision, update_decision_path
 from utils.ivr_helper import (
@@ -42,6 +42,16 @@ WEBHOOK_BASE_URL = os.getenv(
 ) or "https://twilio.kozytherocket.space/lb-automotive/api/twilio/webhook"
 
 router = APIRouter(prefix="/api/twilio", tags=["twilio"])
+
+
+async def ivr_service_context():
+    """Set service_request_context so RLS allows IVR full access to appointments and related tables."""
+    token = service_request_context.set(True)
+    try:
+        yield
+    finally:
+        service_request_context.reset(token)
+
 
 async def validate_twilio_request(request: Request):
     """
@@ -762,7 +772,7 @@ def get_tree_node(step: str) -> Optional[dict]:
 
 # --- Webhook Handler ---
 
-@router.post("/webhook", dependencies=[Depends(validate_twilio_request)])
+@router.post("/webhook", dependencies=[Depends(validate_twilio_request), Depends(ivr_service_context)])
 def twilio_webhook(
     request: Request,
     background_tasks: BackgroundTasks,

@@ -8,12 +8,16 @@ import uuid
 
 # Context variable to store current user for RLS
 current_user_context: ContextVar[Optional[Dict[str, Any]]] = ContextVar('current_user', default=None)
+# Context for IVR/cron: when True, RLS policies allow full access via app.service_request
+service_request_context: ContextVar[bool] = ContextVar('service_request', default=False)
 
 # Strict database enforcement: PostgreSQL/Supabase only.
-# Priority 1: Environment variable 
+# Priority 1: Environment variable
 # Priority 2: Vault injected secret at /vault/secrets/supabase.env
 DATABASE_URL = os.getenv("DATABASE_URL")
 DATABASE_READ_URL = os.getenv("DATABASE_READ_URL")
+APP_DATABASE_URL = os.getenv("APP_DATABASE_URL")
+APP_DATABASE_READ_URL = os.getenv("APP_DATABASE_READ_URL")
 
 # Check for Vault-injected Supabase secret
 SUPABASE_ENV = "/vault/secrets/supabase.env"
@@ -29,18 +33,29 @@ if os.path.exists(SUPABASE_ENV):
                 if "DATABASE_READ_URL=" in clean_line and not DATABASE_READ_URL:
                     val = clean_line.split("=", 1)[1].strip().strip('"').strip("'")
                     if val: DATABASE_READ_URL = val
+                if "APP_DATABASE_URL=" in clean_line and not APP_DATABASE_URL:
+                    val = clean_line.split("=", 1)[1].strip().strip('"').strip("'")
+                    if val: APP_DATABASE_URL = val
+                if "APP_DATABASE_READ_URL=" in clean_line and not APP_DATABASE_READ_URL:
+                    val = clean_line.split("=", 1)[1].strip().strip('"').strip("'")
+                    if val: APP_DATABASE_READ_URL = val
     except Exception as e:
         print(f"Error reading Vault secret: {e}")
+
+# App uses lb_app role when APP_DATABASE_URL is set (RLS enforced); else uses DATABASE_URL (e.g. postgres, bypasses RLS).
+_APP_BASE = (APP_DATABASE_URL or DATABASE_URL) or ""
+_APP_READ = (APP_DATABASE_READ_URL or APP_DATABASE_URL or DATABASE_READ_URL or DATABASE_URL) or ""
 
 # Defer hard failure to first DB use so the process can start and /ready can respond;
 # otherwise K8s rollout hangs when app-secrets are not yet injected or misconfigured.
 def _validate_db_url():
-    if not DATABASE_URL or not DATABASE_URL.startswith("postgres"):
-        raise ValueError("Valid PostgreSQL/Supabase connection string required (DATABASE_URL).")
+    url = _APP_BASE or DATABASE_URL
+    if not url or not url.startswith("postgres"):
+        raise ValueError("Valid PostgreSQL/Supabase connection string required (DATABASE_URL or APP_DATABASE_URL).")
 
-DB_TYPE = "postgresql" if (DATABASE_URL and DATABASE_URL.startswith("postgres")) else None
-DB_PATH = DATABASE_URL if (DATABASE_URL and DATABASE_URL.startswith("postgres")) else None
-DB_READ_PATH = (DATABASE_READ_URL if DATABASE_READ_URL else DATABASE_URL) if DB_PATH else None
+DB_TYPE = "postgresql" if (_APP_BASE.startswith("postgres") or (DATABASE_URL and DATABASE_URL.startswith("postgres"))) else None
+DB_PATH = _APP_BASE if _APP_BASE.startswith("postgres") else (DATABASE_URL if (DATABASE_URL and DATABASE_URL.startswith("postgres")) else None)
+DB_READ_PATH = (_APP_READ if _APP_READ.startswith("postgres") else (DATABASE_READ_URL or DATABASE_URL)) if DB_PATH else None
 
 # Standardize placeholders for PostgreSQL
 SQL_PARAM = "%s"
@@ -70,17 +85,55 @@ def fmt_query(query: str) -> str:
     return query
 
 
-def get_db_connection(read_only: bool = False):
+def _set_rls_session_vars(conn):
+    """
+    Set Postgres session variables for RLS (app.service_request, app.current_user_id, app.is_admin, app.staff_id).
+    Called after opening a connection so lb_app role policies can allow/deny rows.
+    """
+    cur = conn.cursor()
+    try:
+        service = service_request_context.get()
+        user = current_user_context.get() if not service else None
+        if service:
+            cur.execute("SET app.service_request = 'true'")
+            cur.execute("SET app.is_admin = 'false'")
+            cur.execute("SET app.current_user_id = ''")
+            cur.execute("SET app.staff_id = ''")
+        elif user:
+            uid = (user.get("id") or "") if isinstance(user.get("id"), str) else str(user.get("id") or "")
+            admin = "true" if user.get("is_admin") else "false"
+            sid = (user.get("staff_id") or "") if isinstance(user.get("staff_id"), str) else str(user.get("staff_id") or "")
+            cur.execute("SET app.service_request = 'false'")
+            cur.execute("SET app.current_user_id = %s", (uid,))
+            cur.execute("SET app.is_admin = %s", (admin,))
+            cur.execute("SET app.staff_id = %s", (sid,))
+        else:
+            cur.execute("SET app.service_request = 'false'")
+            cur.execute("SET app.is_admin = 'false'")
+            cur.execute("SET app.current_user_id = ''")
+            cur.execute("SET app.staff_id = ''")
+    finally:
+        cur.close()
+
+
+def get_db_connection(read_only: bool = False, use_app_role: bool = True):
     """
     Get a PostgreSQL/Supabase database connection.
-    If read_only is True and DB_READ_PATH is set, use the replica.
+    If read_only is True and a read replica URL is set, use it.
+    When use_app_role=True (default), uses APP_DATABASE_URL or DATABASE_URL and sets RLS session vars.
+    When use_app_role=False (e.g. init_db/migrations), uses DATABASE_URL only and does not set RLS vars.
     """
     _validate_db_url()
     import psycopg2
     from psycopg2.extras import RealDictCursor
 
-    target_url = DB_READ_PATH if (read_only and DB_READ_PATH) else DB_PATH
+    if use_app_role:
+        target_url = DB_READ_PATH if (read_only and DB_READ_PATH) else DB_PATH
+    else:
+        target_url = (DATABASE_READ_URL or DATABASE_URL) if read_only else DATABASE_URL
     conn = psycopg2.connect(target_url, cursor_factory=RealDictCursor)
+    if use_app_role:
+        _set_rls_session_vars(conn)
     return conn
 
 
@@ -111,8 +164,8 @@ class DatabaseContextManager:
 
 
 def init_db():
-    """Initialize the database with schema."""
-    conn = get_db_connection()
+    """Initialize the database with schema (uses postgres/DATABASE_URL, not app RLS role)."""
+    conn = get_db_connection(use_app_role=False)
     cursor = conn.cursor()
 
     # Create staff table first (for foreign keys)
@@ -352,8 +405,8 @@ def init_db():
 
 
 def seed_data():
-    """Seed the database with initial data."""
-    conn = get_db_connection()
+    """Seed the database with initial data (uses postgres/DATABASE_URL, not app RLS role)."""
+    conn = get_db_connection(use_app_role=False)
     cursor = conn.cursor()
 
     # Create staff table

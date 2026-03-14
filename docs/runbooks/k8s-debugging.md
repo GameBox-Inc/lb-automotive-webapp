@@ -185,6 +185,23 @@ Backend uses Vault Agent init to inject secrets. If init fails:
 
 ---
 
+## RLS blocking expected access
+
+When the backend uses **lb_app** (`APP_DATABASE_URL`), Row Level Security on `appointments` can block access if session variables are wrong or missing.
+
+**Symptoms:** Authenticated users cannot list/create/update appointments; IVR says "no availability" or fails to create appointments; 500 or empty results on appointment endpoints.
+
+**Checks:**
+
+1. **App using lb_app:** Confirm `APP_DATABASE_URL` is set in the backend pod (e.g. from Vault `app-secrets` or `supabase.env`) and points to the **lb_app** user. If only `DATABASE_URL` (postgres) is set, RLS is not in effect.
+2. **Session variables:** The backend sets `app.service_request`, `app.current_user_id`, `app.is_admin`, `app.staff_id` on each connection. In development you can add temporary logging to verify they are set for the request type (IVR vs authenticated user).
+3. **IVR/cron:** The Twilio webhook must use the `ivr_service_context` dependency so `app.service_request = 'true'`. Any cron job that touches appointments must call `service_request_context.set(True)` before DB access.
+4. **Migrations / init:** `init_db()` and `seed_data()` use `DATABASE_URL` (postgres), not lb_app; they are not subject to RLS. Migrations run as postgres in Jenkins.
+
+**Fix:** Ensure IVR routes have `Depends(ivr_service_context)`; ensure Vault or env provides `APP_DATABASE_URL` with the lb_app connection string if you intend to use RLS. See `docs/SUPABASE_RLS_AND_USER_ROLES.md`.
+
+---
+
 ## 502 Bad Gateway
 
 - Frontend Nginx proxies `/api/*` to backend. If backend is down or not ready → 502.

@@ -1,33 +1,44 @@
 # Supabase RLS and User Roles (Admin vs Staff)
 
-## Is appointment access controlled at the database level (Supabase)?
+## Database-level RLS (implemented)
 
-**Short answer: No.** Access control for appointments is enforced in the **application layer** (FastAPI), not by Supabase RLS in a way that distinguishes admin vs staff.
+When the backend connects with the **lb_app** role (via `APP_DATABASE_URL`), Row Level Security is enforced on the `appointments` table. The app sets Postgres session variables per request; RLS policies use them to allow or deny rows.
 
-- **Current Supabase migrations:** The `appointments` table has RLS enabled with policies such as "Allow authenticated users to read/update/insert appointments" (`TO authenticated`). Those policies apply when the **Supabase Auth** role is `authenticated` (e.g. when using the Supabase JS client with a real Supabase JWT).
-- **How the backend connects:** The FastAPI backend uses a **single connection** to Postgres via `DATABASE_URL` (typically the Supabase direct connection string as `postgres` or the pooler). That role usually **bypasses RLS** (Postgres superuser / service role), so all backend requests run with full table access. The backend does **not** set a different Postgres user or JWT per request.
-- **Implication:** Who can create/see/update appointments is decided in Python (e.g. in `appointment_repository.list_appointments` and route dependencies like `get_current_active_user`), not by Supabase RLS. So "database level" enforcement of admin vs staff does **not** exist today; it is application-level only.
+### How it works
 
-If you later switch to a connection that does **not** bypass RLS (e.g. a dedicated role that is subject to RLS), you would need RLS policies that grant that role the right access (e.g. SELECT/INSERT/UPDATE on `appointments`) or use a per-request role (e.g. `SET LOCAL role = ...` based on JWT), which would require backend changes.
+1. **Connection:** The app uses `APP_DATABASE_URL` when set (else `DATABASE_URL`). `APP_DATABASE_URL` should be the connection string for the **lb_app** role so that RLS applies. Migrations and `init_db()`/`seed_data()` use `DATABASE_URL` (postgres) so DDL and seeding are not restricted by RLS.
+
+2. **Session variables (set in `database.get_db_connection()`):**
+   - `app.service_request` — `'true'` for IVR/cron requests; RLS allows full access to appointments.
+   - `app.current_user_id` — Authenticated user’s id (from JWT).
+   - `app.is_admin` — `'true'` or `'false'`.
+   - `app.staff_id` — Staff id when the user is staff (or empty).
+
+3. **Policies on `appointments` (for role lb_app):**
+   - **SELECT/UPDATE:** Allowed if `app.service_request = 'true'`, or `app.is_admin = 'true'`, or (staff sees rows where `assigned_staff_id` = their `staff_id` or is NULL), or (user sees rows where `user_id` = their `current_user_id`).
+   - **INSERT:** Allowed if service request, admin, or `app.current_user_id` is set (authenticated user).
+   - **DELETE:** Allowed only for service request or admin.
+
+4. **Service context:** The Twilio webhook sets `service_request_context` (and thus `app.service_request = 'true'`) via the `ivr_service_context` dependency so IVR can read/write appointments and related data. Cron or other server-to-server paths that need full access should set `service_request_context.set(True)` for the duration of the request.
+
+### Tables with RLS (Phase 1)
+
+- **appointments** — RLS enabled with lb_app policies above. Other tables are not yet restricted by RLS for lb_app; the app still enforces access in code.
 
 ---
 
-## Do we have proper user configuration to separate admin vs staff?
+## User configuration (application-level)
 
-**Yes, at the application level.** The `users` table (created by the backend’s `init_db()` or by your schema process) has:
+The `users` table defines roles used by the app and by RLS session variables:
 
 | Column     | Purpose |
 |-----------|--------|
-| `is_admin` | `1` = admin, `0` = non-admin. Used by the backend to restrict admin-only endpoints (e.g. services create/update/delete, business hours). |
-| `staff_id` | Optional FK to `staff.id`. When set, the user is a staff member (e.g. mechanic, advisor). Used for "staff see their assigned appointments or unassigned" in `list_appointments`. |
+| `is_admin` | `1` = admin, `0` = non-admin. Backend restricts admin-only endpoints; RLS uses `app.is_admin` for appointments. |
+| `staff_id` | Optional FK to `staff.id`. When set, user is staff; RLS uses `app.staff_id` for staff-scoped appointment visibility. |
 
-So we **do** have a clear separation:
-
-- **Admin:** `is_admin = 1`. Can manage services, business hours, and (in the app) see all appointments.
-- **Staff:** `staff_id` set (and typically `is_admin = 0` unless they are also admin). Can create appointments and see their own or unassigned ones, as implemented in `appointment_repository.list_appointments`.
-- **Other users:** `is_admin = 0` and no `staff_id`. Treated as "regular" users; the repo can restrict them to their own appointments (e.g. by `user_id` or `phone_number`).
-
-This is **not** "proper RLS" in the Supabase sense (different Postgres roles per user). It is **proper application-level role separation** using `users.is_admin` and `users.staff_id`, with the backend applying the rules in code. RLS in Supabase is currently either bypassed (backend) or used for Supabase Auth (`authenticated`) in the existing policies.
+- **Admin:** `is_admin = 1`. Sees all appointments (RLS and app).
+- **Staff:** `staff_id` set. Sees appointments assigned to them or unassigned (RLS and app).
+- **Other users:** See only their own appointments (`user_id` / `app.current_user_id`).
 
 ---
 
@@ -35,8 +46,20 @@ This is **not** "proper RLS" in the Supabase sense (different Postgres roles per
 
 | Question | Answer |
 |----------|--------|
-| Is appointment create/access enforced at the **database level** in Supabase? | No. Backend uses a single connection that bypasses RLS; enforcement is in the app. |
-| Do we have proper **user** configuration for admin vs staff? | Yes. `users.is_admin` and `users.staff_id` define roles; the backend uses them for access control. |
-| Is that "proper RLS"? | It is proper **application-level** access control. It is **not** Supabase RLS that differentiates admin vs staff at the DB. |
+| Is appointment access enforced at the **database level** when using lb_app? | Yes. When `APP_DATABASE_URL` is set, the app connects as lb_app and RLS on `appointments` enforces visibility and write access via session variables. |
+| How does the backend set the “current user” for RLS? | Auth sets `current_user_context`; IVR sets `service_request_context`. `get_db_connection()` runs `SET app.service_request`, `app.current_user_id`, `app.is_admin`, `app.staff_id` on each connection. |
+| Do we still need application-level checks? | Yes. Keep route dependencies (e.g. `get_current_admin_user`) and repo filters as defense-in-depth. RLS adds a second enforcement layer at the DB. |
+| Password for lb_app? | The migration creates lb_app with placeholder password `changeme`. Change it in Supabase (e.g. `ALTER ROLE lb_app PASSWORD '...'`) and set `APP_DATABASE_URL` in Vault to the lb_app connection string. |
 
-To add true DB-level RLS for admin vs staff you would need to either: (1) run each request as a Postgres role that corresponds to the current user and add policies on that role, or (2) keep using a single privileged connection and continue relying on application-level checks (current setup).
+---
+
+## RLS troubleshooting
+
+If the app or IVR cannot access appointments when using `APP_DATABASE_URL`:
+
+1. **Confirm the app is using lb_app:** Check that `APP_DATABASE_URL` is set (e.g. in Vault / pod env) and points to the lb_app user.
+2. **Confirm session variables:** In development, you can log or inspect that `app.service_request` / `app.current_user_id` / `app.is_admin` / `app.staff_id` are set as expected for the request type (IVR vs authenticated user).
+3. **IVR/cron:** Ensure the Twilio webhook uses the `ivr_service_context` dependency and that any cron job sets `service_request_context.set(True)` before DB access.
+4. **Migrations:** Migrations and `init_db()`/`seed_data()` use `DATABASE_URL` (postgres), not lb_app; they are not subject to RLS.
+
+See also: runbook section “RLS blocking expected access” in `docs/runbooks/k8s-debugging.md`.
