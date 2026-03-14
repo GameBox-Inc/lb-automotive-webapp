@@ -35,21 +35,29 @@ def list_services(category: str = None, is_emergency: bool = None):
     cursor.execute(fmt_query(query), params)
     rows = cursor.fetchall()
     conn.close()
-    
+
     services = []
     for row in rows:
+        # Use .get() so missing columns (e.g. category, updated_at in some migrations) don't break the response
+        r = dict(row) if not isinstance(row, dict) else row
+        duration_val = r.get("duration_minutes") or r.get("duration")
+        if duration_val is None:
+            duration_val = 60
+        try:
+            duration_val = int(duration_val)
+        except (TypeError, ValueError):
+            duration_val = 60
         services.append(Service(
-            id=row["id"],
-            name=row["name"],
-            description=row["description"],
-            duration=row["duration"],
-            price=row["price"],
-            is_emergency=bool(row["is_emergency"]),
-            category=row["category"],
-            created_at=row["created_at"],
-            updated_at=row["updated_at"]
+            id=r.get("id"),
+            name=r.get("name") or "",
+            description=r.get("description"),
+            duration=duration_val,
+            price=float(r.get("price") or 0),
+            is_emergency=bool(r.get("is_emergency")),
+            category=r.get("category") or "general",
+            created_at=r.get("created_at"),
+            updated_at=r.get("updated_at"),
         ))
-    
     return services
 
 
@@ -67,12 +75,21 @@ async def get_service_categories():
     start_time = time()
     
     def fetch_categories():
-        conn = get_db_connection()
-        cursor = conn.cursor()
-        cursor.execute(fmt_query("SELECT DISTINCT category FROM services ORDER BY category"))
-        rows = cursor.fetchall()
-        conn.close()
-        return [row["category"] for row in rows]
+        try:
+            conn = get_db_connection()
+            cursor = conn.cursor()
+            cursor.execute(fmt_query("SELECT DISTINCT category FROM services ORDER BY category"))
+            rows = cursor.fetchall()
+            conn.close()
+            out = []
+            for row in rows:
+                r = dict(row) if not isinstance(row, dict) else row
+                c = r.get("category")
+                if c is not None:
+                    out.append(str(c))
+            return out if out else ["general"]
+        except Exception:
+            return ["general"]
     
     from starlette.concurrency import run_in_threadpool
     categories = await run_in_threadpool(fetch_categories)
@@ -94,21 +111,26 @@ def list_emergency_services():
     cursor.execute(fmt_query("SELECT * FROM services WHERE is_emergency = 1 ORDER BY name"))
     rows = cursor.fetchall()
     conn.close()
-    
+
     services = []
     for row in rows:
+        r = dict(row) if not isinstance(row, dict) else row
+        duration_val = r.get("duration_minutes") or r.get("duration") or 60
+        try:
+            duration_val = int(duration_val)
+        except (TypeError, ValueError):
+            duration_val = 60
         services.append(Service(
-            id=row["id"],
-            name=row["name"],
-            description=row["description"],
-            duration=row["duration"],
-            price=row["price"],
-            is_emergency=bool(row["is_emergency"]),
-            category=row["category"],
-            created_at=row["created_at"],
-            updated_at=row["updated_at"]
+            id=r.get("id"),
+            name=r.get("name") or "",
+            description=r.get("description"),
+            duration=duration_val,
+            price=float(r.get("price") or 0),
+            is_emergency=bool(r.get("is_emergency")),
+            category=r.get("category") or "general",
+            created_at=r.get("created_at"),
+            updated_at=r.get("updated_at"),
         ))
-    
     return services
 
 
@@ -125,17 +147,23 @@ def get_service(service_id: str):
     if not row:
         from fastapi import HTTPException
         raise HTTPException(status_code=404, detail="Service not found")
-    
+
+    r = dict(row) if not isinstance(row, dict) else row
+    duration_val = r.get("duration_minutes") or r.get("duration") or 60
+    try:
+        duration_val = int(duration_val)
+    except (TypeError, ValueError):
+        duration_val = 60
     return Service(
-        id=row["id"],
-        name=row["name"],
-        description=row["description"],
-        duration=row["duration"],
-        price=row["price"],
-        is_emergency=bool(row["is_emergency"]),
-        category=row["category"],
-        created_at=row["created_at"],
-        updated_at=row["updated_at"]
+        id=r.get("id"),
+        name=r.get("name") or "",
+        description=r.get("description"),
+        duration=duration_val,
+        price=float(r.get("price") or 0),
+        is_emergency=bool(r.get("is_emergency")),
+        category=r.get("category") or "general",
+        created_at=r.get("created_at"),
+        updated_at=r.get("updated_at"),
     )
 
 
@@ -190,19 +218,21 @@ def create_service(
     cursor.execute(fmt_query("SELECT * FROM services WHERE id = ?"), (service_id,))
     row = cursor.fetchone()
     conn.close()
-    
+
     logger.info(f"Service created by {current_user['username']}: {service.name}")
-    
+
+    r = dict(row) if row and not isinstance(row, dict) else (row or {})
+    duration_val = int(r.get("duration_minutes") or r.get("duration") or 60)
     return Service(
-        id=row["id"],
-        name=row["name"],
-        description=row["description"],
-        duration=row["duration"],
-        price=row["price"],
-        is_emergency=bool(row["is_emergency"]),
-        category=row["category"],
-        created_at=row["created_at"],
-        updated_at=row["updated_at"]
+        id=r.get("id"),
+        name=r.get("name") or "",
+        description=r.get("description"),
+        duration=duration_val,
+        price=float(r.get("price") or 0),
+        is_emergency=bool(r.get("is_emergency")),
+        category=r.get("category") or "general",
+        created_at=r.get("created_at"),
+        updated_at=r.get("updated_at"),
     )
 
 
@@ -275,17 +305,19 @@ def update_service(
     conn.close()
     
     logger.info(f"Service {service_id} updated by {current_user['username']}")
-    
+
+    r = dict(row) if row and not isinstance(row, dict) else (row or {})
+    duration_val = int(r.get("duration_minutes") or r.get("duration") or 60)
     return Service(
-        id=row["id"],
-        name=row["name"],
-        description=row["description"],
-        duration=row["duration"],
-        price=row["price"],
-        is_emergency=bool(row["is_emergency"]),
-        category=row["category"],
-        created_at=row["created_at"],
-        updated_at=row["updated_at"]
+        id=r.get("id"),
+        name=r.get("name") or "",
+        description=r.get("description"),
+        duration=duration_val,
+        price=float(r.get("price") or 0),
+        is_emergency=bool(r.get("is_emergency")),
+        category=r.get("category") or "general",
+        created_at=r.get("created_at"),
+        updated_at=r.get("updated_at"),
     )
 
 
