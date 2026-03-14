@@ -63,8 +63,11 @@ def get_available_slots(
             detail=f"Could not compute availability: {str(e)}",
         ) from e
 
-    # Normalize response shape for existing frontend/Kiosk usage:
-    return [s.start.strftime("%H:%M") for s in slots]
+    # Return unique start times (one per clock time). Engine yields one slot per technician per time;
+    # UI should show "3:00 PM" once, not once per staff—booking can assign technician on create.
+    time_strs = [s.start.strftime("%H:%M") for s in slots]
+    unique_times = list(dict.fromkeys(time_strs))
+    return unique_times
 
 
 @router.get("/{appointment_id}", response_model=Appointment)

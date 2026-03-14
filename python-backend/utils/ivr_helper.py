@@ -121,3 +121,71 @@ def get_first_turn_intent(transcript: str) -> Optional[str]:
             if phrase in normalized or normalized == phrase:
                 return intent
     return None
+
+
+def slot_to_minutes(s: str) -> int:
+    """Convert 'HH:MM' to minutes since midnight for comparison."""
+    try:
+        parts = s.split(":")
+        h, m = int(parts[0], 10), int(parts[1], 10) if len(parts) > 1 else 0
+        return h * 60 + m
+    except (ValueError, IndexError):
+        return 0
+
+
+def get_closest_slot(user_input: str, slots: List[str]) -> Optional[str]:
+    """
+    Map user speech or DTMF (1=morning, 2=afternoon) to the closest available slot.
+    Supports: morning, afternoon, 1, 2, specific times like 3, 3 pm, 10 am, noon, earliest, etc.
+    """
+    if not slots:
+        return None
+    text = (user_input or "").strip().lower()
+    if not text:
+        return slots[0]
+
+    # DTMF: 1 = morning, 2 = afternoon
+    if text in ("1", "2"):
+        if text == "1":
+            morning = [s for s in slots if slot_to_minutes(s) < 12 * 60]
+            return morning[0] if morning else slots[0]
+        afternoon = [s for s in slots if slot_to_minutes(s) >= 12 * 60]
+        return afternoon[0] if afternoon else slots[-1]
+
+    # Explicit preferences
+    if any(w in text for w in ("earliest", "soon", "first", "asap", "soonest")):
+        return slots[0]
+    if any(w in text for w in ("latest", "last", "end of day")):
+        return slots[-1]
+    if any(w in text for w in ("noon", "12", "midday")):
+        target = 12 * 60
+        return min(slots, key=lambda s: abs(slot_to_minutes(s) - target))
+    if any(w in text for w in ("morning", "am")):
+        morning = [s for s in slots if slot_to_minutes(s) < 12 * 60]
+        return morning[0] if morning else slots[0]
+    if any(w in text for w in ("afternoon", "evening", "pm")):
+        afternoon = [s for s in slots if slot_to_minutes(s) >= 12 * 60]
+        return afternoon[0] if afternoon else slots[-1]
+
+    # Parse hour (and optional minute) from phrases like "3", "3 pm", "10 am", "3 o'clock"
+    digits = re.findall(r"\d{1,2}", text)
+    if digits:
+        hour = int(digits[0], 10)
+        if hour <= 12 and ("pm" in text or "p.m" in text or "afternoon" in text):
+            if hour < 12:
+                hour += 12
+        elif hour == 12 and ("am" in text or "noon" in text):
+            hour = 12
+        elif hour == 12 and "pm" in text:
+            hour = 12
+        elif hour < 12 and ("am" in text or "a.m" in text or "morning" in text):
+            pass  # keep hour as-is (already AM)
+        elif hour <= 12 and not ("am" in text or "pm" in text):
+            # No am/pm: assume reasonable default (e.g. 3 -> 3 pm, 10 -> 10 am)
+            hour = hour + 12 if hour < 8 else hour
+        if hour >= 24:
+            hour = 23
+        target = hour * 60 + (int(digits[1], 10) if len(digits) > 1 else 0)
+        return min(slots, key=lambda s: abs(slot_to_minutes(s) - target))
+
+    return slots[0]

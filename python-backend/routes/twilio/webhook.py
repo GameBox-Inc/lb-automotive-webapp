@@ -21,6 +21,7 @@ from utils.ivr_helper import (
     apply_latency_mask,
     is_actionable_transcript,
     get_first_turn_intent,
+    get_closest_slot,
 )
 from utils.background_tasks import process_ivr_intent_async
 from security import redis_client
@@ -215,11 +216,12 @@ def smooth_hangup(response: VoiceResponse, voice: str, language: str, message: O
     response.hangup()
 
 # --- Decision Tree Structure ---
+# Prompts are written to be inquisitive and customer-service focused; future: extend to FAQ-style answers.
 DECISION_TREE = {
     "start": {
         "type": "gather",
-        "prompt_en": "Hi, this is L-B Automotive. How can we help you today? Say appointment, status update, or speak to someone.",
-        "prompt_es": "Hola, L-B Automotive. ¿En qué podemos ayudarle? Diga cita, actualización, o hablar con alguien.",
+        "prompt_en": "Hi, thanks for calling L-B Automotive. We’re here to help—would you like to schedule an appointment, get a status update on your vehicle, or speak with someone? Just say what you need.",
+        "prompt_es": "Hola, gracias por llamar a L-B Automotive. Estamos para ayudarle. ¿Le gustaría programar una cita, recibir una actualización de su vehículo o hablar con alguien? Diga lo que necesita.",
         "gather_config": {
             "num_digits": 1,
             "timeout": 8,
@@ -237,7 +239,7 @@ DECISION_TREE = {
     
     "main_menu_en": {
         "type": "gather",
-        "prompt_en": "For an appointment, press 1 or say appointment. For emergencies, press 2 or say emergency.",
+        "prompt_en": "What can we do for you today? Press 1 or say appointment to schedule a visit. For something urgent, press 2 or say emergency.",
         "gather_config": {
             "num_digits": 1,
             "timeout": 5,
@@ -255,7 +257,7 @@ DECISION_TREE = {
     
     "main_menu_es": {
         "type": "gather",
-        "prompt_es": "Para programar una cita, presione 1 o diga cita. Para emergencias, presione 2 o diga emergencia.",
+        "prompt_es": "¿En qué podemos ayudarle? Presione 1 o diga cita para programar. Si es urgente, presione 2 o diga emergencia.",
         "gather_config": {
             "num_digits": 1,
             "timeout": 5,
@@ -289,8 +291,8 @@ DECISION_TREE = {
     
     "collect_plate": {
         "type": "gather",
-        "prompt_en": "Please say your license plate number, or press star to skip.",
-        "prompt_es": "Por favor diga su número de placa, o presione asterisco para saltar.",
+        "prompt_en": "If you’d like, we can note your license plate—just say the number, or press star to skip.",
+        "prompt_es": "Si desea, podemos anotar su placa; diga el número o presione asterisco para saltar.",
         "gather_config": {
             "timeout": 5,
             "input": "speech dtmf"
@@ -335,8 +337,8 @@ DECISION_TREE = {
     
     "confirm_details": {
         "type": "gather",
-        "prompt_en": "To confirm your appointment, press 1. To start over, press 9.",
-        "prompt_es": "Para confirmar su cita, presione 1. Para comenzar de nuevo, presione 9.",
+        "prompt_en": "Does that work for you? Press 1 to confirm your appointment, or 9 to choose a different time.",
+        "prompt_es": "¿Le queda bien? Presione 1 para confirmar su cita o 9 para elegir otro horario.",
         "gather_config": {
             "num_digits": 1,
             "timeout": 5,
@@ -371,8 +373,8 @@ DECISION_TREE = {
     },
     "collect_symptoms": {
         "type": "gather",
-        "prompt_en": "Briefly describe the issue—for example, oil change or brakes. After the beep.",
-        "prompt_es": "Describa el problema brevemente, por ejemplo cambio de aceite o frenos. Después del tono.",
+        "prompt_en": "In a few words, what are you coming in for? For example, oil change, brakes, or a check engine light. After the beep.",
+        "prompt_es": "En pocas palabras, ¿por qué nos visita? Por ejemplo, cambio de aceite, frenos o luz de motor. Después del tono.",
         "gather_config": {
             "input": "speech",
             "timeout": 5,
@@ -395,20 +397,20 @@ DECISION_TREE = {
     
     "completed": {
         "type": "terminal",
-        "prompt_en": "Your appointment is confirmed. Thank you for choosing L-B Automotive. Goodbye.",
-        "prompt_es": "Su cita está confirmada. Gracias por elegir L-B Automotive. Adiós."
+        "prompt_en": "Your appointment is all set. Thank you for choosing L-B Automotive—we look forward to seeing you. Goodbye.",
+        "prompt_es": "Su cita quedó confirmada. Gracias por elegir L-B Automotive. Lo esperamos. Adiós."
     },
-    
+
     "transfer_representative": {
         "type": "terminal",
-        "prompt_en": "Connecting you to a representative. One moment please.",
-        "prompt_es": "Conectando con un representante. Un momento por favor."
+        "prompt_en": "We’re connecting you with a team member now. Thanks for your patience—one moment please.",
+        "prompt_es": "Le estamos conectando con un asesor. Gracias por su paciencia. Un momento por favor."
     },
-    
+
     "check_status": {
         "type": "terminal",
-        "prompt_en": "I'll have a service advisor call you back with a status update on your vehicle shortly. Goodbye.",
-        "prompt_es": "Un asesor de servicio le llamará pronto con una actualización sobre su vehículo. Adiós."
+        "prompt_en": "A service advisor will call you back shortly with an update on your vehicle. Is there anything else we can help with? If not, thanks for calling—goodbye.",
+        "prompt_es": "Un asesor le llamará pronto con una actualización de su vehículo. ¿Algo más en lo que podamos ayudarle? Si no, gracias por llamar. Adiós."
     }
 }
 
@@ -433,9 +435,9 @@ def handle_service_category(user_input, language, CallSid, metadata, response):
     upsert_call_state(CallSid, "select_service_category", language, metadata)
     
     voice = "Polly.Lupe" if language == "es" else "Polly.Matthew"
-    message = "Por favor seleccione una categoría:" if language == "es" else "Please select a category:"
+    message = "¿Qué tipo de servicio necesita?" if language == "es" else "What type of service do you need? Choose one of the following."
     response.say(message, voice=voice)
-    
+
     for idx, cat in enumerate(categories, 1):
         response.say(f"For {cat.replace('_', ' ')}, press {idx}", voice=voice)
     
@@ -484,11 +486,30 @@ def check_shop_bandwidth(date_str, slot_time):
         logger.error(f"Bandwidth check error: {e}")
         return True # Fallback to allowing
 
+def _format_slot_for_speech(slot_hm: str, language: str) -> str:
+    """Format 'HH:MM' as spoken time for confirmation (e.g. '9 in the morning', '3 in the afternoon')."""
+    try:
+        parts = slot_hm.split(":")
+        h, m = int(parts[0], 10), int(parts[1], 10) if len(parts) > 1 else 0
+    except (ValueError, IndexError):
+        return slot_hm
+    if language == "es":
+        if h < 12:
+            return f"{h} de la mañana" if m == 0 else f"{h} y {m} de la mañana"
+        return f"{h} de la tarde" if m == 0 else f"{h} y {m} de la tarde"
+    if h == 0:
+        return "12 in the morning" if m == 0 else f"12 {m} in the morning"
+    if h < 12:
+        return f"{h} in the morning" if m == 0 else f"{h} {m} in the morning"
+    if h == 12:
+        return "noon" if m == 0 else f"12 {m} in the afternoon"
+    return f"{h} in the afternoon" if m == 0 else f"{h} {m} in the afternoon"
+
+
 def handle_time_selection(user_input, language, CallSid, metadata, response):
-    """Handler for selecting an appointment time. Tries next open days (not only tomorrow) so weekend/closed days don't always say 'fully booked'."""
+    """Ask what time the customer would like; we recommend closest available when they answer (no slot count)."""
     import json
     from pathlib import Path
-    from services.llm import analyze_schedule
     from scheduling.engine import compute_availability
 
     selected_service = metadata.get("selected_service", {"id": "general", "name": "General Service"})
@@ -522,7 +543,10 @@ def handle_time_selection(user_input, language, CallSid, metadata, response):
     # #endregion
 
     if not available_slots or not target_date:
-        response.say("I'm sorry, we don't have any openings in the next few days. Please try booking online. Goodbye.", voice=voice)
+        if language == "es":
+            response.say("Lamentamos no tener disponibilidad en los próximos días. Por favor reserve en línea. Gracias y hasta pronto.", voice=voice)
+        else:
+            response.say("We’re sorry we don’t have any openings in the next few days. We’d love to help—please try booking online, or call back another time. Goodbye.", voice=voice)
         response.hangup()
         return None
 
@@ -540,31 +564,38 @@ def handle_time_selection(user_input, language, CallSid, metadata, response):
             if min_val == 0:
                 display_slots.append(t)
     if not display_slots:
-        display_slots = available_slots  # fallback to all if downsampling removed everything
+        display_slots = available_slots
 
-    slot_summary = analyze_schedule(display_slots, target_date, selected_service.get('name'))
-    response.say(slot_summary, voice=voice)
+    # Ask what time they’d like instead of stating slot count; we’ll recommend closest when they answer
+    if language == "es":
+        prompt = "Tenemos disponibilidad ese día. ¿Qué horario le vendría mejor? Puede decir una hora, por ejemplo las 3 o las 10 de la mañana, o decir mañana o tarde. Si prefiere, marque 1 para mañana o 2 para tarde."
+    else:
+        prompt = "We have openings that day. What time would work best for you? You can say a specific time—like 3 o’clock or 10 in the morning—or just morning or afternoon, and I’ll find the closest opening for you. If you prefer, press 1 for morning or 2 for afternoon."
+    response.say(prompt, voice=voice)
 
     metadata["available_slots"] = display_slots
     metadata["target_date"] = target_date
     upsert_call_state(CallSid, "select_time", language, metadata)
-    
-    gather = Gather(num_digits=1, input="speech dtmf", action=f"{WEBHOOK_BASE_URL}?step=save_time_choice")
+
+    gather = Gather(num_digits=1, input="speech dtmf", action=f"{WEBHOOK_BASE_URL}?step=save_time_choice", timeout=8, speechTimeout="auto")
     response.append(gather)
     return None
 
 def handle_booking(user_input, language, CallSid, metadata, response):
     """Final booking handler including vehicle details."""
-    choice = metadata.get("time_slot_choice")
-    slots = metadata.get("available_slots", [])
+    # Prefer explicitly chosen slot (from "what time" flow); else fall back to morning/afternoon 1/2
+    chosen_slot = metadata.get("chosen_slot")
+    if not chosen_slot:
+        choice = metadata.get("time_slot_choice")
+        slots = metadata.get("available_slots", [])
+        if choice == "1":
+            chosen_slot = next((s for s in slots if int(s.split(':')[0]) < 12), None)
+        elif choice == "2":
+            chosen_slot = next((s for s in slots if int(s.split(':')[0]) >= 12), None)
+        if not chosen_slot and slots:
+            chosen_slot = slots[0]
     target_date = metadata.get("target_date")
     svc = metadata.get("selected_service", {})
-    
-    chosen_slot = None
-    if choice == "1": # Morning
-        chosen_slot = next((s for s in slots if int(s.split(':')[0]) < 12), None)
-    elif choice == "2": # Afternoon
-        chosen_slot = next((s for s in slots if int(s.split(':')[0]) >= 12), None)
     
     voice = "Polly.Lupe" if language == "es" else "Polly.Matthew"
     if chosen_slot:
@@ -598,20 +629,50 @@ def handle_booking(user_input, language, CallSid, metadata, response):
             conn.commit()
         
         upsert_call_state(CallSid, "completed", language, metadata, aid)
-        response.say(f"Confirmed. See you at {chosen_slot}. Goodbye.", voice=voice)
+        time_spoken = _format_slot_for_speech(chosen_slot, language)
+        if language == "es":
+            response.say(f"Su cita quedó confirmada. La esperamos a las {time_spoken}. Gracias por elegir L-B Automotive. Hasta pronto.", voice=voice)
+        else:
+            response.say(f"Your appointment is confirmed. We’ll see you at {time_spoken}. Thank you for choosing L-B Automotive—we look forward to helping you. Goodbye.", voice=voice)
         response.hangup()
     else:
-        response.say("Sorry, that slot is gone.", voice=voice)
+        if language == "es":
+            response.say("Ese horario ya no está disponible. Le pedimos que elija otro. Un momento.", voice=voice)
+        else:
+            response.say("That time is no longer available. No worries—let’s find another time that works for you.", voice=voice)
         response.redirect(f"{WEBHOOK_BASE_URL}?step=select_time")
     return None
 
 def handle_save_time_choice(user_input, language, CallSid, metadata, response):
-    """Save morning (1) / afternoon (2) choice and advance to symptoms."""
-    if user_input in ("1", "2"):
-        metadata["time_slot_choice"] = user_input
-        upsert_call_state(CallSid, "save_time_choice", language, metadata)
-        return "collect_symptoms"
-    return "select_time"
+    """Resolve preferred time (speech or 1/2) to closest slot, confirm it, then ask for reason for visit."""
+    slots = metadata.get("available_slots", [])
+    voice = "Polly.Lupe" if language == "es" else "Polly.Matthew"
+    if not slots:
+        response.say("We couldn’t find that time. Let’s try again." if language != "es" else "No encontramos ese horario. Intentemos de nuevo.", voice=voice)
+        return "select_time"
+
+    chosen_slot = get_closest_slot((user_input or "").strip(), slots)
+    if not chosen_slot:
+        chosen_slot = slots[0]
+    metadata["chosen_slot"] = chosen_slot
+    metadata["time_slot_choice"] = user_input
+    upsert_call_state(CallSid, "save_time_choice", language, metadata)
+
+    # Confirm recommended time in a customer-service way, then lead into describing the visit
+    time_spoken = _format_slot_for_speech(chosen_slot, language)
+    target_date = metadata.get("target_date", "")
+    try:
+        from datetime import datetime as dt
+        d = dt.strptime(target_date, "%Y-%m-%d")
+        date_spoken = d.strftime("%A, %B %d") if language != "es" else d.strftime("%A %d de %B")
+    except Exception:
+        date_spoken = target_date
+
+    if language == "es":
+        response.say(f"Perfecto. Le reservamos a las {time_spoken} el {date_spoken}—es la hora más cercana a lo que pidió. Ahora, en pocas palabras, ¿por qué nos visita? Por ejemplo, cambio de aceite o frenos. Después del tono.", voice=voice)
+    else:
+        response.say(f"I’d be happy to get you in at {time_spoken} on {date_spoken}—that’s our closest opening to what you asked for. Next, in a few words, what are you coming in for? For example, oil change or brakes. After the beep.", voice=voice)
+    return "collect_symptoms"
 
 
 def handle_symptoms_processing(user_input, language, CallSid, metadata, response):
@@ -643,7 +704,10 @@ def handle_emergency(user_input, language, CallSid, metadata, response):
     upsert_call_state(CallSid, "emergency_services", language, metadata)
     
     voice = "Polly.Lupe" if language == "es" else "Polly.Matthew"
-    response.say("Emergency services available:", voice=voice)
+    if language == "es":
+        response.say("Entendemos que es urgente. Tenemos lo siguiente disponible:", voice=voice)
+    else:
+        response.say("We’re here to help. For urgent issues we have the following options:", voice=voice)
     for idx, s in enumerate(services, 1):
         response.say(f"For {s['name']}, press {idx}", voice=voice)
     
@@ -672,7 +736,10 @@ def handle_select_service_detail(user_input, language, CallSid, metadata, respon
     metadata["selected_category"] = category
     upsert_call_state(CallSid, "select_service_detail", language, metadata)
     voice = "Polly.Lupe" if language == "es" else "Polly.Matthew"
-    response.say(f"Services in {category.replace('_', ' ')}:", voice=voice)
+    if language == "es":
+        response.say(f"Servicios en {category.replace('_', ' ')}. Elija uno:", voice=voice)
+    else:
+        response.say(f"For {category.replace('_', ' ')}, we have these options. Choose one:", voice=voice)
     for i, s in enumerate(services, 1):
         response.say(f"For {s['name']}, press {i}", voice=voice)
     gather = Gather(num_digits=1, input="dtmf", action=f"{WEBHOOK_BASE_URL}?step=save_service_selection")
