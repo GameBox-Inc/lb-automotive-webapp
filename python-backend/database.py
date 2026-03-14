@@ -32,28 +32,32 @@ if os.path.exists(SUPABASE_ENV):
     except Exception as e:
         print(f"Error reading Vault secret: {e}")
 
-if not DATABASE_URL or not DATABASE_URL.startswith("postgres"):
-    print("CRITICAL ERROR: DATABASE_URL is missing or invalid (must be a PostgreSQL/Supabase URL).")
-    print("Application will not start without a valid Supabase connection.")
-    raise ValueError("Valid PostgreSQL/Supabase connection string required.")
+# Defer hard failure to first DB use so the process can start and /ready can respond;
+# otherwise K8s rollout hangs when app-secrets are not yet injected or misconfigured.
+def _validate_db_url():
+    if not DATABASE_URL or not DATABASE_URL.startswith("postgres"):
+        raise ValueError("Valid PostgreSQL/Supabase connection string required (DATABASE_URL).")
 
-DB_TYPE = "postgresql"
-DB_PATH = DATABASE_URL
-DB_READ_PATH = DATABASE_READ_URL if DATABASE_READ_URL else DATABASE_URL
+DB_TYPE = "postgresql" if (DATABASE_URL and DATABASE_URL.startswith("postgres")) else None
+DB_PATH = DATABASE_URL if (DATABASE_URL and DATABASE_URL.startswith("postgres")) else None
+DB_READ_PATH = (DATABASE_READ_URL if DATABASE_READ_URL else DATABASE_URL) if DB_PATH else None
 
 # Standardize placeholders for PostgreSQL
 SQL_PARAM = "%s"
 
-print(f"DATABASE TYPE: {DB_TYPE}")
 # Mask credentials for security
 def mask_url(url):
     if url and "@" in url:
         return "postgresql://*****@" + url.split("@")[-1]
     return url
 
-print(f"PRIMARY DB: {mask_url(DB_PATH)}")
-if DB_READ_PATH:
-    print(f"READ REPLICA: {mask_url(DB_READ_PATH)}")
+if DB_PATH:
+    print(f"DATABASE TYPE: {DB_TYPE}")
+    print(f"PRIMARY DB: {mask_url(DB_PATH)}")
+    if DB_READ_PATH:
+        print(f"READ REPLICA: {mask_url(DB_READ_PATH)}")
+else:
+    print("DATABASE_URL not set or invalid; app will start but DB calls will fail until secrets are fixed.")
 
 
 def fmt_query(query: str) -> str:
@@ -71,9 +75,10 @@ def get_db_connection(read_only: bool = False):
     Get a PostgreSQL/Supabase database connection.
     If read_only is True and DB_READ_PATH is set, use the replica.
     """
+    _validate_db_url()
     import psycopg2
     from psycopg2.extras import RealDictCursor
-    
+
     target_url = DB_READ_PATH if (read_only and DB_READ_PATH) else DB_PATH
     conn = psycopg2.connect(target_url, cursor_factory=RealDictCursor)
     return conn
