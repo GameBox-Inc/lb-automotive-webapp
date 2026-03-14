@@ -101,15 +101,10 @@ export function Services() {
     }
   }
 
-  // Pre-defined categories
-  const categories = [
-    'maintenance',
-    'repair',
-    'diagnostic',
-    'emergency',
-    'inspection',
-    'other'
-  ]
+  // Pre-defined categories; merge with any from API so nothing is hidden
+  const base = ['maintenance', 'repair', 'diagnostic', 'emergency', 'inspection', 'other', 'general']
+  const fromApi = [...new Set(services.map(s => (s as any).category ?? 'general').filter(Boolean))]
+  const categories = [...new Set([...base, ...fromApi])]
 
   if (loading) {
     return (
@@ -140,7 +135,7 @@ export function Services() {
       </div>
 
       {categories.map(category => {
-        const categoryServices = services.filter(service => service.category === category);
+        const categoryServices = services.filter(service => (service?.category ?? 'general') === category);
         if (categoryServices.length === 0) return null;
 
         return (

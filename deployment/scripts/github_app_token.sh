@@ -32,19 +32,28 @@ RESP=$(curl -s -w "\n%{http_code}" -X POST \
 HTTP_CODE=$(echo "$RESP" | tail -n1)
 BODY=$(echo "$RESP" | sed '$d')
 
-if [ "$HTTP_CODE" != "201" ]; then
-  echo "GitHub API returned $HTTP_CODE: $BODY" >&2
+# GitHub may return 200 or 201 for installation token
+if [ "$HTTP_CODE" != "201" ] && [ "$HTTP_CODE" != "200" ]; then
+  echo "GitHub API returned $HTTP_CODE. Body (first 400 chars):" >&2
+  echo "$BODY" | head -c 400 >&2
+  echo "" >&2
   exit 1
 fi
 
+# Extract token: GitHub returns {"token":"ghs_...","expires_at":"..."}
+TOKEN=""
 if command -v jq >/dev/null 2>&1; then
-  TOKEN=$(echo "$BODY" | jq -r '.token')
-else
-  TOKEN=$(echo "$BODY" | sed -n 's/.*"token":"\([^"]*\)".*/\1/p')
+  TOKEN=$(echo "$BODY" | jq -r '.token // empty')
+fi
+if [ -z "$TOKEN" ]; then
+  # Fallback without jq: single-line JSON, match "token":"<value>"
+  TOKEN=$(printf '%s' "$BODY" | tr -d '\n\r' | sed -n 's/.*"token"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')
 fi
 
-if [ -z "$TOKEN" ] || [ "$TOKEN" = "null" ]; then
-  echo "No token in response" >&2
+if [ -z "$TOKEN" ]; then
+  echo "No token in response (HTTP $HTTP_CODE). Check App ID, Installation ID, and .pem. Body (first 400 chars):" >&2
+  echo "$BODY" | head -c 400 >&2
+  echo "" >&2
   exit 1
 fi
 echo "$TOKEN"

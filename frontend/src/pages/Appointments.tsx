@@ -276,15 +276,15 @@ export function Appointments() {
   }
 
   const servicesByCategory = services.reduce((acc, service) => {
-    const category = service.category;
+    const category = service?.category ?? 'general';
     if (!acc[category]) {
       acc[category] = [];
     }
-    acc[category]?.push(service);
+    acc[category].push(service);
     return acc;
   }, {} as Record<string, Service[]>)
 
-  const categories = Object.keys(servicesByCategory)
+  const categories = Object.keys(servicesByCategory).sort()
   const selectedService = services.find(s => s.id === newAppointment.service_type)
 
   const filteredAppointments = appointments.filter(apt => {
