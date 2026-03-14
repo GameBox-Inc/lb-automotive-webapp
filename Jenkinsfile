@@ -65,6 +65,10 @@ pipeline {
             steps {
                 echo '🐳 Building Docker images...'
                 script {
+                    // Catch Python syntax/indent errors before building (e.g. IndentationError in webhook.py)
+                    sh """
+                        cd python-backend && python -m compileall -q . && cd ..
+                    """
                     // Build backend
                     sh """
                         docker build -t ${BACKEND_IMAGE}:${BUILD_TAG} -f python-backend/Dockerfile .

@@ -655,7 +655,6 @@ def handle_save_time_choice(user_input, language, CallSid, metadata, response):
         date_spoken = target_date
 
     response.say(get_response("save_time_confirm", language, time_spoken=time_spoken, date_spoken=date_spoken), voice=voice)
-            response.say(f"I’d be happy to get you in at {time_spoken} on {date_spoken}—that’s our closest opening to what you asked for. Next, in a few words, what are you coming in for? For example, oil change or brakes. After the beep.", voice=voice)
     return "collect_symptoms"
 
 
@@ -689,7 +688,7 @@ def handle_emergency(user_input, language, CallSid, metadata, response):
     
     voice = "Polly.Lupe" if language == "es" else "Polly.Matthew"
     response.say(get_response("emergency_intro", language), voice=voice)
-        for idx, s in enumerate(services, 1):
+    for idx, s in enumerate(services, 1):
         response.say(f"For {s['name']}, press {idx}", voice=voice)
     
     gather = Gather(num_digits=1, input="dtmf", action=f"{WEBHOOK_BASE_URL}?step=confirm_emergency")
