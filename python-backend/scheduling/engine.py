@@ -30,15 +30,25 @@ class TimeSlot:
     source: str = "engine"
 
 
+def _naive_dt(dt: datetime) -> datetime:
+    """Normalize to naive datetime so we can compare with slot times (avoid offset-naive vs offset-aware)."""
+    if dt is None:
+        return dt
+    if dt.tzinfo is not None:
+        return dt.replace(tzinfo=None)
+    return dt
+
+
 def _parse_time(value: Union[str, datetime], *, default_tz: str = "America/New_York") -> datetime:
     """Parse ISO or 'YYYY-MM-DD HH:MM' style strings into naive datetimes. Accepts datetime from DB."""
     if isinstance(value, datetime):
-        return value.replace(tzinfo=None) if value.tzinfo else value
+        return _naive_dt(value)
     if not isinstance(value, str):
         # Postgres may return time/datetime; stringify so callers can use with date
         value = str(value)
     try:
-        return datetime.fromisoformat(value.replace("Z", ""))
+        parsed = datetime.fromisoformat(value.replace("Z", "").rstrip())
+        return _naive_dt(parsed)
     except Exception:
         return datetime.strptime(value[:19].replace("T", " "), "%Y-%m-%d %H:%M")
 
@@ -426,6 +436,11 @@ def compute_availability(
 
 
 def _overlaps(a_start: datetime, a_end: datetime, b_start: datetime, b_end: datetime) -> bool:
+    """Compare time ranges; normalize to naive so DB (aware) and slots (naive) compare safely."""
+    a_start = _naive_dt(a_start)
+    a_end = _naive_dt(a_end)
+    b_start = _naive_dt(b_start)
+    b_end = _naive_dt(b_end)
     return not (a_end <= b_start or b_end <= a_start)
 
 
