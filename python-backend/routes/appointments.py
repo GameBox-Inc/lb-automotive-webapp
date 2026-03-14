@@ -120,34 +120,22 @@ def get_appointment(
 @router.post("", response_model=Appointment, status_code=status.HTTP_201_CREATED)
 def create_appointment(
     appointment: AppointmentCreate,
-    current_user: Optional[Dict[str, Any]] = Depends(get_optional_user),
+    current_user: Dict[str, Any] = Depends(get_current_active_user),
     repo: AppointmentRepository = Depends(get_repository)
 ):
-    """Create a new appointment."""
+    """Create a new appointment. Available to all authenticated users (including staff)."""
     try:
-        # Validate and sanitize input
         appointment_data = validate_appointment_data(appointment.model_dump())
-        
-        # Prepare data for repository
-        # Maps Pydantic datetime to string if needed, repository handles converting back?
-        # Repo expects dict with 'appointment_time' as ISO string (from my previous Step 311)
-        # "appointment_data['appointment_time']" (from validate) is likely a string or datetime?
-        # validate_appointment_data returns cleaned dict.
-        
-        # Note: validate_appointment_data keeps time as is or converts?
-        # Let's assume it returns compatible type.
-        # Actually in original code: appointment.appointment_time.isoformat() was passed.
-        appointment_data['appointment_time'] = appointment.appointment_time.isoformat()
-        
-        user_id = current_user["id"] if current_user else None
-        
+        appointment_data["appointment_time"] = appointment.appointment_time.isoformat()
+        user_id = current_user.get("id")
+
         update_phase(PHASE_BOOKING_CREATE)
         return repo.create_appointment(appointment_data, user_id)
-        
+    except HTTPException:
+        raise
     except Exception as e:
-        print(f"Error creating appointment: {str(e)}")
-        traceback.print_exc()
-        raise HTTPException(status_code=500, detail=f"Failed to create appointment: {str(e)}")
+        logging.getLogger(__name__).exception("Create appointment failed: %s", e)
+        raise HTTPException(status_code=500, detail="Failed to create appointment.")
 
 
 @router.put("/{appointment_id}", response_model=Appointment)
