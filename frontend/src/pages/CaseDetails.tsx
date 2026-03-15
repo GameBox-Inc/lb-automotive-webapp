@@ -1,5 +1,6 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useId, useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
+import { Tab } from '@headlessui/react';
 import { apiClient, type CaseHistoryEvent } from '../lib/supabase';
 
 import { ArrowLeft, Save, Plus, Trash2, FileText, CheckCircle, Clock, AlertTriangle, PenTool, Printer, Wrench, Wand2, History } from 'lucide-react';
@@ -40,11 +41,12 @@ interface CaseDetail {
 }
 
 const CaseDetails = () => {
+    const formId = useId();
     const { id } = useParams<{ id: string }>();
     const navigate = useNavigate();
     const [loading, setLoading] = useState(true);
     const [caseData, setCaseData] = useState<CaseDetail | null>(null);
-    const [activeTab, setActiveTab] = useState<'notes' | 'parts' | 'sign' | 'history'>('notes');
+    const [selectedTabIndex, setSelectedTabIndex] = useState(0);
     const [historyEvents, setHistoryEvents] = useState<CaseHistoryEvent[] | null>(null);
     const [historyLoading, setHistoryLoading] = useState(false);
 
@@ -69,7 +71,7 @@ const CaseDetails = () => {
     }, [id]);
 
     useEffect(() => {
-        if (activeTab === 'history' && caseData?.id) {
+        if (selectedTabIndex === 2 && caseData?.id) {
             setHistoryLoading(true);
             apiClient.getCaseHistory(caseData.id)
                 .then(setHistoryEvents)
@@ -79,7 +81,7 @@ const CaseDetails = () => {
                 })
                 .finally(() => setHistoryLoading(false));
         }
-    }, [activeTab, caseData?.id]);
+    }, [selectedTabIndex, caseData?.id]);
 
     async function fetchCaseDetails(caseId: string) {
         console.log('Fetching case details for:', caseId);
@@ -119,7 +121,7 @@ const CaseDetails = () => {
             if (caseData?.id) apiClient.getCaseHistory(caseData.id).then(setHistoryEvents).catch(() => {});
 
             if (newStatus === 'completed') {
-                setActiveTab('sign');
+                setSelectedTabIndex(3);
             }
         } catch (error) {
             toast.error('Failed to update status');
@@ -281,44 +283,44 @@ const CaseDetails = () => {
             </div>
 
             {/* Tabs */}
-            <div className="flex border-b border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 sticky top-0 z-10">
-                <button
-                    onClick={() => setActiveTab('notes')}
-                    className={`flex-1 py-4 text-sm font-medium text-center border-b-2 ${activeTab === 'notes' ? 'border-indigo-500 text-indigo-600' : 'border-transparent text-gray-500 hover:text-gray-700'
-                        }`}
-                >
-                    <FileText className="w-5 h-5 mx-auto mb-1" />
-                    Notes
-                </button>
-                <button
-                    onClick={() => setActiveTab('parts')}
-                    className={`flex-1 py-4 text-sm font-medium text-center border-b-2 ${activeTab === 'parts' ? 'border-indigo-500 text-indigo-600' : 'border-transparent text-gray-500 hover:text-gray-700'
-                        }`}
-                >
-                    <Wrench className="w-5 h-5 mx-auto mb-1" />
-                    Parts
-                </button>
-                <button
-                    onClick={() => setActiveTab('history')}
-                    className={`flex-1 py-4 text-sm font-medium text-center border-b-2 ${activeTab === 'history' ? 'border-indigo-500 text-indigo-600' : 'border-transparent text-gray-500 hover:text-gray-700'
-                        }`}
-                >
-                    <History className="w-5 h-5 mx-auto mb-1" />
-                    History
-                </button>
-                <button
-                    onClick={() => setActiveTab('sign')}
-                    className={`flex-1 py-4 text-sm font-medium text-center border-b-2 ${activeTab === 'sign' ? 'border-indigo-500 text-indigo-600' : 'border-transparent text-gray-500 hover:text-gray-700'
-                        }`}
-                >
-                    <CheckCircle className="w-5 h-5 mx-auto mb-1" />
-                    Sign & Close
-                </button>
-            </div>
+            <Tab.Group selectedIndex={selectedTabIndex} onChange={setSelectedTabIndex}>
+                <Tab.List className="flex border-b border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 sticky top-0 z-10">
+                    <Tab
+                        className={({ selected }) =>
+                            `flex-1 py-4 text-sm font-medium text-center border-b-2 outline-none ${selected ? 'border-indigo-500 text-indigo-600 dark:text-indigo-400' : 'border-transparent text-gray-500 hover:text-gray-700 dark:hover:text-gray-300'}`
+                        }
+                    >
+                        <FileText className="w-5 h-5 mx-auto mb-1" />
+                        Notes
+                    </Tab>
+                    <Tab
+                        className={({ selected }) =>
+                            `flex-1 py-4 text-sm font-medium text-center border-b-2 outline-none ${selected ? 'border-indigo-500 text-indigo-600 dark:text-indigo-400' : 'border-transparent text-gray-500 hover:text-gray-700 dark:hover:text-gray-300'}`
+                        }
+                    >
+                        <Wrench className="w-5 h-5 mx-auto mb-1" />
+                        Parts
+                    </Tab>
+                    <Tab
+                        className={({ selected }) =>
+                            `flex-1 py-4 text-sm font-medium text-center border-b-2 outline-none ${selected ? 'border-indigo-500 text-indigo-600 dark:text-indigo-400' : 'border-transparent text-gray-500 hover:text-gray-700 dark:hover:text-gray-300'}`
+                        }
+                    >
+                        <History className="w-5 h-5 mx-auto mb-1" />
+                        History
+                    </Tab>
+                    <Tab
+                        className={({ selected }) =>
+                            `flex-1 py-4 text-sm font-medium text-center border-b-2 outline-none ${selected ? 'border-indigo-500 text-indigo-600 dark:text-indigo-400' : 'border-transparent text-gray-500 hover:text-gray-700 dark:hover:text-gray-300'}`
+                        }
+                    >
+                        <CheckCircle className="w-5 h-5 mx-auto mb-1" />
+                        Sign & Close
+                    </Tab>
+                </Tab.List>
 
-            {/* Content */}
-            <div className="space-y-6">
-                {activeTab === 'notes' && (
+                <Tab.Panels className="mt-0">
+                <Tab.Panel className="space-y-6">
                     <div className="bg-white dark:bg-gray-800 shadow rounded-lg p-6">
                         <div className="space-y-4 mb-6 max-h-96 overflow-y-auto">
                             {caseData.notes.length === 0 ? (
@@ -336,7 +338,9 @@ const CaseDetails = () => {
                         </div>
                         <form onSubmit={handleAddNote} className="space-y-2">
                             <div className="relative">
+                                <label htmlFor={`${formId}-note`} className="sr-only">Add a note</label>
                                 <textarea
+                                    id={`${formId}-note`}
                                     value={newNote}
                                     onChange={(e) => setNewNote(e.target.value)}
                                     placeholder="Add a note... (Dictate roughly and click wand to polish)"
@@ -362,9 +366,80 @@ const CaseDetails = () => {
                             </button>
                         </form>
                     </div>
-                )}
+                </Tab.Panel>
 
-                {activeTab === 'history' && (
+                <Tab.Panel>
+                    <div className="bg-white dark:bg-gray-800 shadow rounded-lg p-6">
+                        <div className="space-y-4 mb-6">
+                            {caseData.parts.map(part => (
+                                <div key={part.id} className="flex justify-between items-center py-2 border-b border-gray-100 dark:border-gray-700">
+                                    <div>
+                                        <div className="font-medium text-gray-900 dark:text-white">{part.part_name}</div>
+                                        <div className="text-sm text-gray-500">Qty: {part.quantity} @ {formatCurrency(part.price)} each</div>
+                                    </div>
+                                    <div className="font-mono font-medium">
+                                        {formatCurrency(part.price * part.quantity)}
+                                    </div>
+                                </div>
+                            ))}
+                            <div className="flex justify-between items-center pt-2 font-bold text-lg">
+                                <span>Total Parts Cost:</span>
+                                <span>
+                                    {formatCurrency(caseData.parts.reduce((sum, part) => sum + (part.price * part.quantity), 0))}
+                                </span>
+                            </div>
+                        </div>
+
+                        <form onSubmit={handleAddPart} className="space-y-4 bg-gray-50 dark:bg-gray-700/50 p-4 rounded-lg">
+                            <h3 className="text-sm font-medium text-gray-900 dark:text-white">Add Part</h3>
+                            <div className="grid grid-cols-6 gap-4">
+                                <div className="col-span-3">
+                                    <label htmlFor={`${formId}-part-name`} className="sr-only">Part Name</label>
+                                    <input
+                                        id={`${formId}-part-name`}
+                                        type="text"
+                                        value={newPartName}
+                                        onChange={(e) => setNewPartName(e.target.value)}
+                                        placeholder="Part Name"
+                                        className="w-full rounded-md border-gray-300 shadow-sm sm:text-sm text-gray-900 dark:bg-gray-800 dark:border-gray-600 dark:text-white dark:placeholder:text-gray-400"
+                                    />
+                                </div>
+                                <div className="col-span-1">
+                                    <label htmlFor={`${formId}-part-qty`} className="sr-only">Quantity</label>
+                                    <input
+                                        id={`${formId}-part-qty`}
+                                        type="number"
+                                        value={newPartQty}
+                                        onChange={(e) => setNewPartQty(parseInt(e.target.value))}
+                                        min="1"
+                                        className="w-full rounded-md border-gray-300 shadow-sm sm:text-sm text-gray-900 dark:bg-gray-800 dark:border-gray-600 dark:text-white dark:placeholder:text-gray-400"
+                                    />
+                                </div>
+                                <div className="col-span-2">
+                                    <label htmlFor={`${formId}-part-price`} className="sr-only">Price</label>
+                                    <input
+                                        id={`${formId}-part-price`}
+                                        type="number"
+                                        value={newPartPrice}
+                                        onChange={(e) => setNewPartPrice(e.target.value)}
+                                        placeholder="Price"
+                                        step="0.01"
+                                        className="w-full rounded-md border-gray-300 shadow-sm sm:text-sm text-gray-900 dark:bg-gray-800 dark:border-gray-600 dark:text-white dark:placeholder:text-gray-400"
+                                    />
+                                </div>
+                            </div>
+                            <button
+                                type="submit"
+                                className="w-full px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700"
+                            >
+                                <Plus className="h-4 w-4 inline-block mr-2" />
+                                Add Part
+                            </button>
+                        </form>
+                    </div>
+                </Tab.Panel>
+
+                <Tab.Panel>
                     <div className="bg-white dark:bg-gray-800 shadow rounded-lg p-6">
                         <h3 className="text-lg font-medium text-gray-900 dark:text-white mb-4">Repair history</h3>
                         <p className="text-sm text-gray-500 dark:text-gray-400 mb-4">Chronological audit trail of status changes, notes, and parts.</p>
@@ -404,74 +479,9 @@ const CaseDetails = () => {
                             </ul>
                         )}
                     </div>
-                )}
+                </Tab.Panel>
 
-                {activeTab === 'parts' && (
-                    <div className="bg-white dark:bg-gray-800 shadow rounded-lg p-6">
-                        <div className="space-y-4 mb-6">
-                            {caseData.parts.map(part => (
-                                <div key={part.id} className="flex justify-between items-center py-2 border-b border-gray-100 dark:border-gray-700">
-                                    <div>
-                                        <div className="font-medium text-gray-900 dark:text-white">{part.part_name}</div>
-                                        <div className="text-sm text-gray-500">Qty: {part.quantity} @ {formatCurrency(part.price)} each</div>
-                                    </div>
-                                    <div className="font-mono font-medium">
-                                        {formatCurrency(part.price * part.quantity)}
-                                    </div>
-                                </div>
-                            ))}
-                            <div className="flex justify-between items-center pt-2 font-bold text-lg">
-                                <span>Total Parts Cost:</span>
-                                <span>
-                                    {formatCurrency(caseData.parts.reduce((sum, part) => sum + (part.price * part.quantity), 0))}
-                                </span>
-                            </div>
-                        </div>
-
-                        <form onSubmit={handleAddPart} className="space-y-4 bg-gray-50 dark:bg-gray-700/50 p-4 rounded-lg">
-                            <h3 className="text-sm font-medium text-gray-900 dark:text-white">Add Part</h3>
-                            <div className="grid grid-cols-6 gap-4">
-                                <div className="col-span-3">
-                                    <input
-                                        type="text"
-                                        value={newPartName}
-                                        onChange={(e) => setNewPartName(e.target.value)}
-                                        placeholder="Part Name"
-                                        className="w-full rounded-md border-gray-300 shadow-sm sm:text-sm text-gray-900 dark:bg-gray-800 dark:border-gray-600 dark:text-white dark:placeholder:text-gray-400"
-                                    />
-                                </div>
-                                <div className="col-span-1">
-                                    <input
-                                        type="number"
-                                        value={newPartQty}
-                                        onChange={(e) => setNewPartQty(parseInt(e.target.value))}
-                                        min="1"
-                                        className="w-full rounded-md border-gray-300 shadow-sm sm:text-sm text-gray-900 dark:bg-gray-800 dark:border-gray-600 dark:text-white dark:placeholder:text-gray-400"
-                                    />
-                                </div>
-                                <div className="col-span-2">
-                                    <input
-                                        type="number"
-                                        value={newPartPrice}
-                                        onChange={(e) => setNewPartPrice(e.target.value)}
-                                        placeholder="Price"
-                                        step="0.01"
-                                        className="w-full rounded-md border-gray-300 shadow-sm sm:text-sm text-gray-900 dark:bg-gray-800 dark:border-gray-600 dark:text-white dark:placeholder:text-gray-400"
-                                    />
-                                </div>
-                            </div>
-                            <button
-                                type="submit"
-                                className="w-full px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700"
-                            >
-                                <Plus className="h-4 w-4 inline-block mr-2" />
-                                Add Part
-                            </button>
-                        </form>
-                    </div>
-                )}
-
-                {activeTab === 'sign' && (
+                <Tab.Panel>
                     <div className="bg-white dark:bg-gray-800 shadow rounded-lg p-6">
                         <h3 className="text-lg font-medium text-gray-900 dark:text-white mb-4">Customer Authorization</h3>
 
@@ -534,8 +544,9 @@ const CaseDetails = () => {
                             </>
                         )}
                     </div>
-                )}
-            </div>
+                </Tab.Panel>
+                </Tab.Panels>
+            </Tab.Group>
         </div>
     );
 };

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, startTransition } from 'react'
+import React, { useId, useState, useEffect, startTransition } from 'react'
 import { useLocation, useNavigate, Link } from 'react-router-dom'
 import { useAppDispatch, useAppSelector } from '../store/hooks'
 import { fetchServices, fetchStaff } from '../store/slices/shopSlice'
@@ -8,6 +8,7 @@ import { AppointmentCard } from '../components/AppointmentCard'
 import { DailyTimeline } from '../components/DailyTimeline'
 import { LoadingSpinner } from '../components/LoadingSpinner'
 import { VoicePrompt } from '../components/VoicePrompt'
+import { Dialog, DialogPanel, DialogTitle, Transition, TransitionChild } from '@headlessui/react';
 import { Plus, Search, Calendar, Clock, X, Maximize2, Minimize2, RefreshCw } from 'lucide-react';
 import { format, parseISO } from 'date-fns';
 import toast from 'react-hot-toast'
@@ -15,6 +16,7 @@ import { Appointment, Service, Customer } from '../types'
 import { VEHICLE_MAKE_MODEL_OPTIONS, COMMON_COLORS } from '../constants/vehicleData'
 
 export function Appointments() {
+  const formId = useId()
   const navigate = useNavigate()
   const location = useLocation()
   const dispatch = useAppDispatch()
@@ -325,7 +327,7 @@ export function Appointments() {
             <button
               type="button"
               onClick={() => navigate('/appointments')}
-              className="inline-flex items-center gap-2 px-3 py-2 rounded-xl bg-[#B91C1C] text-white text-sm font-medium hover:opacity-95"
+              className="inline-flex items-center gap-2 px-3 py-2 rounded-xl bg-lb-red-primary text-white text-sm font-medium hover:opacity-95"
               title="Exit wallboard"
             >
               <Minimize2 className="h-4 w-4" />
@@ -598,27 +600,58 @@ export function Appointments() {
         </>
       )}
 
-      {showAddModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white dark:bg-gray-800 p-6 rounded-lg w-full max-w-md max-h-[90vh] overflow-y-auto">
-            <div className="flex justify-between items-center mb-4">
-              <h3 className="text-lg font-medium text-gray-900 dark:text-white">New Appointment</h3>
-              <button onClick={() => {
-                setShowAddModal(false)
-                resetForm()
-              }}>
-                <X className="h-5 w-5 text-gray-500 dark:text-gray-400" />
-              </button>
-            </div>
+      <Transition show={showAddModal}>
+        <Dialog
+          open={showAddModal}
+          onClose={() => {
+            setShowAddModal(false)
+            resetForm()
+          }}
+          className="relative z-50"
+        >
+          <TransitionChild
+            enter="ease-out duration-200"
+            enterFrom="opacity-0"
+            enterTo="opacity-100"
+            leave="ease-in duration-150"
+            leaveFrom="opacity-100"
+            leaveTo="opacity-0"
+          >
+            <div className="fixed inset-0 bg-black/50" aria-hidden="true" />
+          </TransitionChild>
+          <div className="fixed inset-0 flex items-center justify-center p-4">
+            <TransitionChild
+              enter="ease-out duration-200"
+              enterFrom="opacity-0 scale-95"
+              enterTo="opacity-100 scale-100"
+              leave="ease-in duration-150"
+              leaveFrom="opacity-100 scale-100"
+              leaveTo="opacity-0 scale-95"
+            >
+              <DialogPanel className="bg-white dark:bg-gray-800 p-6 rounded-lg w-full max-w-md max-h-[90vh] overflow-y-auto shadow-xl">
+                <div className="flex justify-between items-center mb-4">
+                  <DialogTitle className="text-lg font-medium text-gray-900 dark:text-white">New Appointment</DialogTitle>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowAddModal(false)
+                      resetForm()
+                    }}
+                    className="text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200"
+                  >
+                    <X className="h-5 w-5" />
+                  </button>
+                </div>
 
-            <form onSubmit={handleAddAppointment} className="space-y-4">
+                <form onSubmit={handleAddAppointment} className="space-y-4">
               <div className="relative">
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
+                <label htmlFor={`${formId}-customer`} className="block text-sm font-medium text-gray-700 dark:text-gray-300">
                   Customer
                 </label>
                 <div className="mt-1 relative">
                   <div className="flex">
                     <input
+                      id={`${formId}-customer`}
                       type="text"
                       placeholder="Search or enter name..."
                       value={newAppointment.customer_name}
@@ -652,10 +685,11 @@ export function Appointments() {
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
+                <label htmlFor={`${formId}-phone`} className="block text-sm font-medium text-gray-700 dark:text-gray-300">
                   Phone Number
                 </label>
                 <input
+                  id={`${formId}-phone`}
                   type="tel"
                   value={newAppointment.phone_number}
                   onChange={e => setNewAppointment({ ...newAppointment, phone_number: e.target.value })}
@@ -665,10 +699,11 @@ export function Appointments() {
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
+                <label htmlFor={`${formId}-category`} className="block text-sm font-medium text-gray-700 dark:text-gray-300">
                   Service Category
                 </label>
                 <select
+                  id={`${formId}-category`}
                   value={selectedCategory}
                   onChange={e => {
                     setSelectedCategory(e.target.value)
@@ -688,10 +723,11 @@ export function Appointments() {
 
               {selectedCategory && (
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
+                  <label htmlFor={`${formId}-service`} className="block text-sm font-medium text-gray-700 dark:text-gray-300">
                     Service Type
                   </label>
                   <select
+                    id={`${formId}-service`}
                     value={newAppointment.service_type}
                     onChange={e => setNewAppointment({ ...newAppointment, service_type: e.target.value, appointment_time: '' })}
                     className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 dark:bg-gray-700 dark:border-gray-600 dark:text-white"
@@ -713,10 +749,11 @@ export function Appointments() {
               )}
 
               <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
+                <label htmlFor={`${formId}-date`} className="block text-sm font-medium text-gray-700 dark:text-gray-300">
                   Date
                 </label>
                 <input
+                  id={`${formId}-date`}
                   type="date"
                   value={selectedDate}
                   onChange={(e) => setSelectedDate(e.target.value)}
@@ -767,10 +804,11 @@ export function Appointments() {
               {/* Optional Vehicle Details (dropdowns; pre-filled from customer profile when set) */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
+                  <label htmlFor={`${formId}-vmake`} className="block text-sm font-medium text-gray-700 dark:text-gray-300">
                     Vehicle Make (optional)
                   </label>
                   <select
+                    id={`${formId}-vmake`}
                     value={newAppointment.vehicle_make}
                     onChange={e => setNewAppointment({ ...newAppointment, vehicle_make: e.target.value, vehicle_model: '' })}
                     className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 dark:bg-gray-700 dark:border-gray-600 dark:text-white"
@@ -782,10 +820,11 @@ export function Appointments() {
                   </select>
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
+                  <label htmlFor={`${formId}-vmodel`} className="block text-sm font-medium text-gray-700 dark:text-gray-300">
                     Vehicle Model (optional)
                   </label>
                   <select
+                    id={`${formId}-vmodel`}
                     value={newAppointment.vehicle_model}
                     onChange={e => setNewAppointment({ ...newAppointment, vehicle_model: e.target.value })}
                     className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 dark:bg-gray-700 dark:border-gray-600 dark:text-white"
@@ -800,10 +839,11 @@ export function Appointments() {
               </div>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
+                  <label htmlFor={`${formId}-vcolor`} className="block text-sm font-medium text-gray-700 dark:text-gray-300">
                     Vehicle Color (optional)
                   </label>
                   <select
+                    id={`${formId}-vcolor`}
                     value={newAppointment.vehicle_color}
                     onChange={e => setNewAppointment({ ...newAppointment, vehicle_color: e.target.value })}
                     className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 dark:bg-gray-700 dark:border-gray-600 dark:text-white"
@@ -815,10 +855,11 @@ export function Appointments() {
                   </select>
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
+                  <label htmlFor={`${formId}-vyear`} className="block text-sm font-medium text-gray-700 dark:text-gray-300">
                     Vehicle Year (optional)
                   </label>
                   <select
+                    id={`${formId}-vyear`}
                     value={newAppointment.vehicle_year ?? ''}
                     onChange={e => setNewAppointment({ ...newAppointment, vehicle_year: Number(e.target.value) || new Date().getFullYear() })}
                     className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 dark:bg-gray-700 dark:border-gray-600 dark:text-white"
@@ -832,10 +873,11 @@ export function Appointments() {
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
+                <label htmlFor={`${formId}-notes`} className="block text-sm font-medium text-gray-700 dark:text-gray-300">
                   Notes
                 </label>
                 <textarea
+                  id={`${formId}-notes`}
                   value={newAppointment.notes}
                   onChange={e => setNewAppointment({ ...newAppointment, notes: e.target.value })}
                   className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 dark:bg-gray-700 dark:border-gray-600 dark:text-white"
@@ -846,12 +888,12 @@ export function Appointments() {
               <div className="flex items-center">
                 <input
                   type="checkbox"
-                  id="emergency_request"
+                  id={`${formId}-emergency`}
                   checked={newAppointment.emergency_request}
                   onChange={e => setNewAppointment({ ...newAppointment, emergency_request: e.target.checked })}
                   className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded dark:bg-gray-700 dark:border-gray-600"
                 />
-                <label htmlFor="emergency_request" className="ml-2 block text-sm text-gray-900 dark:text-white">
+                <label htmlFor={`${formId}-emergency`} className="ml-2 block text-sm text-gray-900 dark:text-white">
                   Emergency Request
                 </label>
               </div>
@@ -874,10 +916,12 @@ export function Appointments() {
                   Create Appointment
                 </button>
               </div>
-            </form>
+                </form>
+              </DialogPanel>
+            </TransitionChild>
           </div>
-        </div>
-      )}
+        </Dialog>
+      </Transition>
 
       <VoicePrompt onAppointmentCreated={fetchAppointments} />
     </div>

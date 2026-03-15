@@ -1,4 +1,5 @@
-import React, { useState, useEffect } from 'react'
+import React, { useId, useState, useEffect } from 'react'
+import { Dialog, DialogPanel, DialogTitle, Transition, TransitionChild } from '@headlessui/react'
 import { LoadingSpinner } from '../components/LoadingSpinner'
 import { Search, Plus, Edit2, Trash2, X, AlertTriangle, Filter, Clock, DollarSign, AlertCircle, Pencil, Tag, Save } from 'lucide-react'
 import { formatCurrency } from '../utils/format'
@@ -7,6 +8,7 @@ import { apiClient, Service } from '../lib/supabase'
 import toast from 'react-hot-toast'
 
 export function Services() {
+  const formId = useId()
   const [services, setServices] = useState<Service[]>([])
   const [loading, setLoading] = useState(true)
   const [isAdmin, setIsAdmin] = useState(false)
@@ -214,23 +216,29 @@ export function Services() {
         )
       })}
 
-      {showModal && (
-        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">
-            <div className="flex justify-between items-center p-6 border-b sticky top-0 bg-white z-10">
-              <h3 className="text-xl font-bold text-gray-900 flex items-center gap-2">
-                {isEditing ? <Pencil className="h-5 w-5 text-indigo-600" /> : <Plus className="h-5 w-5 text-red-600" />}
-                {isEditing ? 'Edit Service' : 'Add New Service'}
-              </h3>
-              <button
-                onClick={() => setShowModal(false)}
-                className="p-2 hover:bg-gray-100 rounded-full transition-colors"
-              >
-                <X className="h-5 w-5 text-gray-500" />
-              </button>
-            </div>
+      <Transition show={showModal}>
+        <Dialog open={showModal} onClose={() => setShowModal(false)} className="relative z-50">
+          <TransitionChild enter="ease-out duration-200" enterFrom="opacity-0" enterTo="opacity-100" leave="ease-in duration-150" leaveFrom="opacity-100" leaveTo="opacity-0">
+            <div className="fixed inset-0 bg-black/50 backdrop-blur-sm" aria-hidden="true" />
+          </TransitionChild>
+          <div className="fixed inset-0 flex items-center justify-center p-4">
+            <TransitionChild enter="ease-out duration-200" enterFrom="opacity-0 scale-95" enterTo="opacity-100 scale-100" leave="ease-in duration-150" leaveFrom="opacity-100 scale-100" leaveTo="opacity-0 scale-95">
+              <DialogPanel className="bg-white dark:bg-gray-800 rounded-xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">
+                <div className="flex justify-between items-center p-6 border-b border-gray-200 dark:border-gray-700 sticky top-0 bg-white dark:bg-gray-800 z-10">
+                  <DialogTitle className="text-xl font-bold text-gray-900 dark:text-white flex items-center gap-2">
+                    {isEditing ? <Pencil className="h-5 w-5 text-indigo-600" /> : <Plus className="h-5 w-5 text-red-600" />}
+                    {isEditing ? 'Edit Service' : 'Add New Service'}
+                  </DialogTitle>
+                  <button
+                    type="button"
+                    onClick={() => setShowModal(false)}
+                    className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-full transition-colors"
+                  >
+                    <X className="h-5 w-5 text-gray-500" />
+                  </button>
+                </div>
 
-            <form onSubmit={handleSubmit} className="p-6 space-y-6">
+                <form onSubmit={handleSubmit} className="p-6 space-y-6">
 
               {/* Basic Info Section */}
               <div className="space-y-6">
@@ -238,8 +246,9 @@ export function Services() {
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                   <div className="col-span-2">
-                    <label className="block text-sm font-medium text-gray-700 mb-2">Service Name</label>
+                    <label htmlFor={`${formId}-name`} className="block text-sm font-medium text-gray-700 mb-2">Service Name</label>
                     <input
+                      id={`${formId}-name`}
                       type="text"
                       value={currentService.name}
                       onChange={e => setCurrentService({ ...currentService, name: e.target.value })}
@@ -250,8 +259,9 @@ export function Services() {
                   </div>
 
                   <div className="col-span-2">
-                    <label className="block text-sm font-medium text-gray-700 mb-2">Description</label>
+                    <label htmlFor={`${formId}-description`} className="block text-sm font-medium text-gray-700 mb-2">Description</label>
                     <textarea
+                      id={`${formId}-description`}
                       value={currentService.description}
                       onChange={e => setCurrentService({ ...currentService, description: e.target.value })}
                       className="w-full px-4 py-2 rounded-lg border border-gray-300 focus:ring-2 focus:ring-red-500 focus:border-red-500 transition-all text-gray-900 placeholder:text-gray-500"
@@ -262,13 +272,14 @@ export function Services() {
                   </div>
 
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                    <label htmlFor={`${formId}-category`} className="block text-sm font-medium text-gray-700 mb-2">
                       <div className="flex items-center gap-2">
                         <Tag className="h-4 w-4" />
                         Category
                       </div>
                     </label>
                     <input
+                      id={`${formId}-category`}
                       type="text"
                       list="service-categories"
                       value={currentService.category}
@@ -284,8 +295,9 @@ export function Services() {
                   </div>
 
                   <div>
-                    <label className="flex items-center gap-2 cursor-pointer mt-8 p-2 rounded-lg hover:bg-gray-50 transition-colors border border-transparent hover:border-gray-200">
+                    <label htmlFor={`${formId}-emergency`} className="flex items-center gap-2 cursor-pointer mt-8 p-2 rounded-lg hover:bg-gray-50 transition-colors border border-transparent hover:border-gray-200">
                       <input
+                        id={`${formId}-emergency`}
                         type="checkbox"
                         checked={currentService.is_emergency}
                         onChange={e => setCurrentService({ ...currentService, is_emergency: e.target.checked })}
@@ -306,13 +318,14 @@ export function Services() {
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                    <label htmlFor={`${formId}-duration`} className="block text-sm font-medium text-gray-700 mb-2">
                       <div className="flex items-center gap-2">
                         <Clock className="h-4 w-4" />
                         Duration (minutes)
                       </div>
                     </label>
                     <input
+                      id={`${formId}-duration`}
                       type="number"
                       value={currentService.duration}
                       onChange={e => setCurrentService({ ...currentService, duration: parseInt(e.target.value) })}
@@ -323,7 +336,7 @@ export function Services() {
                     />
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                    <label htmlFor={`${formId}-price`} className="block text-sm font-medium text-gray-700 mb-2">
                       <div className="flex items-center gap-2">
                         <DollarSign className="h-4 w-4" />
                         Price ($)
@@ -332,6 +345,7 @@ export function Services() {
                     <div className="relative">
                       <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500">$</span>
                       <input
+                        id={`${formId}-price`}
                         type="number"
                         value={currentService.price}
                         onChange={e => setCurrentService({ ...currentService, price: parseFloat(e.target.value) })}
@@ -384,9 +398,11 @@ export function Services() {
                 </button>
               </div>
             </form>
+              </DialogPanel>
+            </TransitionChild>
           </div>
-        </div>
-      )}
+        </Dialog>
+      </Transition>
     </div>
   )
 }

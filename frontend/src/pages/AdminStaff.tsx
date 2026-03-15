@@ -1,4 +1,5 @@
-import React, { useEffect, useState } from 'react';
+import React, { useId, useEffect, useState } from 'react';
+import { Dialog, DialogPanel, DialogTitle, Transition, TransitionChild } from '@headlessui/react';
 import { apiClient, Staff, StaffSchedule } from '../lib/supabase';
 import { Users, Calendar, UserPlus, Trash2, Clock, Save, X } from 'lucide-react';
 import toast from 'react-hot-toast';
@@ -7,6 +8,7 @@ import { LoadingSpinner } from '../components/LoadingSpinner';
 const DAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
 
 const AdminStaff = () => {
+    const formId = useId();
     const [activeTab, setActiveTab] = useState<'list' | 'schedule'>('list');
     const [staff, setStaff] = useState<Staff[]>([]);
     const [loading, setLoading] = useState(true);
@@ -222,8 +224,9 @@ const AdminStaff = () => {
                         <form onSubmit={handleAddStaff} className="mb-6 bg-gray-50 dark:bg-gray-700/50 p-4 rounded-lg">
                             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                                 <div>
-                                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Name</label>
+                                    <label htmlFor={`${formId}-name`} className="block text-sm font-medium text-gray-700 dark:text-gray-300">Name</label>
                                     <input
+                                        id={`${formId}-name`}
                                         type="text"
                                         value={newStaffName}
                                         onChange={(e) => setNewStaffName(e.target.value)}
@@ -232,8 +235,9 @@ const AdminStaff = () => {
                                     />
                                 </div>
                                 <div>
-                                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Role</label>
+                                    <label htmlFor={`${formId}-role`} className="block text-sm font-medium text-gray-700 dark:text-gray-300">Role</label>
                                     <select
+                                        id={`${formId}-role`}
                                         value={newStaffRole}
                                         onChange={(e) => setNewStaffRole(e.target.value)}
                                         className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm dark:bg-gray-700 dark:border-gray-600 dark:text-white"
@@ -297,19 +301,25 @@ const AdminStaff = () => {
                     </div>
 
                     {/* Credentials Modal */}
-                    {showCredsModal && (
-                        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-                            <div className="bg-white dark:bg-gray-800 rounded-lg max-w-md w-full p-6 shadow-xl">
-                                <div className="flex justify-between items-center mb-4">
-                                    <h3 className="text-lg font-medium text-gray-900 dark:text-white">Manage Credentials</h3>
-                                    <button onClick={() => setShowCredsModal(false)} className="text-gray-400 hover:text-gray-500">
-                                        <X className="h-5 w-5" />
-                                    </button>
-                                </div>
-                                <form onSubmit={handleSaveCredentials} className="space-y-4">
+                    <Transition show={showCredsModal}>
+                        <Dialog open={showCredsModal} onClose={() => setShowCredsModal(false)} className="relative z-50">
+                            <TransitionChild enter="ease-out duration-200" enterFrom="opacity-0" enterTo="opacity-100" leave="ease-in duration-150" leaveFrom="opacity-100" leaveTo="opacity-0">
+                                <div className="fixed inset-0 bg-black/50" aria-hidden="true" />
+                            </TransitionChild>
+                            <div className="fixed inset-0 flex items-center justify-center p-4">
+                                <TransitionChild enter="ease-out duration-200" enterFrom="opacity-0 scale-95" enterTo="opacity-100 scale-100" leave="ease-in duration-150" leaveFrom="opacity-100 scale-100" leaveTo="opacity-0 scale-95">
+                                    <DialogPanel className="bg-white dark:bg-gray-800 rounded-lg max-w-md w-full p-6 shadow-xl">
+                                        <div className="flex justify-between items-center mb-4">
+                                            <DialogTitle className="text-lg font-medium text-gray-900 dark:text-white">Manage Credentials</DialogTitle>
+                                            <button type="button" onClick={() => setShowCredsModal(false)} className="text-gray-400 hover:text-gray-500 dark:hover:text-gray-200">
+                                                <X className="h-5 w-5" />
+                                            </button>
+                                        </div>
+                                        <form onSubmit={handleSaveCredentials} className="space-y-4">
                                     <div>
-                                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Username</label>
+                                        <label htmlFor={`${formId}-username`} className="block text-sm font-medium text-gray-700 dark:text-gray-300">Username</label>
                                         <input
+                                            id={`${formId}-username`}
                                             type="text"
                                             value={credsData.username}
                                             onChange={e => setCredsData({ ...credsData, username: e.target.value })}
@@ -318,11 +328,12 @@ const AdminStaff = () => {
                                         />
                                     </div>
                                     <div>
-                                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
+                                        <label htmlFor={`${formId}-password`} className="block text-sm font-medium text-gray-700 dark:text-gray-300">
                                             Password
                                             <span className="text-xs text-gray-500 ml-2 font-normal">(Leave blank to keep unchanged)</span>
                                         </label>
                                         <input
+                                            id={`${formId}-password`}
                                             type="password"
                                             value={credsData.password}
                                             onChange={e => setCredsData({ ...credsData, password: e.target.value })}
@@ -333,12 +344,12 @@ const AdminStaff = () => {
                                     <div className="flex items-center">
                                         <input
                                             type="checkbox"
-                                            id="isAdmin"
+                                            id={`${formId}-isAdmin`}
                                             checked={credsData.is_admin}
                                             onChange={e => setCredsData({ ...credsData, is_admin: e.target.checked })}
                                             className="h-4 w-4 text-indigo-600 focus:ring-indigo-500 border-gray-300 rounded"
                                         />
-                                        <label htmlFor="isAdmin" className="ml-2 block text-sm text-gray-900 dark:text-white">
+                                        <label htmlFor={`${formId}-isAdmin`} className="ml-2 block text-sm text-gray-900 dark:text-white">
                                             Grant Admin Access
                                         </label>
                                     </div>
@@ -359,17 +370,20 @@ const AdminStaff = () => {
                                         </button>
                                     </div>
                                 </form>
+                                    </DialogPanel>
+                                </TransitionChild>
                             </div>
-                        </div>
-                    )}
+                        </Dialog>
+                    </Transition>
                 </div>
             ) : (
                 // Schedule View
                 <div className="bg-white dark:bg-gray-800 shadow rounded-lg p-6">
                     <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6 gap-4">
                         <div className="w-full sm:w-64">
-                            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Select Staff Member</label>
+                            <label htmlFor={`${formId}-staff-select`} className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Select Staff Member</label>
                             <select
+                                id={`${formId}-staff-select`}
                                 value={selectedStaffId || ''}
                                 onChange={(e) => setSelectedStaffId(e.target.value)}
                                 className="block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm dark:bg-gray-700 dark:border-gray-600 dark:text-white"

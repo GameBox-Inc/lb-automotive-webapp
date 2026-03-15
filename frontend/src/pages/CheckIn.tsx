@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react'
+import React, { useId, useState, useEffect } from 'react'
 import { Phone, CheckCircle, ChevronRight } from 'lucide-react'
 import { apiClient, Service, Customer } from '../lib/supabase'
 import { formatCurrency } from '../utils/format'
@@ -9,6 +9,7 @@ import { format, parseISO } from 'date-fns'
 import { VEHICLE_MAKE_MODEL_OPTIONS } from '../constants/vehicleData'
 
 export default function CheckIn() {
+    const baseId = useId()
     const navigate = useNavigate()
     const [step, setStep] = useState<'phone' | 'confirm' | 'services' | 'time' | 'success'>('phone')
     const [phoneNumber, setPhoneNumber] = useState('')
@@ -244,7 +245,7 @@ export default function CheckIn() {
 
             <div className="w-full max-w-lg bg-white rounded-2xl shadow-xl overflow-hidden">
                 <div
-                    className="bg-[#B91C1C] p-6 text-white text-center cursor-pointer select-none"
+                    className="bg-lb-red-primary p-6 text-white text-center cursor-pointer select-none"
                     onClick={handleLogoClick}
                 >
                     <h1 className="text-3xl font-bold font-heading">LB AUTO REPAIR</h1>
@@ -261,14 +262,14 @@ export default function CheckIn() {
 
                             <form onSubmit={handlePhoneSubmit} className="space-y-6">
                                 <div>
-                                    <label htmlFor="phone" className="sr-only">Phone Number</label>
+                                    <label htmlFor={`${baseId}-phone`} className="sr-only">Phone Number</label>
                                     <div className="relative">
                                         <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
                                             <Phone className="h-6 w-6 text-gray-400" />
                                         </div>
                                         <input
                                             type="tel"
-                                            id="phone"
+                                            id={`${baseId}-phone`}
                                             required
                                             className="block w-full pl-12 pr-4 py-4 text-2xl border-gray-300 rounded-lg focus:ring-red-500 focus:border-red-500 text-center tracking-widest text-gray-900 placeholder:text-gray-500"
                                             placeholder="(555) 555-5555"
@@ -302,9 +303,10 @@ export default function CheckIn() {
 
                             {!customer && (
                                 <div>
-                                    <label className="block text-sm font-medium text-gray-700">Full Name</label>
+                                    <label htmlFor={`${baseId}-name`} className="block text-sm font-medium text-gray-700">Full Name</label>
                                     <div className="mt-1">
                                         <input
+                                            id={`${baseId}-name`}
                                             type="text"
                                             required
                                             className="block w-full border-gray-300 rounded-md shadow-sm focus:ring-red-500 focus:border-red-500 sm:text-lg p-3 text-gray-900 placeholder:text-gray-500"
@@ -372,10 +374,11 @@ export default function CheckIn() {
 
                             <div className="space-y-4">
                                 <div>
-                                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                                    <label htmlFor={`${baseId}-date`} className="block text-sm font-medium text-gray-700 mb-1">
                                         Date
                                     </label>
                                     <input
+                                        id={`${baseId}-date`}
                                         type="date"
                                         value={selectedDate}
                                         onChange={(e) => {
@@ -422,10 +425,11 @@ export default function CheckIn() {
                             {/* Optional vehicle make/model selection */}
                             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                                 <div>
-                                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                                    <label htmlFor={`${baseId}-make`} className="block text-sm font-medium text-gray-700 mb-1">
                                         Vehicle Make (optional)
                                     </label>
                                     <select
+                                        id={`${baseId}-make`}
                                         value={vehicleMake}
                                         onChange={(e) => {
                                             setVehicleMake(e.target.value)
@@ -442,10 +446,11 @@ export default function CheckIn() {
                                     </select>
                                 </div>
                                 <div>
-                                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                                    <label htmlFor={`${baseId}-model`} className="block text-sm font-medium text-gray-700 mb-1">
                                         Vehicle Model (optional)
                                     </label>
                                     <select
+                                        id={`${baseId}-model`}
                                         value={vehicleModel}
                                         onChange={(e) => setVehicleModel(e.target.value)}
                                         className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-red-500 focus:ring-red-500 text-gray-900"

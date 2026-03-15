@@ -1,10 +1,11 @@
-import React, { useState, useEffect } from 'react'
+import React, { useId, useState, useEffect } from 'react'
 import { apiClient } from '../lib/supabase'
 import { Setting } from '../types'
 import toast from 'react-hot-toast'
 import { LoadingSpinner } from '../components/LoadingSpinner'
 
 export function Settings() {
+  const formId = useId()
   const [settings, setSettings] = useState<Record<string, string>>({})
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
@@ -78,13 +79,14 @@ export function Settings() {
 
             {/* Timezone Setting */}
             <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
+              <label htmlFor={`${formId}-timezone`} className="block text-sm font-medium text-gray-700 dark:text-gray-300">
                 Business Timezone
               </label>
               <p className="text-sm text-gray-500 dark:text-gray-400 mb-2">
                 All appointments and schedules will be displayed in this timezone.
               </p>
               <select
+                id={`${formId}-timezone`}
                 value={settings['timezone'] || 'America/New_York'}
                 onChange={(e) => handleSave('timezone', e.target.value)}
                 disabled={saving}
@@ -98,13 +100,14 @@ export function Settings() {
 
             {/* Staff Count Setting */}
             <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
+              <label htmlFor={`${formId}-staff-count`} className="block text-sm font-medium text-gray-700 dark:text-gray-300">
                 Daily Staff Count
               </label>
               <p className="text-sm text-gray-500 dark:text-gray-400 mb-2">
                 Maximum number of active staff visible on the schedule.
               </p>
               <input
+                id={`${formId}-staff-count`}
                 type="number"
                 value={settings['staff_count'] || '5'}
                 onChange={(e) => handleSave('staff_count', e.target.value)}
@@ -115,10 +118,11 @@ export function Settings() {
 
             {/* Business Email */}
             <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
+              <label htmlFor={`${formId}-email`} className="block text-sm font-medium text-gray-700 dark:text-gray-300">
                 Business Email
               </label>
               <input
+                id={`${formId}-email`}
                 type="email"
                 defaultValue="contact@lbautomotive.com"
                 className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 dark:bg-gray-700 dark:border-gray-600 dark:text-white sm:text-sm"

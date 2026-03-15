@@ -1,4 +1,4 @@
-import React, { useState, startTransition } from 'react'
+import React, { useId, useState, startTransition } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Wrench, User, Lock, ArrowRight, Check, Loader2 } from 'lucide-react'
 import { apiClient } from '../lib/supabase'
@@ -7,6 +7,7 @@ import { useAppDispatch, useAppSelector } from '../store/hooks'
 import { loginUser, registerUser } from '../store/slices/authSlice'
 
 export function Login() {
+  const baseId = useId()
   const navigate = useNavigate()
   const dispatch = useAppDispatch()
   const { loading } = useAppSelector((state) => state.auth)
@@ -122,9 +123,9 @@ export function Login() {
   return (
     <div className="min-h-screen gradient-animate flex items-center justify-center p-4">
       <div className="max-w-md w-full mx-auto bg-white/95 backdrop-blur-sm rounded-2xl shadow-2xl overflow-hidden border border-gray-200 fade-in">
-        <div className="bg-gradient-to-br from-[#1F2937] via-[#111827] to-[#1F2937] p-8 text-center border-b-4 border-[#FDB80E] relative overflow-hidden">
-          <div className="absolute inset-0 bg-gradient-to-r from-[#B91C1C]/20 to-transparent"></div>
-          <div className="bg-gradient-to-br from-[#B91C1C] to-[#DC2626] w-16 h-16 rounded-xl flex items-center justify-center mx-auto mb-4 shadow-lg transform hover:rotate-0 transition-all duration-500 hover:scale-110 relative z-10 animate-float">
+        <div className="bg-gradient-to-br from-lb-dark-gray via-lb-darker-gray to-lb-dark-gray p-8 text-center border-b-4 border-lb-yellow relative overflow-hidden">
+          <div className="absolute inset-0 bg-gradient-to-r from-lb-red-primary/20 to-transparent"></div>
+          <div className="bg-gradient-to-br from-lb-red-primary to-lb-red-light w-16 h-16 rounded-xl flex items-center justify-center mx-auto mb-4 shadow-lg transform hover:rotate-0 transition-all duration-500 hover:scale-110 relative z-10 animate-float">
             <Wrench className="h-8 w-8 text-white" />
           </div>
           <h2 className="text-3xl font-bold text-white mb-2 font-heading tracking-wider relative z-10">LB AUTO REPAIR</h2>
@@ -134,7 +135,7 @@ export function Login() {
         <div className="p-8">
           <form className="space-y-6" onSubmit={handleSubmit}>
             <div>
-              <label className="block text-sm font-bold text-gray-700 uppercase tracking-wide mb-2">
+              <label htmlFor={`${baseId}-username`} className="block text-sm font-bold text-gray-700 uppercase tracking-wide mb-2">
                 Username
               </label>
               <div className="relative">
@@ -142,9 +143,10 @@ export function Login() {
                   <User className="h-5 w-5" />
                 </div>
                 <input
+                  id={`${baseId}-username`}
                   type="text"
                   required
-                  className="pl-10 w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#B91C1C] focus:border-transparent outline-none transition-all focus:shadow-lg focus:shadow-[#B91C1C]/20 text-gray-900 placeholder:text-gray-500"
+                  className="pl-10 w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-lb-red-primary focus:border-transparent outline-none transition-all focus:shadow-lg focus:shadow-lb-red-primary/20 text-gray-900 placeholder:text-gray-500"
                   placeholder="Enter your username"
                   value={username}
                   onChange={(e) => setUsername(e.target.value)}
@@ -153,7 +155,7 @@ export function Login() {
             </div>
 
             <div>
-              <label className="block text-sm font-bold text-gray-700 uppercase tracking-wide mb-2">
+              <label htmlFor={`${baseId}-password`} className="block text-sm font-bold text-gray-700 uppercase tracking-wide mb-2">
                 Password
               </label>
               <div className="relative">
@@ -161,9 +163,10 @@ export function Login() {
                   <Lock className="h-5 w-5" />
                 </div>
                 <input
+                  id={`${baseId}-password`}
                   type="password"
                   required
-                  className="pl-10 w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#B91C1C] focus:border-transparent outline-none transition-all focus:shadow-lg focus:shadow-[#B91C1C]/20 text-gray-900 placeholder:text-gray-500"
+                  className="pl-10 w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-lb-red-primary focus:border-transparent outline-none transition-all focus:shadow-lg focus:shadow-lb-red-primary/20 text-gray-900 placeholder:text-gray-500"
                   placeholder="••••••••"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}

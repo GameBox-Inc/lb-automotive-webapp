@@ -1,10 +1,12 @@
-import React, { useEffect, useState } from 'react';
+import React, { useId, useEffect, useState } from 'react';
+import { Dialog, DialogPanel, DialogTitle, Transition, TransitionChild } from '@headlessui/react';
 import { apiClient, Customer } from '../lib/supabase';
 import { Users, UserPlus, Edit2, Trash2, Phone, Mail, Calendar, History } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { LoadingSpinner } from '../components/LoadingSpinner';
 
 const AdminCustomers = () => {
+    const formId = useId();
     const [customers, setCustomers] = useState<Customer[]>([]);
     const [loading, setLoading] = useState(true);
     const [showAddModal, setShowAddModal] = useState(false);
@@ -231,17 +233,23 @@ const AdminCustomers = () => {
             </div>
 
             {/* Add Customer Modal */}
-            {showAddModal && (
-                <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-                    <div className="bg-white dark:bg-gray-800 rounded-lg p-6 w-full max-w-md">
-                        <h2 className="text-xl font-bold text-gray-900 dark:text-white mb-4">Add New Customer</h2>
+            <Transition show={showAddModal}>
+                <Dialog open={showAddModal} onClose={() => { setShowAddModal(false); resetForm(); }} className="relative z-50">
+                    <TransitionChild enter="ease-out duration-200" enterFrom="opacity-0" enterTo="opacity-100" leave="ease-in duration-150" leaveFrom="opacity-100" leaveTo="opacity-0">
+                        <div className="fixed inset-0 bg-black/50" aria-hidden="true" />
+                    </TransitionChild>
+                    <div className="fixed inset-0 flex items-center justify-center p-4">
+                        <TransitionChild enter="ease-out duration-200" enterFrom="opacity-0 scale-95" enterTo="opacity-100 scale-100" leave="ease-in duration-150" leaveFrom="opacity-100 scale-100" leaveTo="opacity-0 scale-95">
+                            <DialogPanel className="bg-white dark:bg-gray-800 rounded-lg p-6 w-full max-w-md shadow-xl">
+                                <DialogTitle className="text-xl font-bold text-gray-900 dark:text-white mb-4">Add New Customer</DialogTitle>
                         <form onSubmit={handleAddCustomer}>
                             <div className="space-y-4">
                                 <div>
-                                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
+                                    <label htmlFor={`${formId}-add-name`} className="block text-sm font-medium text-gray-700 dark:text-gray-300">
                                         Name *
                                     </label>
                                     <input
+                                        id={`${formId}-add-name`}
                                         type="text"
                                         value={formData.name}
                                         onChange={(e) => setFormData({ ...formData, name: e.target.value })}
@@ -250,10 +258,11 @@ const AdminCustomers = () => {
                                     />
                                 </div>
                                 <div>
-                                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
+                                    <label htmlFor={`${formId}-add-phone`} className="block text-sm font-medium text-gray-700 dark:text-gray-300">
                                         Phone *
                                     </label>
                                     <input
+                                        id={`${formId}-add-phone`}
                                         type="tel"
                                         value={formData.phone}
                                         onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
@@ -263,10 +272,11 @@ const AdminCustomers = () => {
                                     />
                                 </div>
                                 <div>
-                                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
+                                    <label htmlFor={`${formId}-add-email`} className="block text-sm font-medium text-gray-700 dark:text-gray-300">
                                         Email
                                     </label>
                                     <input
+                                        id={`${formId}-add-email`}
                                         type="email"
                                         value={formData.email}
                                         onChange={(e) => setFormData({ ...formData, email: e.target.value })}
@@ -290,22 +300,30 @@ const AdminCustomers = () => {
                                 </button>
                             </div>
                         </form>
+                            </DialogPanel>
+                        </TransitionChild>
                     </div>
-                </div>
-            )}
+                </Dialog>
+            </Transition>
 
             {/* Edit Customer Modal */}
-            {showEditModal && (
-                <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-                    <div className="bg-white dark:bg-gray-800 rounded-lg p-6 w-full max-w-md">
-                        <h2 className="text-xl font-bold text-gray-900 dark:text-white mb-4">Edit Customer</h2>
+            <Transition show={showEditModal}>
+                <Dialog open={showEditModal} onClose={() => { setShowEditModal(false); resetForm(); }} className="relative z-50">
+                    <TransitionChild enter="ease-out duration-200" enterFrom="opacity-0" enterTo="opacity-100" leave="ease-in duration-150" leaveFrom="opacity-100" leaveTo="opacity-0">
+                        <div className="fixed inset-0 bg-black/50" aria-hidden="true" />
+                    </TransitionChild>
+                    <div className="fixed inset-0 flex items-center justify-center p-4">
+                        <TransitionChild enter="ease-out duration-200" enterFrom="opacity-0 scale-95" enterTo="opacity-100 scale-100" leave="ease-in duration-150" leaveFrom="opacity-100 scale-100" leaveTo="opacity-0 scale-95">
+                            <DialogPanel className="bg-white dark:bg-gray-800 rounded-lg p-6 w-full max-w-md shadow-xl">
+                                <DialogTitle className="text-xl font-bold text-gray-900 dark:text-white mb-4">Edit Customer</DialogTitle>
                         <form onSubmit={handleUpdateCustomer}>
                             <div className="space-y-4">
                                 <div>
-                                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
+                                    <label htmlFor={`${formId}-edit-name`} className="block text-sm font-medium text-gray-700 dark:text-gray-300">
                                         Name *
                                     </label>
                                     <input
+                                        id={`${formId}-edit-name`}
                                         type="text"
                                         value={formData.name}
                                         onChange={(e) => setFormData({ ...formData, name: e.target.value })}
@@ -314,10 +332,11 @@ const AdminCustomers = () => {
                                     />
                                 </div>
                                 <div>
-                                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
+                                    <label htmlFor={`${formId}-edit-phone`} className="block text-sm font-medium text-gray-700 dark:text-gray-300">
                                         Phone *
                                     </label>
                                     <input
+                                        id={`${formId}-edit-phone`}
                                         type="tel"
                                         value={formData.phone}
                                         onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
@@ -326,10 +345,11 @@ const AdminCustomers = () => {
                                     />
                                 </div>
                                 <div>
-                                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
+                                    <label htmlFor={`${formId}-edit-email`} className="block text-sm font-medium text-gray-700 dark:text-gray-300">
                                         Email
                                     </label>
                                     <input
+                                        id={`${formId}-edit-email`}
                                         type="email"
                                         value={formData.email}
                                         onChange={(e) => setFormData({ ...formData, email: e.target.value })}
@@ -353,17 +373,24 @@ const AdminCustomers = () => {
                                 </button>
                             </div>
                         </form>
+                            </DialogPanel>
+                        </TransitionChild>
                     </div>
-                </div>
-            )}
+                </Dialog>
+            </Transition>
 
             {/* Customer History Modal */}
-            {showHistoryModal && selectedCustomer && (
-                <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-                    <div className="bg-white dark:bg-gray-800 rounded-lg p-6 w-full max-w-3xl max-h-[80vh] overflow-y-auto">
-                        <h2 className="text-xl font-bold text-gray-900 dark:text-white mb-4">
-                            Appointment History - {selectedCustomer.name}
-                        </h2>
+            <Transition show={showHistoryModal && !!selectedCustomer}>
+                <Dialog open={showHistoryModal && !!selectedCustomer} onClose={() => { setShowHistoryModal(false); setSelectedCustomer(null); }} className="relative z-50">
+                    <TransitionChild enter="ease-out duration-200" enterFrom="opacity-0" enterTo="opacity-100" leave="ease-in duration-150" leaveFrom="opacity-100" leaveTo="opacity-0">
+                        <div className="fixed inset-0 bg-black/50" aria-hidden="true" />
+                    </TransitionChild>
+                    <div className="fixed inset-0 flex items-center justify-center p-4">
+                        <TransitionChild enter="ease-out duration-200" enterFrom="opacity-0 scale-95" enterTo="opacity-100 scale-100" leave="ease-in duration-150" leaveFrom="opacity-100 scale-100" leaveTo="opacity-0 scale-95">
+                            <DialogPanel className="bg-white dark:bg-gray-800 rounded-lg p-6 w-full max-w-3xl max-h-[80vh] overflow-y-auto shadow-xl">
+                                <DialogTitle className="text-xl font-bold text-gray-900 dark:text-white mb-4">
+                                    Appointment History - {selectedCustomer?.name ?? ''}
+                                </DialogTitle>
 
                         {loadingHistory ? (
                             <div className="flex justify-center py-8">
@@ -413,9 +440,11 @@ const AdminCustomers = () => {
                                 Close
                             </button>
                         </div>
+                            </DialogPanel>
+                        </TransitionChild>
                     </div>
-                </div>
-            )}
+                </Dialog>
+            </Transition>
         </div>
     );
 };

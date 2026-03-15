@@ -4,6 +4,7 @@ import { LayoutDashboard, Calendar, Settings, LogOut, Wrench, PenTool as Tool, P
 import { Toaster } from 'react-hot-toast'
 import { useAppDispatch, useAppSelector } from './store/hooks'
 import { checkAuth, logoutUser, setLoading } from './store/slices/authSlice'
+import { ErrorBoundary } from './components/ErrorBoundary'
 
 // Lazy load pages for performance
 const Dashboard = lazy(() => import('./pages/Dashboard').then(module => ({ default: module.Dashboard })))
@@ -21,7 +22,7 @@ const CheckIn = lazy(() => import('./pages/CheckIn'))
 // Loading component
 const PageLoader = () => (
   <div className="flex items-center justify-center h-full min-h-[400px]">
-    <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-[#B91C1C]"></div>
+    <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-lb-red-primary"></div>
   </div>
 )
 
@@ -90,8 +91,8 @@ function App() {
         to={to}
         onClick={handleClick}
         className={`flex items-center gap-3 px-6 py-3 text-sm font-medium transition-colors duration-200 ${isActive
-          ? 'bg-[#B91C1C] text-white border-r-4 border-[#FDB80E]'
-          : 'text-gray-300 hover:bg-gray-800 hover:text-[#FDB80E]'
+          ? 'bg-lb-red-primary text-white border-r-4 border-lb-yellow'
+          : 'text-gray-300 hover:bg-gray-800 hover:text-lb-yellow'
           }`}
       >
         {icon}
@@ -162,13 +163,13 @@ function App() {
       {/* Sidebar - Responsive Classes - Hidden in kiosk/wallboard modes */}
       {!isKioskMode && !isWallboardMode && (
         <div className={`
-          fixed top-0 left-0 min-h-screen w-64 bg-[#1F2937] border-r border-[#374151] z-30
+          fixed top-0 left-0 min-h-screen w-64 bg-lb-dark-gray border-r border-gray-700 z-30
           transform transition-transform duration-300 ease-in-out
           ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'}
         `}>
           <div className="p-6">
             <div className="flex items-center gap-3 mb-8">
-              <div className="bg-[#B91C1C] p-2 rounded-lg">
+              <div className="bg-lb-red-primary p-2 rounded-lg">
                 <Wrench className="h-6 w-6 text-white" />
               </div>
               <div>
@@ -200,7 +201,7 @@ function App() {
             </nav>
           </div>
           <div className="absolute bottom-0 w-full p-6 border-t border-[#374151]">
-            <div className="flex items-center gap-3 text-gray-400 hover:text-[#FDB80E] cursor-pointer transition-colors" onClick={handleSignOut}>
+            <div className="flex items-center gap-3 text-gray-400 hover:text-lb-yellow cursor-pointer transition-colors" onClick={handleSignOut}>
               <LogOut className="h-5 w-5" />
               <span className="text-sm font-medium">Sign Out</span>
             </div>
@@ -247,8 +248,9 @@ function App() {
         )}
 
         <main className="flex-1 overflow-x-hidden overflow-y-auto bg-gray-50 dark:bg-gray-900 p-4 sm:p-8">
-          <Suspense fallback={<PageLoader />}>
-            <Routes>
+          <ErrorBoundary>
+            <Suspense fallback={<PageLoader />}>
+              <Routes>
               <Route path="/" element={<Dashboard />} />
               <Route path="/appointments" element={<Appointments />} />
               <Route path="/services" element={user?.is_admin ? <Services /> : <Navigate to="/" replace />} />
@@ -261,8 +263,9 @@ function App() {
               <Route path="/admin/customers" element={user?.is_admin ? <AdminCustomers /> : <Navigate to="/" />} />
               <Route path="/admin/staff" element={user?.is_admin ? <AdminStaff /> : <Navigate to="/" />} />
               <Route path="*" element={<Navigate to="/" replace />} />
-            </Routes>
-          </Suspense>
+              </Routes>
+            </Suspense>
+          </ErrorBoundary>
         </main>
       </div>
     </div>

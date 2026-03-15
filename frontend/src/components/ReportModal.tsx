@@ -1,5 +1,5 @@
-
 import React, { useState, useEffect } from 'react';
+import { Dialog, DialogPanel, DialogTitle, Transition, TransitionChild } from '@headlessui/react';
 import { X, DollarSign, Wrench, Clock, Calendar, Download } from 'lucide-react';
 import { apiClient } from '../lib/supabase';
 import { formatCurrency, formatNumber } from '../utils/format';
@@ -103,26 +103,30 @@ export function ReportModal({ isOpen, onClose }: ReportModalProps) {
         }
     };
 
-    if (!isOpen) return null;
-
     return (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-            <div className="bg-white dark:bg-gray-800 rounded-lg w-full max-w-4xl max-h-[90vh] overflow-hidden flex flex-col">
-                {/* Header */}
-                <div className="px-6 py-4 border-b border-gray-200 dark:border-gray-700 flex justify-between items-center bg-gray-50 dark:bg-gray-900">
-                    <div className="flex items-center gap-3">
-                        <div className="bg-blue-100 dark:bg-blue-900 p-2 rounded-lg">
-                            <Calendar className="h-6 w-6 text-blue-600 dark:text-blue-400" />
-                        </div>
-                        <div>
-                            <h2 className="text-xl font-bold text-gray-900 dark:text-white">Performance Reports</h2>
-                            <p className="text-sm text-gray-500 dark:text-gray-400">Repair history and shop metrics</p>
-                        </div>
-                    </div>
-                    <button onClick={onClose} className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200">
-                        <X className="h-6 w-6" />
-                    </button>
-                </div>
+        <Transition show={isOpen}>
+            <Dialog open={isOpen} onClose={onClose} className="relative z-50">
+                <TransitionChild enter="ease-out duration-200" enterFrom="opacity-0" enterTo="opacity-100" leave="ease-in duration-150" leaveFrom="opacity-100" leaveTo="opacity-0">
+                    <div className="fixed inset-0 bg-black/50" aria-hidden="true" />
+                </TransitionChild>
+                <div className="fixed inset-0 flex items-center justify-center p-4">
+                    <TransitionChild enter="ease-out duration-200" enterFrom="opacity-0 scale-95" enterTo="opacity-100 scale-100" leave="ease-in duration-150" leaveFrom="opacity-100 scale-100" leaveTo="opacity-0 scale-95">
+                        <DialogPanel className="bg-white dark:bg-gray-800 rounded-lg w-full max-w-4xl max-h-[90vh] overflow-hidden flex flex-col shadow-xl">
+                            {/* Header */}
+                            <div className="px-6 py-4 border-b border-gray-200 dark:border-gray-700 flex justify-between items-center bg-gray-50 dark:bg-gray-900">
+                                <div className="flex items-center gap-3">
+                                    <div className="bg-blue-100 dark:bg-blue-900 p-2 rounded-lg">
+                                        <Calendar className="h-6 w-6 text-blue-600 dark:text-blue-400" />
+                                    </div>
+                                    <div>
+                                        <DialogTitle className="text-xl font-bold text-gray-900 dark:text-white">Performance Reports</DialogTitle>
+                                        <p className="text-sm text-gray-500 dark:text-gray-400">Repair history and shop metrics</p>
+                                    </div>
+                                </div>
+                                <button type="button" onClick={onClose} className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200">
+                                    <X className="h-6 w-6" />
+                                </button>
+                            </div>
 
                 {/* Content */}
                 <div className="flex-1 overflow-y-auto p-6 space-y-6">
@@ -281,7 +285,10 @@ export function ReportModal({ isOpen, onClose }: ReportModalProps) {
                         </>
                     )}
                 </div>
-            </div>
-        </div>
+                        </DialogPanel>
+                    </TransitionChild>
+                </div>
+            </Dialog>
+        </Transition>
     );
 }

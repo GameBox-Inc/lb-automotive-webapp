@@ -1,4 +1,5 @@
-import React, { useState } from 'react'
+import React, { useId, useState } from 'react'
+import { Dialog, DialogPanel, DialogTitle, Transition, TransitionChild } from '@headlessui/react'
 import { format } from 'date-fns'
 import { Calendar, Clock, MapPin, User, ChevronRight, AlertCircle, Wrench, CheckCircle, Phone, PenTool as Tool, Edit2, X } from 'lucide-react'
 import { formatCurrency } from '../utils/format'
@@ -23,6 +24,7 @@ interface AppointmentCardProps {
 }
 
 export const AppointmentCard: React.FC<AppointmentCardProps> = ({ appointment, onUpdate, services = [], staff: propStaff = [] }) => {
+  const formId = useId()
   const [isLoading, setIsLoading] = useState(false)
   const [showReschedule, setShowReschedule] = useState(false)
   const [showStaffModal, setShowStaffModal] = useState(false)
@@ -216,7 +218,7 @@ export const AppointmentCard: React.FC<AppointmentCardProps> = ({ appointment, o
 
   // Status color mapping
   const statusColors: { [key: string]: string } = {
-    pending: 'bg-[#FDB80E] text-gray-900',
+    pending: 'bg-lb-yellow text-gray-900',
     confirmed: 'bg-green-600 text-white',
     in_progress: 'bg-blue-600 text-white',
     rescheduled: 'bg-purple-100 text-purple-800',
@@ -331,7 +333,7 @@ export const AppointmentCard: React.FC<AppointmentCardProps> = ({ appointment, o
                   }
                 }}
                 disabled={isLoading}
-                className="flex-1 px-4 py-2 text-sm font-bold uppercase tracking-wide text-white bg-[#B91C1C] rounded-md hover:bg-[#991B1B] disabled:opacity-50 disabled:cursor-not-allowed transition-colors shadow-sm"
+                className="flex-1 px-4 py-2 text-sm font-bold uppercase tracking-wide text-white bg-lb-red-primary rounded-md hover:bg-lb-red-dark disabled:opacity-50 disabled:cursor-not-allowed transition-colors shadow-sm"
               >
                 Start Repair
               </button>
@@ -356,18 +358,24 @@ export const AppointmentCard: React.FC<AppointmentCardProps> = ({ appointment, o
         </div>
       </div>
 
-      {showReschedule && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white dark:bg-gray-800 rounded-lg p-6 w-full max-w-md">
-            <h3 className="text-lg font-medium text-gray-900 dark:text-white mb-4">
-              Reschedule Appointment
-            </h3>
-            <div className="space-y-4">
+      <Transition show={showReschedule}>
+        <Dialog open={showReschedule} onClose={() => setShowReschedule(false)} className="relative z-50">
+          <TransitionChild enter="ease-out duration-200" enterFrom="opacity-0" enterTo="opacity-100" leave="ease-in duration-150" leaveFrom="opacity-100" leaveTo="opacity-0">
+            <div className="fixed inset-0 bg-black/50" aria-hidden="true" />
+          </TransitionChild>
+          <div className="fixed inset-0 flex items-center justify-center p-4">
+            <TransitionChild enter="ease-out duration-200" enterFrom="opacity-0 scale-95" enterTo="opacity-100 scale-100" leave="ease-in duration-150" leaveFrom="opacity-100 scale-100" leaveTo="opacity-0 scale-95">
+              <DialogPanel className="bg-white dark:bg-gray-800 rounded-lg p-6 w-full max-w-md shadow-xl">
+                <DialogTitle className="text-lg font-medium text-gray-900 dark:text-white mb-4">
+                  Reschedule Appointment
+                </DialogTitle>
+                <div className="space-y-4">
               <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                <label htmlFor={`${formId}-reschedule-datetime`} className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                   New Appointment Time
                 </label>
                 <input
+                  id={`${formId}-reschedule-datetime`}
                   type="datetime-local"
                   value={format(newDate, "yyyy-MM-dd'T'HH:mm")}
                   onChange={(e) => setNewDate(new Date(e.target.value))}
@@ -390,22 +398,30 @@ export const AppointmentCard: React.FC<AppointmentCardProps> = ({ appointment, o
                 </button>
               </div>
             </div>
+              </DialogPanel>
+            </TransitionChild>
           </div>
-        </div>
-      )}
+        </Dialog>
+      </Transition>
 
-      {showStaffModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white dark:bg-gray-800 rounded-lg p-6 w-full max-w-md">
-            <h3 className="text-lg font-medium text-gray-900 dark:text-white mb-4">
-              Assign Staff & Start Repair
-            </h3>
-            <div className="space-y-4">
+      <Transition show={showStaffModal}>
+        <Dialog open={showStaffModal} onClose={() => { setShowStaffModal(false); setSelectedStaff(''); }} className="relative z-50">
+          <TransitionChild enter="ease-out duration-200" enterFrom="opacity-0" enterTo="opacity-100" leave="ease-in duration-150" leaveFrom="opacity-100" leaveTo="opacity-0">
+            <div className="fixed inset-0 bg-black/50" aria-hidden="true" />
+          </TransitionChild>
+          <div className="fixed inset-0 flex items-center justify-center p-4">
+            <TransitionChild enter="ease-out duration-200" enterFrom="opacity-0 scale-95" enterTo="opacity-100 scale-100" leave="ease-in duration-150" leaveFrom="opacity-100 scale-100" leaveTo="opacity-0 scale-95">
+              <DialogPanel className="bg-white dark:bg-gray-800 rounded-lg p-6 w-full max-w-md shadow-xl">
+                <DialogTitle className="text-lg font-medium text-gray-900 dark:text-white mb-4">
+                  Assign Staff & Start Repair
+                </DialogTitle>
+                <div className="space-y-4">
               <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                <label htmlFor={`${formId}-staff-select`} className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                   Select Staff Member
                 </label>
                 <select
+                  id={`${formId}-staff-select`}
                   value={selectedStaff}
                   onChange={(e) => setSelectedStaff(e.target.value)}
                   className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-gray-900 dark:bg-gray-700 dark:border-gray-600 dark:text-white"
@@ -428,34 +444,42 @@ export const AppointmentCard: React.FC<AppointmentCardProps> = ({ appointment, o
                 <button
                   onClick={handleStartRepair}
                   disabled={isLoading || !selectedStaff}
-                  className="px-4 py-2 text-sm font-bold uppercase tracking-wide text-white bg-[#B91C1C] rounded-md hover:bg-[#991B1B] disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                  className="px-4 py-2 text-sm font-bold uppercase tracking-wide text-white bg-lb-red-primary rounded-md hover:bg-lb-red-dark disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                 >
                   {isLoading ? 'Starting...' : 'Assign & Start'}
                 </button>
               </div>
             </div>
+              </DialogPanel>
+            </TransitionChild>
           </div>
-        </div>
-      )}
+        </Dialog>
+      </Transition>
 
-      {showEditModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white dark:bg-gray-800 rounded-lg p-6 w-full max-w-lg shadow-xl">
-            <div className="flex justify-between items-center mb-6">
-              <h3 className="text-xl font-bold text-gray-900 dark:text-white flex items-center gap-2">
-                <Edit2 className="h-5 w-5 text-blue-600" />
-                Edit Appointment
-              </h3>
-              <button onClick={() => setShowEditModal(false)} className="text-gray-400 hover:text-gray-600">
-                <X className="h-6 w-6" />
-              </button>
-            </div>
+      <Transition show={showEditModal}>
+        <Dialog open={showEditModal} onClose={() => setShowEditModal(false)} className="relative z-50">
+          <TransitionChild enter="ease-out duration-200" enterFrom="opacity-0" enterTo="opacity-100" leave="ease-in duration-150" leaveFrom="opacity-100" leaveTo="opacity-0">
+            <div className="fixed inset-0 bg-black/50" aria-hidden="true" />
+          </TransitionChild>
+          <div className="fixed inset-0 flex items-center justify-center p-4">
+            <TransitionChild enter="ease-out duration-200" enterFrom="opacity-0 scale-95" enterTo="opacity-100 scale-100" leave="ease-in duration-150" leaveFrom="opacity-100 scale-100" leaveTo="opacity-0 scale-95">
+              <DialogPanel className="bg-white dark:bg-gray-800 rounded-lg p-6 w-full max-w-lg shadow-xl">
+                <div className="flex justify-between items-center mb-6">
+                  <DialogTitle className="text-xl font-bold text-gray-900 dark:text-white flex items-center gap-2">
+                    <Edit2 className="h-5 w-5 text-blue-600" />
+                    Edit Appointment
+                  </DialogTitle>
+                  <button type="button" onClick={() => setShowEditModal(false)} className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200">
+                    <X className="h-6 w-6" />
+                  </button>
+                </div>
 
-            <div className="space-y-4">
+                <div className="space-y-4">
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Customer Name</label>
+                  <label htmlFor={`${formId}-edit-customer`} className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Customer Name</label>
                   <input
+                    id={`${formId}-edit-customer`}
                     type="text"
                     value={editData.customer_name}
                     onChange={(e) => setEditData({ ...editData, customer_name: e.target.value })}
@@ -463,8 +487,9 @@ export const AppointmentCard: React.FC<AppointmentCardProps> = ({ appointment, o
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Phone Number</label>
+                  <label htmlFor={`${formId}-edit-phone`} className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Phone Number</label>
                   <input
+                    id={`${formId}-edit-phone`}
                     type="text"
                     value={editData.phone_number}
                     onChange={(e) => setEditData({ ...editData, phone_number: e.target.value })}
@@ -474,8 +499,9 @@ export const AppointmentCard: React.FC<AppointmentCardProps> = ({ appointment, o
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Service Type</label>
+                <label htmlFor={`${formId}-edit-service`} className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Service Type</label>
                 <select
+                  id={`${formId}-edit-service`}
                   value={editData.service_type}
                   onChange={(e) => setEditData({ ...editData, service_type: e.target.value })}
                   className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 text-gray-900 dark:bg-gray-700 dark:border-gray-600 dark:text-white"
@@ -490,8 +516,9 @@ export const AppointmentCard: React.FC<AppointmentCardProps> = ({ appointment, o
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Notes</label>
+                <label htmlFor={`${formId}-edit-notes`} className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Notes</label>
                 <textarea
+                  id={`${formId}-edit-notes`}
                   value={editData.notes}
                   onChange={(e) => setEditData({ ...editData, notes: e.target.value })}
                   rows={3}
@@ -502,12 +529,12 @@ export const AppointmentCard: React.FC<AppointmentCardProps> = ({ appointment, o
               <div className="flex items-center gap-2">
                 <input
                   type="checkbox"
-                  id="edit-emergency"
+                  id={`${formId}-edit-emergency`}
                   checked={editData.emergency_request}
                   onChange={(e) => setEditData({ ...editData, emergency_request: e.target.checked })}
                   className="h-4 w-4 text-red-600 focus:ring-red-500 border-gray-300 rounded"
                 />
-                <label htmlFor="edit-emergency" className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                <label htmlFor={`${formId}-edit-emergency`} className="text-sm font-medium text-gray-700 dark:text-gray-300">
                   Emergency Request
                 </label>
               </div>
@@ -528,9 +555,11 @@ export const AppointmentCard: React.FC<AppointmentCardProps> = ({ appointment, o
                 </button>
               </div>
             </div>
+              </DialogPanel>
+            </TransitionChild>
           </div>
-        </div>
-      )}
+        </Dialog>
+      </Transition>
     </div>
   )
 }

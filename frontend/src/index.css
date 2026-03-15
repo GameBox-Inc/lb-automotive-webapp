@@ -4,6 +4,24 @@
 /* Tailwind CSS v4 entrypoint (with @tailwindcss/postcss) */
 @import "tailwindcss";
 
+/* LB brand colors as Tailwind theme tokens (v4 @theme) */
+@theme {
+  --color-lb-red-primary: #B91C1C;
+  --color-lb-red-dark: #991B1B;
+  --color-lb-red-light: #DC2626;
+  --color-lb-yellow: #FDB80E;
+  --color-lb-yellow-light: #FDE047;
+  --color-lb-yellow-dark: #CA8A04;
+  --color-lb-dark-gray: #1F2937;
+  --color-lb-darker-gray: #111827;
+  --color-lb-white: #FFFFFF;
+  --color-lb-off-white: #F9FAFB;
+  --color-lb-blue-accent: #3B82F6;
+  --color-lb-green-success: #059669;
+  --color-lb-gray-border: #E5E7EB;
+  --color-lb-gray-text: #6B7280;
+}
+
 @layer base {
   :root {
     /* LB Auto Brand Colors */
@@ -92,12 +110,12 @@
 
   /* Primary Button - Yellow CTA */
   .btn-primary {
-    @apply bg-[#FDB80E] hover:bg-[#FDE047] text-gray-900 font-bold px-6 py-3 rounded-lg transition-all duration-300 uppercase tracking-wide shadow-md hover:shadow-lg hover:-translate-y-0.5;
+    @apply bg-lb-yellow hover:bg-lb-yellow-light text-gray-900 font-bold px-6 py-3 rounded-lg transition-all duration-300 uppercase tracking-wide shadow-md hover:shadow-lg hover:-translate-y-0.5;
   }
 
   /* Secondary Button - Dark */
   .btn-secondary {
-    @apply bg-gray-800 hover:bg-gray-900 text-white font-bold px-6 py-3 rounded-lg border-2 border-transparent hover:border-[#FDB80E] transition-all duration-300 uppercase tracking-wide;
+    @apply bg-gray-800 hover:bg-gray-900 text-white font-bold px-6 py-3 rounded-lg border-2 border-transparent hover:border-lb-yellow transition-all duration-300 uppercase tracking-wide;
   }
 
   /* Emergency Button - Red */
@@ -107,7 +125,7 @@
 
   /* Card Component */
   .card {
-    @apply bg-white rounded-xl shadow-md hover:shadow-2xl transition-all duration-300 border border-gray-200 hover:border-[#B91C1C] hover:-translate-y-1;
+    @apply bg-white rounded-xl shadow-md hover:shadow-2xl transition-all duration-300 border border-gray-200 hover:border-lb-red-primary hover:-translate-y-1;
   }
 
   /* Mobile dark card */
@@ -129,7 +147,7 @@
   }
 
   .badge-emergency {
-    @apply bg-[#B91C1C] text-white px-3 py-1 rounded-full text-xs font-semibold uppercase animate-pulse whitespace-nowrap;
+    @apply bg-lb-red-primary text-white px-3 py-1 rounded-full text-xs font-semibold uppercase animate-pulse whitespace-nowrap;
   }
 
   .badge-cancelled {
@@ -149,12 +167,12 @@
 
   /* Navigation */
   .nav-link {
-    @apply text-white font-semibold uppercase text-sm tracking-wide hover:text-[#FDB80E] transition-colors duration-200;
+    @apply text-white font-semibold uppercase text-sm tracking-wide hover:text-lb-yellow transition-colors duration-200;
   }
 
   /* Input Fields */
   .input-field {
-    @apply w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#B91C1C] focus:border-transparent transition-all duration-200;
+    @apply w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-lb-red-primary focus:border-transparent transition-all duration-200;
   }
 
   /* Mobile dark input */
@@ -168,7 +186,7 @@
 
   /* Loading Spinner */
   .spinner {
-    @apply animate-spin rounded-full border-4 border-gray-200 border-t-[#B91C1C];
+    @apply animate-spin rounded-full border-4 border-gray-200 border-t-lb-red-primary;
   }
 
   /* Mobile compact list item (Hetzner-style) */
@@ -237,7 +255,7 @@
 
   /* Animated Gradient Background */
   .gradient-animate {
-    background: linear-gradient(-45deg, #B91C1C, #DC2626, #FDB80E, #FDE047);
+    background: linear-gradient(-45deg, var(--lb-red-primary), var(--lb-red-light), var(--lb-yellow), var(--lb-yellow-light));
     background-size: 400% 400%;
     animation: gradient 15s ease infinite;
   }
