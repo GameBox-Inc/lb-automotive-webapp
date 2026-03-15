@@ -25,12 +25,14 @@ ADD COLUMN IF NOT EXISTS preferred_language text DEFAULT 'en',
 ADD COLUMN IF NOT EXISTS last_ivr_interaction timestamptz DEFAULT now();
 
 -- Create policy for IVR system access
+DROP POLICY IF EXISTS "Allow IVR system to create appointments" ON appointments;
 CREATE POLICY "Allow IVR system to create appointments"
 ON appointments FOR INSERT
 TO authenticated
 WITH CHECK (true);
 
 -- Create policy for IVR system to read appointments
+DROP POLICY IF EXISTS "Allow IVR system to read appointments" ON appointments;
 CREATE POLICY "Allow IVR system to read appointments"
 ON appointments FOR SELECT
 TO authenticated

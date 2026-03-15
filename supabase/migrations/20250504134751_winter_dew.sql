@@ -11,39 +11,9 @@
     - Grant full access to authenticated users
 */
 
-DO $$ 
-BEGIN
-  -- Safely drop existing policies if they exist
-  IF EXISTS (
-    SELECT 1 
-    FROM pg_policies 
-    WHERE schemaname = 'public' 
-    AND tablename = 'services' 
-    AND policyname = 'Allow authenticated users to read services'
-  ) THEN
-    DROP POLICY "Allow authenticated users to read services" ON services;
-  END IF;
-
-  IF EXISTS (
-    SELECT 1 
-    FROM pg_policies 
-    WHERE schemaname = 'public' 
-    AND tablename = 'services' 
-    AND policyname = 'Allow admin users to manage services'
-  ) THEN
-    DROP POLICY "Allow admin users to manage services" ON services;
-  END IF;
-
-  IF EXISTS (
-    SELECT 1 
-    FROM pg_policies 
-    WHERE schemaname = 'public' 
-    AND tablename = 'services' 
-    AND policyname = 'Allow authenticated users to manage services'
-  ) THEN
-    DROP POLICY "Allow authenticated users to manage services" ON services;
-  END IF;
-END $$;
+DROP POLICY IF EXISTS "Allow authenticated users to read services" ON services;
+DROP POLICY IF EXISTS "Allow admin users to manage services" ON services;
+DROP POLICY IF EXISTS "Allow authenticated users to manage services" ON services;
 
 -- Create new unified policy for authenticated users
 CREATE POLICY "Allow authenticated users to manage services"

@@ -48,6 +48,7 @@ ALTER TABLE call_states ENABLE ROW LEVEL SECURITY;
 ALTER TABLE ivr_logs ENABLE ROW LEVEL SECURITY;
 
 -- Create policies for call_states
+DROP POLICY IF EXISTS "Allow authenticated users to manage call states" ON call_states;
 CREATE POLICY "Allow authenticated users to manage call states"
   ON call_states
   FOR ALL
@@ -56,12 +57,14 @@ CREATE POLICY "Allow authenticated users to manage call states"
   WITH CHECK (true);
 
 -- Create policies for ivr_logs
+DROP POLICY IF EXISTS "Allow authenticated users to insert ivr logs" ON ivr_logs;
 CREATE POLICY "Allow authenticated users to insert ivr logs"
   ON ivr_logs
   FOR INSERT
   TO authenticated
   WITH CHECK (true);
 
+DROP POLICY IF EXISTS "Allow authenticated users to read ivr logs" ON ivr_logs;
 CREATE POLICY "Allow authenticated users to read ivr logs"
   ON ivr_logs
   FOR SELECT

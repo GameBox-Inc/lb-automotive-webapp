@@ -27,12 +27,14 @@ CREATE TABLE IF NOT EXISTS error_logs (
 
 ALTER TABLE error_logs ENABLE ROW LEVEL SECURITY;
 
+DROP POLICY IF EXISTS "Allow authenticated users to insert error logs" ON error_logs;
 CREATE POLICY "Allow authenticated users to insert error logs"
   ON error_logs
   FOR INSERT
   TO authenticated
   WITH CHECK (true);
 
+DROP POLICY IF EXISTS "Allow admin users to read error logs" ON error_logs;
 CREATE POLICY "Allow admin users to read error logs"
   ON error_logs
   FOR SELECT

@@ -51,9 +51,12 @@ Deno.serve(async (req) => {
   const twiml = new VoiceResponse()
 
   try {
+    // Use service role key so the IVR can read/write without a user session (bypasses RLS).
+    // Edge Function secret can be SUPABASE_SERVICE_ROLE_KEY or supabase_service_rolekey.
+    const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? Deno.env.get('supabase_service_rolekey')
     const supabase = createClient(
       Deno.env.get('SUPABASE_URL') ?? '',
-      Deno.env.get('SUPABASE_ANON_KEY') ?? '',
+      serviceRoleKey ?? Deno.env.get('SUPABASE_ANON_KEY') ?? '',
       {
         auth: {
           persistSession: false,

@@ -31,12 +31,14 @@ CREATE TABLE IF NOT EXISTS appointments (
 
 ALTER TABLE appointments ENABLE ROW LEVEL SECURITY;
 
+DROP POLICY IF EXISTS "Allow authenticated users to read appointments" ON appointments;
 CREATE POLICY "Allow authenticated users to read appointments"
   ON appointments
   FOR SELECT
   TO authenticated
   USING (true);
 
+DROP POLICY IF EXISTS "Allow authenticated users to update appointments" ON appointments;
 CREATE POLICY "Allow authenticated users to update appointments"
   ON appointments
   FOR UPDATE

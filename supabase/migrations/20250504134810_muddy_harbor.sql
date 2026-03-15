@@ -8,6 +8,7 @@ DROP POLICY IF EXISTS "Allow authenticated users to update services" ON services
 DROP POLICY IF EXISTS "Allow authenticated users to delete services" ON services;
 DROP POLICY IF EXISTS "Allow admin users to manage services" ON services;
 DROP POLICY IF EXISTS "Allow authenticated users to manage services" ON services;
+DROP POLICY IF EXISTS "Enable all operations for authenticated users" ON services;
 
 -- Create a single policy for all operations
 CREATE POLICY "Enable all operations for authenticated users"

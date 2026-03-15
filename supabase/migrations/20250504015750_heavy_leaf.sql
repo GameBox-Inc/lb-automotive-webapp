@@ -31,12 +31,14 @@ CREATE TABLE IF NOT EXISTS available_slots (
 ALTER TABLE available_slots ENABLE ROW LEVEL SECURITY;
 
 -- Policies
+DROP POLICY IF EXISTS "Allow authenticated users to read available slots" ON available_slots;
 CREATE POLICY "Allow authenticated users to read available slots"
   ON available_slots
   FOR SELECT
   TO authenticated
   USING (true);
 
+DROP POLICY IF EXISTS "Allow admin users to manage available slots" ON available_slots;
 CREATE POLICY "Allow admin users to manage available slots"
   ON available_slots
   FOR ALL

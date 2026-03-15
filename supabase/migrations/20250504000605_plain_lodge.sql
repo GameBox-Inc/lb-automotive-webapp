@@ -32,12 +32,14 @@ CREATE TABLE IF NOT EXISTS services (
 ALTER TABLE services ENABLE ROW LEVEL SECURITY;
 
 -- Policies
+DROP POLICY IF EXISTS "Allow authenticated users to read services" ON services;
 CREATE POLICY "Allow authenticated users to read services"
   ON services
   FOR SELECT
   TO authenticated
   USING (true);
 
+DROP POLICY IF EXISTS "Allow admin users to manage services" ON services;
 CREATE POLICY "Allow admin users to manage services"
   ON services
   FOR ALL

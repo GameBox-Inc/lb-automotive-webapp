@@ -23,6 +23,7 @@ DROP POLICY IF EXISTS "Enable read for authenticated users" ON services;
 DROP POLICY IF EXISTS "Enable insert for authenticated users" ON services;
 DROP POLICY IF EXISTS "Enable update for authenticated users" ON services;
 DROP POLICY IF EXISTS "Enable delete for authenticated users" ON services;
+DROP POLICY IF EXISTS "Enable all operations for authenticated users" ON services;
 
 -- Create a single comprehensive policy for all operations
 CREATE POLICY "Enable all operations for authenticated users"

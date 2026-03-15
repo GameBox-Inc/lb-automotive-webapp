@@ -19,18 +19,21 @@ DROP POLICY IF EXISTS "Allow admin users to manage services" ON services;
 DROP POLICY IF EXISTS "Allow authenticated users to manage services" ON services;
 
 -- Create new policies for all operations
+DROP POLICY IF EXISTS "Allow authenticated users to read services" ON services;
 CREATE POLICY "Allow authenticated users to read services"
   ON services
   FOR SELECT
   TO authenticated
   USING (true);
 
+DROP POLICY IF EXISTS "Allow authenticated users to insert services" ON services;
 CREATE POLICY "Allow authenticated users to insert services"
   ON services
   FOR INSERT
   TO authenticated
   WITH CHECK (true);
 
+DROP POLICY IF EXISTS "Allow authenticated users to update services" ON services;
 CREATE POLICY "Allow authenticated users to update services"
   ON services
   FOR UPDATE
@@ -38,6 +41,7 @@ CREATE POLICY "Allow authenticated users to update services"
   USING (true)
   WITH CHECK (true);
 
+DROP POLICY IF EXISTS "Allow authenticated users to delete services" ON services;
 CREATE POLICY "Allow authenticated users to delete services"
   ON services
   FOR DELETE

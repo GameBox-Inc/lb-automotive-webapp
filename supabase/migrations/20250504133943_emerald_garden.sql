@@ -15,18 +15,21 @@
 ALTER TABLE services ENABLE ROW LEVEL SECURITY;
 
 -- Create policies for all CRUD operations
+DROP POLICY IF EXISTS "Allow authenticated users to insert services" ON services;
 CREATE POLICY "Allow authenticated users to insert services"
 ON services
 FOR INSERT
 TO authenticated
 WITH CHECK (true);
 
+DROP POLICY IF EXISTS "Allow authenticated users to read services" ON services;
 CREATE POLICY "Allow authenticated users to read services"
 ON services
 FOR SELECT
 TO authenticated
 USING (true);
 
+DROP POLICY IF EXISTS "Allow authenticated users to update services" ON services;
 CREATE POLICY "Allow authenticated users to update services"
 ON services
 FOR UPDATE
@@ -34,6 +37,7 @@ TO authenticated
 USING (true)
 WITH CHECK (true);
 
+DROP POLICY IF EXISTS "Allow authenticated users to delete services" ON services;
 CREATE POLICY "Allow authenticated users to delete services"
 ON services
 FOR DELETE

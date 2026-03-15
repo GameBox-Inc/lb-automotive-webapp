@@ -39,18 +39,21 @@ ADD COLUMN IF NOT EXISTS customer_id uuid REFERENCES customers(id);
 ALTER TABLE customers ENABLE ROW LEVEL SECURITY;
 
 -- Create policies
+DROP POLICY IF EXISTS "Allow authenticated users to read customers" ON customers;
 CREATE POLICY "Allow authenticated users to read customers"
   ON customers
   FOR SELECT
   TO authenticated
   USING (true);
 
+DROP POLICY IF EXISTS "Allow authenticated users to insert customers" ON customers;
 CREATE POLICY "Allow authenticated users to insert customers"
   ON customers
   FOR INSERT
   TO authenticated
   WITH CHECK (true);
 
+DROP POLICY IF EXISTS "Allow authenticated users to update customers" ON customers;
 CREATE POLICY "Allow authenticated users to update customers"
   ON customers
   FOR UPDATE
