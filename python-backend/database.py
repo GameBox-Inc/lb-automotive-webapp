@@ -309,6 +309,19 @@ def init_db():
         )
     """)
 
+    # Create case_status_history table (audit trail for repair chain)
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS case_status_history (
+            id TEXT PRIMARY KEY,
+            case_id TEXT NOT NULL,
+            old_status TEXT,
+            new_status TEXT NOT NULL,
+            changed_at TEXT DEFAULT CURRENT_TIMESTAMP,
+            changed_by TEXT,
+            FOREIGN KEY (case_id) REFERENCES cases (id)
+        )
+    """)
+
     # Create staff_schedules table
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS staff_schedules (

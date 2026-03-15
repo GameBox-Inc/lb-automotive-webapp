@@ -45,6 +45,14 @@ export type {
   BuildLog
 };
 
+export interface CaseHistoryEvent {
+  event_type: 'case_created' | 'status_change' | 'note_added' | 'part_added' | 'case_signed';
+  at: string | null;
+  staff_id: string | null;
+  staff_name: string | null;
+  payload: Record<string, unknown>;
+}
+
 class APIClient {
   private token: string | null = null;
   private lastRateLimitTime: number = 0;
@@ -529,6 +537,11 @@ class APIClient {
       method: 'PUT',
       body: JSON.stringify(updates),
     });
+  }
+
+  /** Repair history (audit trail) for a case: status changes, notes, parts, chronological. */
+  async getCaseHistory(caseId: string): Promise<CaseHistoryEvent[]> {
+    return this.request<CaseHistoryEvent[]>(`/cases/${caseId}/history`);
   }
 
   /**

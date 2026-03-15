@@ -5,11 +5,41 @@ import json
 from datetime import datetime
 from typing import List, Optional, Dict, Any
 from fastapi import APIRouter, Depends, HTTPException, status
-from models import Case, CaseCreate, CaseUpdate, CaseNote, CaseNoteCreate, CasePart, CasePartCreate
+from models import Case, CaseCreate, CaseUpdate, CaseNote, CaseNoteCreate, CasePart, CasePartCreate, CaseHistoryEvent
 from auth import get_current_active_user
 from database import get_db_connection, fmt_query
 
 router = APIRouter(prefix="/api/cases", tags=["cases"])
+
+
+def _get_staff_id_for_audit(current_user: Dict[str, Any], conn=None) -> Optional[str]:
+    """Resolve staff_id for audit trail (current user or System Admin if admin without staff)."""
+    staff_id = current_user.get("staff_id")
+    if staff_id:
+        return staff_id
+    if not current_user.get("is_admin"):
+        return None
+    # Admin without linked staff: use System Admin
+    own_conn = conn is None
+    if own_conn:
+        conn = get_db_connection()
+    try:
+        cursor = conn.cursor()
+        cursor.execute(fmt_query("SELECT id FROM staff WHERE name = ?"), ("System Admin",))
+        row = cursor.fetchone()
+        if row:
+            return row["id"] if isinstance(row, dict) else row[0]
+        new_id = str(uuid.uuid4())
+        cursor.execute(
+            fmt_query("INSERT INTO staff (id, name, role, active) VALUES (?, 'System Admin', 'admin', 1)"),
+            (new_id,),
+        )
+        conn.commit()
+        return new_id
+    finally:
+        if own_conn and conn is not None:
+            conn.close()
+    return None
 
 @router.post("", response_model=Case, status_code=status.HTTP_201_CREATED)
 def create_case(
@@ -48,6 +78,14 @@ def create_case(
         INSERT INTO cases (id, case_number, appointment_id, status, metadata)
         VALUES (?, ?, ?, 'open', ?)
     """), (case_id, case_number, case_data.appointment_id, metadata_json))
+
+    # Audit trail: log case opened
+    staff_id = _get_staff_id_for_audit(current_user, conn)
+    hist_id = str(uuid.uuid4())
+    cursor.execute(fmt_query("""
+        INSERT INTO case_status_history (id, case_id, old_status, new_status, changed_by)
+        VALUES (?, ?, NULL, 'open', ?)
+    """), (hist_id, case_id, staff_id))
     
     conn.commit()
     
@@ -181,6 +219,110 @@ def get_case(
         parts=parts
     )
 
+
+@router.get("/{case_id}/history", response_model=List[CaseHistoryEvent])
+def get_case_history(
+    case_id: str,
+    current_user: Dict[str, Any] = Depends(get_current_active_user)
+):
+    """Return chronological repair history (audit trail) for a case: status changes, notes, parts."""
+    # Validate access by fetching case (same permission as get_case)
+    get_case(case_id, current_user)
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    events: List[CaseHistoryEvent] = []
+    staff_ids = set()
+
+    # Status history
+    cursor.execute(
+        fmt_query("SELECT old_status, new_status, changed_at, changed_by FROM case_status_history WHERE case_id = ? ORDER BY changed_at ASC"),
+        (case_id,),
+    )
+    for r in cursor.fetchall() or []:
+        rd = r if isinstance(r, dict) else {"old_status": r[0], "new_status": r[1], "changed_at": r[2], "changed_by": r[3]}
+        if not isinstance(rd, dict):
+            rd = {"old_status": r[0], "new_status": r[1], "changed_at": r[2], "changed_by": r[3]}
+        sid = rd.get("changed_by")
+        if sid:
+            staff_ids.add(sid)
+        ev_type = "case_created" if rd.get("old_status") is None and rd.get("new_status") == "open" else "status_change"
+        events.append(
+            CaseHistoryEvent(
+                event_type=ev_type,
+                at=rd.get("changed_at"),
+                staff_id=sid,
+                payload={"old_status": rd.get("old_status"), "new_status": rd.get("new_status")},
+            )
+        )
+
+    # Notes
+    cursor.execute(fmt_query("SELECT staff_id, note, is_internal, created_at FROM case_notes WHERE case_id = ? ORDER BY created_at ASC"), (case_id,))
+    for r in cursor.fetchall() or []:
+        rd = r if isinstance(r, dict) else {"staff_id": r[0], "note": r[1], "is_internal": r[2], "created_at": r[3]}
+        if not isinstance(rd, dict):
+            rd = {"staff_id": r[0], "note": r[1], "is_internal": r[2], "created_at": r[3]}
+        if rd.get("staff_id"):
+            staff_ids.add(rd["staff_id"])
+        snippet = (rd.get("note") or "")[:200]
+        if len(rd.get("note") or "") > 200:
+            snippet += "..."
+        events.append(
+            CaseHistoryEvent(
+                event_type="note_added",
+                at=rd.get("created_at"),
+                staff_id=rd.get("staff_id"),
+                payload={"note": snippet, "is_internal": rd.get("is_internal")},
+            )
+        )
+
+    # Parts
+    cursor.execute(fmt_query("SELECT part_name, quantity, price, created_at FROM case_parts WHERE case_id = ? ORDER BY created_at ASC"), (case_id,))
+    for r in cursor.fetchall() or []:
+        rd = r if isinstance(r, dict) else {"part_name": r[0], "quantity": r[1], "price": r[2], "created_at": r[3]}
+        if not isinstance(rd, dict):
+            rd = {"part_name": r[0], "quantity": r[1], "price": r[2], "created_at": r[3]}
+        events.append(
+            CaseHistoryEvent(
+                event_type="part_added",
+                at=rd.get("created_at"),
+                staff_id=None,
+                payload={"part_name": rd.get("part_name"), "quantity": rd.get("quantity"), "price": rd.get("price")},
+            )
+        )
+
+    # Resolve staff names
+    staff_names = {}
+    if staff_ids:
+        for sid in staff_ids:
+            cursor.execute(fmt_query("SELECT name FROM staff WHERE id = ?"), (sid,))
+            srow = cursor.fetchone()
+            if srow:
+                staff_names[sid] = srow["name"] if isinstance(srow, dict) else srow[0]
+            else:
+                staff_names[sid] = "Unknown"
+
+    # Attach staff names (build new list so Pydantic models stay immutable)
+    out = []
+    for e in events:
+        name = staff_names.get(e.staff_id, "Unknown") if e.staff_id else None
+        out.append(CaseHistoryEvent(
+            event_type=e.event_type,
+            at=e.at,
+            staff_id=e.staff_id,
+            staff_name=name,
+            payload=e.payload,
+        ))
+    events = out
+
+    # Sort by at (handle None: put at end)
+    events.sort(key=lambda x: (x.at is None, x.at or datetime.min))
+
+    conn.close()
+    return events
+
+
 @router.post("/{case_id}/notes", response_model=CaseNote)
 def add_case_note(
     case_id: str,
@@ -253,6 +395,18 @@ def update_case(
     params = []
 
     if case_update.status is not None:
+        # Audit trail: log status change
+        cursor.execute(fmt_query("SELECT status FROM cases WHERE id = ?"), (case_id,))
+        row = cursor.fetchone()
+        old_status = row["status"] if row and isinstance(row, dict) else (row[0] if row else None)
+        if old_status != case_update.status:
+            staff_id = _get_staff_id_for_audit(current_user, conn)
+            hist_id = str(uuid.uuid4())
+            cursor.execute(fmt_query("""
+                INSERT INTO case_status_history (id, case_id, old_status, new_status, changed_by)
+                VALUES (?, ?, ?, ?, ?)
+            """), (hist_id, case_id, old_status, case_update.status, staff_id))
+
         updates.append("status = ?")
         params.append(case_update.status)
         
@@ -322,6 +476,17 @@ def sign_and_close_case(
         params.append(case_update.customer_signature)
 
     if case_update.status == 'completed':
+        # Audit trail: log status change to completed
+        cursor.execute(fmt_query("SELECT status FROM cases WHERE id = ?"), (case_id,))
+        row = cursor.fetchone()
+        old_status = row["status"] if row and isinstance(row, dict) else (row[0] if row else None)
+        if old_status != 'completed':
+            staff_id = _get_staff_id_for_audit(current_user, conn)
+            hist_id = str(uuid.uuid4())
+            cursor.execute(fmt_query("""
+                INSERT INTO case_status_history (id, case_id, old_status, new_status, changed_by)
+                VALUES (?, ?, ?, 'completed', ?)
+            """), (hist_id, case_id, old_status, staff_id))
         updates.append("status = 'completed'")
         updates.append("closed_at = CURRENT_TIMESTAMP")
     

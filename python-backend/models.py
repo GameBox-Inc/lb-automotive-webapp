@@ -279,6 +279,20 @@ class CaseUpdate(BaseModel):
     metadata: Optional[Dict[str, Any]] = None
 
 
+class CaseHistoryEvent(BaseModel):
+    """One entry in the repair history audit trail."""
+    event_type: str  # 'case_created' | 'status_change' | 'note_added' | 'part_added' | 'case_signed'
+    at: Optional[datetime] = None
+    staff_id: Optional[str] = None
+    staff_name: Optional[str] = None
+    payload: Dict[str, Any] = Field(default_factory=dict)
+
+    @field_validator("at", mode="before")
+    @classmethod
+    def validate_at(cls, v):
+        return parse_db_datetime(v) if v else None
+
+
 class StaffSchedule(BaseModel):
     id: str
     staff_id: str

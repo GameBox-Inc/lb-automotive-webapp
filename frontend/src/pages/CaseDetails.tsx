@@ -1,8 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { apiClient } from '../lib/supabase';
+import { apiClient, type CaseHistoryEvent } from '../lib/supabase';
 
-import { ArrowLeft, Save, Plus, Trash2, FileText, CheckCircle, Clock, AlertTriangle, PenTool, Printer, Wrench, Wand2 } from 'lucide-react';
+import { ArrowLeft, Save, Plus, Trash2, FileText, CheckCircle, Clock, AlertTriangle, PenTool, Printer, Wrench, Wand2, History } from 'lucide-react';
 import { formatCurrency } from '../utils/format';
 import toast from 'react-hot-toast';
 import { LoadingSpinner } from '../components/LoadingSpinner';
@@ -44,7 +44,9 @@ const CaseDetails = () => {
     const navigate = useNavigate();
     const [loading, setLoading] = useState(true);
     const [caseData, setCaseData] = useState<CaseDetail | null>(null);
-    const [activeTab, setActiveTab] = useState<'notes' | 'parts' | 'sign'>('notes');
+    const [activeTab, setActiveTab] = useState<'notes' | 'parts' | 'sign' | 'history'>('notes');
+    const [historyEvents, setHistoryEvents] = useState<CaseHistoryEvent[] | null>(null);
+    const [historyLoading, setHistoryLoading] = useState(false);
 
     // Form States
     const [newNote, setNewNote] = useState('');
@@ -65,6 +67,19 @@ const CaseDetails = () => {
             fetchCaseDetails(id.trim());
         }
     }, [id]);
+
+    useEffect(() => {
+        if (activeTab === 'history' && caseData?.id) {
+            setHistoryLoading(true);
+            apiClient.getCaseHistory(caseData.id)
+                .then(setHistoryEvents)
+                .catch(() => {
+                    toast.error('Failed to load repair history');
+                    setHistoryEvents([]);
+                })
+                .finally(() => setHistoryLoading(false));
+        }
+    }, [activeTab, caseData?.id]);
 
     async function fetchCaseDetails(caseId: string) {
         console.log('Fetching case details for:', caseId);
@@ -101,6 +116,7 @@ const CaseDetails = () => {
 
             setCaseData(prev => prev ? { ...prev, status: newStatus } : null);
             toast.success(`Status updated to ${newStatus.replace('_', ' ')} `);
+            if (caseData?.id) apiClient.getCaseHistory(caseData.id).then(setHistoryEvents).catch(() => {});
 
             if (newStatus === 'completed') {
                 setActiveTab('sign');
@@ -122,6 +138,7 @@ const CaseDetails = () => {
             toast.success('Note added');
             setNewNote('');
             fetchCaseDetails(caseData.id);
+            apiClient.getCaseHistory(caseData.id).then(setHistoryEvents).catch(() => {});
         } catch (error) {
             toast.error('Failed to add note');
         }
@@ -173,6 +190,7 @@ const CaseDetails = () => {
             setNewPartPrice('');
             setNewPartQty(1);
             fetchCaseDetails(caseData.id);
+            apiClient.getCaseHistory(caseData.id).then(setHistoryEvents).catch(() => {});
         } catch (error) {
             toast.error('Failed to add part');
         }
@@ -281,6 +299,14 @@ const CaseDetails = () => {
                     Parts
                 </button>
                 <button
+                    onClick={() => setActiveTab('history')}
+                    className={`flex-1 py-4 text-sm font-medium text-center border-b-2 ${activeTab === 'history' ? 'border-indigo-500 text-indigo-600' : 'border-transparent text-gray-500 hover:text-gray-700'
+                        }`}
+                >
+                    <History className="w-5 h-5 mx-auto mb-1" />
+                    History
+                </button>
+                <button
                     onClick={() => setActiveTab('sign')}
                     className={`flex-1 py-4 text-sm font-medium text-center border-b-2 ${activeTab === 'sign' ? 'border-indigo-500 text-indigo-600' : 'border-transparent text-gray-500 hover:text-gray-700'
                         }`}
@@ -335,6 +361,48 @@ const CaseDetails = () => {
                                 Send Internal Note
                             </button>
                         </form>
+                    </div>
+                )}
+
+                {activeTab === 'history' && (
+                    <div className="bg-white dark:bg-gray-800 shadow rounded-lg p-6">
+                        <h3 className="text-lg font-medium text-gray-900 dark:text-white mb-4">Repair history</h3>
+                        <p className="text-sm text-gray-500 dark:text-gray-400 mb-4">Chronological audit trail of status changes, notes, and parts.</p>
+                        {historyLoading ? (
+                            <div className="flex justify-center py-8">
+                                <LoadingSpinner size="lg" />
+                            </div>
+                        ) : !historyEvents?.length ? (
+                            <p className="text-gray-500 dark:text-gray-400 text-center py-8">No history yet.</p>
+                        ) : (
+                            <ul className="space-y-4">
+                                {historyEvents.map((event, index) => {
+                                    const at = event.at ? new Date(event.at).toLocaleString(undefined, { dateStyle: 'short', timeStyle: 'short' }) : '';
+                                    const by = event.staff_name ? ` · ${event.staff_name}` : '';
+                                    let label = '';
+                                    if (event.event_type === 'case_created') label = 'Case opened';
+                                    else if (event.event_type === 'status_change') {
+                                        const oldS = (event.payload?.old_status as string) ?? '';
+                                        const newS = (event.payload?.new_status as string) ?? '';
+                                        label = oldS ? `Status → ${String(newS).replace(/_/g, ' ')}` : `Status: ${String(newS).replace(/_/g, ' ')}`;
+                                    } else if (event.event_type === 'note_added') {
+                                        const note = (event.payload?.note as string) ?? '';
+                                        label = `Note: ${note}`;
+                                    } else if (event.event_type === 'part_added') {
+                                        const name = (event.payload?.part_name as string) ?? '';
+                                        const qty = (event.payload?.quantity as number) ?? 0;
+                                        const price = (event.payload?.price as number) ?? 0;
+                                        label = `Part: ${name}${qty > 1 ? ` (${qty})` : ''} @ ${formatCurrency(price)}`;
+                                    } else label = String(event.event_type).replace(/_/g, ' ');
+                                    return (
+                                        <li key={`${event.event_type}-${event.at ?? ''}-${index}`} className="flex gap-3 text-sm border-l-2 border-gray-200 dark:border-gray-600 pl-4 py-1">
+                                            <span className="text-gray-500 dark:text-gray-400 shrink-0">{at}{by}</span>
+                                            <span className="text-gray-900 dark:text-white">{label}</span>
+                                        </li>
+                                    );
+                                })}
+                            </ul>
+                        )}
                     </div>
                 )}
 
