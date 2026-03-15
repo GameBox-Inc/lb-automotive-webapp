@@ -1,6 +1,7 @@
-import React, { useState } from 'react'
+import React, { useState, startTransition } from 'react'
 import { Calendar, PenTool as Tool, User, BarChart3, AlertCircle, Wrench } from 'lucide-react'
-import { Link } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
+import toast from 'react-hot-toast'
 
 import { LoadingSpinner } from '../components/LoadingSpinner'
 import { SkeletonCard, Skeleton } from '../components/Skeleton'
@@ -9,9 +10,12 @@ import { useAppointments } from '../hooks/useAppointments'
 import { apiClient } from '../lib/supabase'
 import { formatNumber } from '../utils/format'
 import { DailyTimeline } from '../components/DailyTimeline'
+import { isActiveAppointmentStatus } from '../constants/appointments'
+import type { Appointment } from '../lib/supabase'
 
 export function Dashboard() {
   const timeframeId = React.useId()
+  const navigate = useNavigate()
   const {
     appointments,
     metrics,
@@ -23,9 +27,39 @@ export function Dashboard() {
 
   const [showReports, setShowReports] = useState(false)
 
-  const todayAppointments = appointments.filter(
+  const activeAppointments = appointments.filter((apt) => isActiveAppointmentStatus(apt.status))
+  const todayAppointments = activeAppointments.filter(
     (apt) => new Date(apt.appointment_time).toDateString() === new Date().toDateString()
   )
+
+  const handleOpenCase = async (appointment: Appointment) => {
+    try {
+      const cases = await apiClient.getCases()
+      const existingCase = cases.find((c: { appointment_id?: string }) => c.appointment_id === appointment.id)
+      if (existingCase) {
+        startTransition(() => navigate(`/cases/${existingCase.id}`))
+        return
+      }
+      try {
+        const newCase = await apiClient.createCase({
+          appointment_id: appointment.id,
+          customer_name: appointment.customer_name,
+          phone_number: appointment.phone_number,
+          service_type: appointment.service_type,
+          status: 'diagnosing',
+        })
+        if (newCase?.id) {
+          startTransition(() => navigate(`/cases/${newCase.id}`))
+        } else {
+          toast.error('Failed to create case')
+        }
+      } catch {
+        toast.error('Failed to create case')
+      }
+    } catch {
+      toast.error('Failed to open repair details')
+    }
+  }
 
   const MetricCard = ({ title, value, icon }: { title: string, value: string | number, icon: React.ReactElement }) => (
     <div className="card group p-6 cursor-pointer hover:-translate-y-2 hover:scale-105 dark:bg-gray-800 dark:border-gray-700">
@@ -132,7 +166,11 @@ export function Dashboard() {
 
 
       <div className="mt-8">
-        <DailyTimeline appointments={appointments} services={services} />
+        <DailyTimeline
+          appointments={activeAppointments}
+          services={services}
+          onAppointmentClick={handleOpenCase}
+        />
       </div>
 
       <ReportModal isOpen={showReports} onClose={() => setShowReports(false)} />

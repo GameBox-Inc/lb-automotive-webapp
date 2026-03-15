@@ -351,6 +351,7 @@ const StaffDashboard = () => {
                             <tr>
                                 <th className="px-5 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Customer</th>
                                 <th className="px-5 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Service</th>
+                                <th className="px-5 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Notes</th>
                                 <th className="px-5 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Assigned To</th>
                                 <th className="px-5 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Progress</th>
                                 <th className="px-5 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Time</th>
@@ -380,6 +381,11 @@ const StaffDashboard = () => {
                                                 🚨 Emergency
                                             </span>
                                         )}
+                                    </td>
+                                    <td className="px-5 py-4 max-w-[200px]">
+                                        <span className="text-sm text-gray-600 dark:text-gray-300 truncate block" title={apt.notes || undefined}>
+                                            {apt.notes ? (apt.notes.length > 50 ? `${apt.notes.slice(0, 50)}…` : apt.notes) : '—'}
+                                        </span>
                                     </td>
                                     <td className="px-5 py-4 whitespace-nowrap">
                                         <AssigneeChip staffId={apt.assigned_staff_id} staffList={staff} />
@@ -443,6 +449,12 @@ const StaffDashboard = () => {
                                 </div>
 
                                 <p className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-3">{apt.service_type}</p>
+
+                                {apt.notes && (
+                                    <p className="text-xs text-gray-600 dark:text-gray-400 mb-3 line-clamp-2" title={apt.notes}>
+                                        {apt.notes.length > 80 ? `${apt.notes.slice(0, 80)}…` : apt.notes}
+                                    </p>
+                                )}
 
                                 {/* Assignee */}
                                 <div className="flex items-center gap-1.5 mb-3 text-xs text-gray-500 dark:text-gray-400">

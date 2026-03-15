@@ -1,6 +1,6 @@
 import { useState, useEffect, Suspense, lazy, startTransition } from 'react'
 import { Routes, Route, Link, useLocation, Navigate, useNavigate } from 'react-router-dom'
-import { LayoutDashboard, Calendar, Settings, LogOut, Wrench, PenTool as Tool, Phone, Users } from 'lucide-react'
+import { LayoutDashboard, Calendar, Settings, LogOut, Wrench, ClipboardList, Phone, Users, MonitorPlay, CalendarDays } from 'lucide-react'
 import { Toaster } from 'react-hot-toast'
 import { useAppDispatch, useAppSelector } from './store/hooks'
 import { checkAuth, logoutUser, setLoading } from './store/slices/authSlice'
@@ -174,7 +174,7 @@ function App() {
               </div>
               <div>
                 <h1 className="text-xl font-bold text-white tracking-wider font-heading">LB AUTO</h1>
-                <p className="text-xs text-[#FDB80E] font-medium tracking-wide">REPAIR SERVICES</p>
+                <p className="text-xs text-lb-yellow font-medium tracking-wide">REPAIR SERVICES</p>
               </div>
             </div>
             <nav className="space-y-1">
@@ -191,11 +191,11 @@ function App() {
                   <div className="pt-4 pb-2 px-6 text-xs font-semibold text-gray-500 uppercase tracking-wider">
                     Admin
                   </div>
-                  <NavItem icon={<Tool className="h-5 w-5" />} text="Services" to="/services" />
-                  <NavItem icon={<Tool className="h-5 w-5" />} text="Launch Kiosk" to="/checkin" />
+                  <NavItem icon={<ClipboardList className="h-5 w-5" />} text="Services" to="/services" />
+                  <NavItem icon={<MonitorPlay className="h-5 w-5" />} text="Launch Kiosk" to="/checkin" />
                   <NavItem icon={<Phone className="h-5 w-5" />} text="IVR Settings" to="/admin/ivr" />
                   <NavItem icon={<Users className="h-5 w-5" />} text="Customers" to="/admin/customers" />
-                  <NavItem icon={<Users className="h-5 w-5" />} text="Staff & Schedule" to="/admin/staff" />
+                  <NavItem icon={<CalendarDays className="h-5 w-5" />} text="Staff & Schedule" to="/admin/staff" />
                 </>
               )}
             </nav>

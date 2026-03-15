@@ -281,6 +281,12 @@ const CaseDetails = () => {
                         </select>
                     </div>
                 </div>
+                {caseData.vehicle_info && (
+                    <div className="mt-4 pt-4 border-t border-gray-200 dark:border-gray-700">
+                        <p className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-1">Caller / appointment notes</p>
+                        <p className="text-sm text-gray-900 dark:text-white whitespace-pre-wrap">{caseData.vehicle_info}</p>
+                    </div>
+                )}
             </div>
 
             {/* Tabs */}
@@ -452,7 +458,7 @@ const CaseDetails = () => {
                             <div className="flex justify-center py-8">
                                 <LoadingSpinner size="lg" />
                             </div>
-                        ) : !historyEvents?.length ? (
+                        ) : !historyEvents?.length && !caseData.vehicle_info ? (
                             <EmptyState
                                 icon={<History className="h-7 w-7" />}
                                 title="No history yet"
@@ -460,7 +466,13 @@ const CaseDetails = () => {
                             />
                         ) : (
                             <ul className="space-y-4">
-                                {historyEvents.map((event, index) => {
+                                {caseData.vehicle_info && (
+                                    <li className="flex gap-3 text-sm border-l-2 border-lb-red-primary/50 dark:border-lb-red-primary/50 pl-4 py-1">
+                                        <span className="text-gray-500 dark:text-gray-400 shrink-0">Caller notes (from appointment)</span>
+                                        <span className="text-gray-900 dark:text-white">{caseData.vehicle_info}</span>
+                                    </li>
+                                )}
+                                {historyEvents?.map((event, index) => {
                                     const at = event.at ? new Date(event.at).toLocaleString(undefined, { dateStyle: 'short', timeStyle: 'short' }) : '';
                                     const by = event.staff_name ? ` · ${event.staff_name}` : '';
                                     let label = '';

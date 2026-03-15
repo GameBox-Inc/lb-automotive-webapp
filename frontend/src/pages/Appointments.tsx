@@ -6,6 +6,7 @@ import { RootState } from '../store'
 import { apiClient } from '../lib/supabase'
 import { AppointmentCard } from '../components/AppointmentCard'
 import { DailyTimeline } from '../components/DailyTimeline'
+import { AppointmentCalendar } from '../components/AppointmentCalendar'
 import { LoadingSpinner } from '../components/LoadingSpinner'
 import { SkeletonList, SkeletonCard } from '../components/Skeleton'
 import { EmptyState } from '../components/EmptyState'
@@ -16,6 +17,7 @@ import { format, parseISO } from 'date-fns';
 import toast from 'react-hot-toast'
 import { Appointment, Service, Customer } from '../types'
 import { VEHICLE_MAKE_MODEL_OPTIONS, COMMON_COLORS } from '../constants/vehicleData'
+import { isActiveAppointmentStatus } from '../constants/appointments'
 
 export function Appointments() {
   const formId = useId()
@@ -292,12 +294,15 @@ export function Appointments() {
   const categories = Object.keys(servicesByCategory).sort()
   const selectedService = services.find(s => s.id === newAppointment.service_type)
 
-  const filteredAppointments = appointments.filter(apt => {
-    const matchDate = filterDate ? apt.appointment_time.startsWith(filterDate) : true;
-    const matchStatus = filterStatus === 'all' ? true : apt.status === filterStatus;
-    const matchCompleted = hideCompleted ? apt.status !== 'completed' : true;
-    return matchDate && matchStatus && matchCompleted;
-  }).sort((a, b) => {
+  const filteredAppointments = appointments
+    .filter(apt => isActiveAppointmentStatus(apt.status))
+    .filter(apt => {
+      const matchDate = filterDate ? apt.appointment_time.startsWith(filterDate) : true;
+      const matchStatus = filterStatus === 'all' ? true : apt.status === filterStatus;
+      const matchCompleted = hideCompleted ? apt.status !== 'completed' : true;
+      return matchDate && matchStatus && matchCompleted;
+    })
+    .sort((a, b) => {
     const dateA = new Date(a.appointment_time).getTime();
     const dateB = new Date(b.appointment_time).getTime();
     return sortOrder === 'desc' ? dateB - dateA : dateA - dateB;
@@ -611,10 +616,19 @@ export function Appointments() {
           )}
 
           {viewMode === 'calendar' && (
-            <DailyTimeline
-              appointments={filteredAppointments}
-              services={services}
-            />
+            <div className="space-y-6">
+              <AppointmentCalendar
+                appointments={filteredAppointments}
+                services={services}
+                onDateClick={(date) => setFilterDate(format(date, 'yyyy-MM-dd'))}
+              />
+              <DailyTimeline
+                appointments={filteredAppointments}
+                services={services}
+                selectedDate={filterDate ? parseISO(filterDate + 'T12:00:00') : undefined}
+                onAppointmentClick={handleOpenCase}
+              />
+            </div>
           )}
         </>
       )}
