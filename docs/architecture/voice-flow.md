@@ -87,7 +87,7 @@ When speech is detected, the system uses an LLM to classify intent. If the user 
 
 ## Voice Configuration
 
-- **Voice:** `Polly.Matthew` (en), `Polly.Lupe` (es)
+- **Voice:** Male only for consistency: `Polly.Matthew` (en), `Polly.Miguel` (es)
 - **Settings:** `ivr_voice`, `ivr_language`, `ivr_latency_masking_enabled`, `ivr_filler_mode`, `ivr_speech_timeout`, `ivr_repair_max_retries`, `ivr_transfer_number`, `ivr_transfer_timeout` from DB
 - **24/7:** No business-hours blocking; calls accepted anytime
 - **Transfer:** When `ivr_transfer_number` (E.164) is set, "speak to someone" uses TwiML `<Dial>` to connect the caller; on no-answer/timeout the `transfer_no_answer` step plays a message and hangs up. When not set, caller hears "unable to transfer" and hangs up.

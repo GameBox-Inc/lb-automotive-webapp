@@ -237,12 +237,17 @@ def _ivr_pause(response: VoiceResponse, seconds: Optional[float] = None) -> None
         pass
 
 
+# Male voices only for consistent IVR experience: Matthew (en-US), Miguel (es-US).
+IVR_VOICE_MALE_EN = "Polly.Matthew"
+IVR_VOICE_MALE_ES = "Polly.Miguel"
+
+
 def _voice_for_language(language: str) -> str:
-    """Return TTS voice: ivr_voice from settings if set, else Polly by language (Matthew en, Lupe es)."""
+    """Return TTS voice: ivr_voice from settings if set, else male Polly by language (Matthew en, Miguel es)."""
     v = (get_setting("ivr_voice", "") or "").strip()
     if v:
         return v
-    return "Polly.Lupe" if language == "es" else "Polly.Matthew"
+    return IVR_VOICE_MALE_ES if language == "es" else IVR_VOICE_MALE_EN
 
 
 # --- Decision Tree Structure ---
@@ -511,7 +516,7 @@ def handle_transfer_representative(user_input, language, CallSid, metadata, resp
     Transfer caller to staff. If ivr_transfer_number is set, Dial it with timeout and no-answer action.
     If not set, say we're unable to transfer and hang up.
     """
-    voice = "Polly.Lupe" if language == "es" else "Polly.Matthew"
+    voice = _voice_for_language(language)
     transfer_number = (get_setting("ivr_transfer_number", "") or "").strip()
     try:
         timeout_sec = min(60, max(10, int(get_setting("ivr_transfer_timeout", "30") or 30)))
@@ -540,7 +545,7 @@ def handle_transfer_representative(user_input, language, CallSid, metadata, resp
 
 def handle_check_status(user_input, language, CallSid, metadata, response):
     """Look up next upcoming appointment by caller phone; say status or no-appointment message, then hang up."""
-    voice = "Polly.Lupe" if language == "es" else "Polly.Matthew"
+    voice = _voice_for_language(language)
     from_phone = (metadata.get("from_phone") or "").strip()
     if not from_phone:
         response.say(get_response("check_status_none", language), voice=voice)
@@ -604,7 +609,7 @@ def handle_smart_jump(intent, llm_result, CallSid, metadata, response, language)
 def handle_language_choice(user_input, language, CallSid, metadata, response):
     """First step: bilingual prompt for language; 1=English, 2=Spanish. Invalid digits re-prompt; no-input uses repair count then transfer."""
     inp = (user_input or "").strip()
-    voice = "Polly.Matthew"
+    voice = IVR_VOICE_MALE_EN  # Bilingual prompt before language chosen; consistent male
     if inp == "1":
         upsert_call_state(CallSid, "start", "en", metadata)
         response.redirect(f"{WEBHOOK_BASE_URL}?step=start")
@@ -658,7 +663,7 @@ def handle_service_category(user_input, language, CallSid, metadata, response):
     metadata["categories"] = categories
     upsert_call_state(CallSid, "select_service_category", language, metadata)
     
-    voice = "Polly.Lupe" if language == "es" else "Polly.Matthew"
+    voice = _voice_for_language(language)
     message = get_response("service_category_intro", language)
     response.say(message, voice=voice)
 
@@ -739,7 +744,7 @@ def handle_time_selection(user_input, language, CallSid, metadata, response):
     from scheduling.engine import compute_availability
 
     selected_service = metadata.get("selected_service", {"id": "general", "name": "General Service"})
-    voice = "Polly.Lupe" if language == "es" else "Polly.Matthew"
+    voice = _voice_for_language(language)
 
     # Try up to 7 days ahead so we don't say "no openings" when only a few days are closed or missing from config
     available_slots = []
@@ -825,7 +830,7 @@ def handle_booking(user_input, language, CallSid, metadata, response):
     target_date = metadata.get("target_date")
     svc = metadata.get("selected_service", {})
     
-    voice = "Polly.Lupe" if language == "es" else "Polly.Matthew"
+    voice = _voice_for_language(language)
     if chosen_slot:
         appt_time = f"{target_date}T{chosen_slot}:00"
         aid = str(uuid.uuid4())
@@ -876,7 +881,7 @@ def handle_booking(user_input, language, CallSid, metadata, response):
 def handle_save_time_choice(user_input, language, CallSid, metadata, response):
     """Resolve preferred time (speech or 1/2) to closest slot, confirm it, then ask for reason for visit."""
     slots = metadata.get("available_slots", [])
-    voice = "Polly.Lupe" if language == "es" else "Polly.Matthew"
+    voice = _voice_for_language(language)
     if not slots:
         response.say(get_response("time_not_found", language), voice=voice)
         return "select_time"
@@ -923,7 +928,7 @@ def handle_symptoms_processing(user_input, language, CallSid, metadata, response
 
 def handle_confirm_intent(user_input, language, CallSid, metadata, response):
     """Confirm inferred appointment intent: 1 = yes (go to after_confirm_intent), 2 = no (main_menu_after_no)."""
-    voice = "Polly.Lupe" if language == "es" else "Polly.Matthew"
+    voice = _voice_for_language(language)
     inp = (user_input or "").strip()
     if inp == "1":
         next_step = metadata.get("after_confirm_intent", "collect_vehicle")
@@ -946,7 +951,7 @@ def handle_confirm_intent(user_input, language, CallSid, metadata, response):
 
 def handle_confirm_appointment(user_input, language, CallSid, metadata, response):
     """Play back appointment summary and gather 1 to confirm or 9 to pick a different time."""
-    voice = "Polly.Lupe" if language == "es" else "Polly.Matthew"
+    voice = _voice_for_language(language)
     inp = (user_input or "").strip()
     if inp == "1":
         response.redirect(f"{WEBHOOK_BASE_URL}?step=confirm_booking")
@@ -983,7 +988,7 @@ def handle_emergency(user_input, language, CallSid, metadata, response):
     metadata["services"] = services
     upsert_call_state(CallSid, "emergency_services", language, metadata)
     
-    voice = "Polly.Lupe" if language == "es" else "Polly.Matthew"
+    voice = _voice_for_language(language)
     response.say(get_response("emergency_intro", language), voice=voice)
     for idx, s in enumerate(services, 1):
         response.say(f"For {s['name']}, press {idx}", voice=voice)
@@ -996,7 +1001,7 @@ def handle_select_service_detail(user_input, language, CallSid, metadata, respon
     """Show services in selected category and gather for service selection."""
     categories = metadata.get("categories", [])
     if not categories:
-        voice = "Polly.Lupe" if language == "es" else "Polly.Matthew"
+        voice = _voice_for_language(language)
         response.say(get_response("start_over", language), voice=voice)
         response.redirect(f"{WEBHOOK_BASE_URL}?step=start")
         return None
@@ -1012,7 +1017,7 @@ def handle_select_service_detail(user_input, language, CallSid, metadata, respon
     metadata["category_services"] = services
     metadata["selected_category"] = category
     upsert_call_state(CallSid, "select_service_detail", language, metadata)
-    voice = "Polly.Lupe" if language == "es" else "Polly.Matthew"
+    voice = _voice_for_language(language)
     response.say(get_response("service_detail_intro", language, category=category.replace("_", " ")), voice=voice)
     for i, s in enumerate(services, 1):
         response.say(f"For {s['name']}, press {i}", voice=voice)
@@ -1039,7 +1044,7 @@ def handle_confirm_emergency(user_input, language, CallSid, metadata, response):
     """Confirm emergency service selection and provide next steps."""
     services = metadata.get("services", [])
     if not services:
-        voice = "Polly.Lupe" if language == "es" else "Polly.Matthew"
+        voice = _voice_for_language(language)
         response.say(get_response("start_over", language), voice=voice)
         response.redirect(f"{WEBHOOK_BASE_URL}?step=start")
         return None
@@ -1048,7 +1053,7 @@ def handle_confirm_emergency(user_input, language, CallSid, metadata, response):
         svc = services[idx] if 0 <= idx < len(services) else services[0]
     except (ValueError, TypeError):
         svc = services[0]
-    voice = "Polly.Lupe" if language == "es" else "Polly.Matthew"
+    voice = _voice_for_language(language)
     response.say(get_response("emergency_selected", language, service_name=svc["name"]), voice=voice)
     response.hangup()
     return None
@@ -1080,11 +1085,10 @@ def twilio_webhook(
         if step == "start" and existing_state is None:
             response.redirect(f"{WEBHOOK_BASE_URL}?step=language_choice")
             return Response(content=str(response), media_type="application/xml")
-        voice = get_setting("ivr_voice", "alice")
         language = get_setting("ivr_language", "en-US")
         call_state = existing_state or {"call_sid": CallSid, "current_step": "start", "language": "en", "metadata": {}}
         language = call_state.get("language", "en")
-        voice = _voice_for_language(language)
+        voice = _voice_for_language(language)  # Male only: Matthew (en), Miguel (es)
         metadata = call_state.get("metadata", {})
         metadata["from_phone"] = From
 

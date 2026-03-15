@@ -436,6 +436,9 @@ const AdminIVR = () => {
                                 <Phone className="h-5 w-5 mr-2 text-indigo-500" />
                                 Voice Configuration
                             </h3>
+                            <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
+                                Leave voice blank for a consistent male voice (English: Matthew, Spanish: Miguel). Override with a Polly voice name (e.g. Polly.Matthew) if needed.
+                            </p>
                             <div className="mt-4 grid grid-cols-1 gap-y-6 sm:grid-cols-2 sm:gap-x-8">
                                 {Array.isArray(settings) && settings.filter(s => ['ivr_voice', 'ivr_language'].includes(s.key)).map(setting => (
                                     <div key={setting.key} className="bg-gray-50 dark:bg-gray-700/50 p-4 rounded-lg">

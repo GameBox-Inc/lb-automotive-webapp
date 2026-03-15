@@ -22,7 +22,7 @@ client = TestClient(app)
 def _mock_get_setting(key, default=None):
     """Return safe defaults so webhook never hits DB for settings."""
     defaults = {
-        "ivr_voice": "alice",
+        "ivr_voice": "",  # blank = male by language (Matthew/Miguel)
         "ivr_language": "en-US",
         "ivr_repair_max_retries": "3",
         "ivr_transfer_number": "",

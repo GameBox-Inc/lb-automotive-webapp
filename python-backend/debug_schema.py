@@ -327,7 +327,7 @@ def seed_data():
         ('closing_time', '18:00', 'Business closing time (HH:MM)'),
         ('ivr_greeting', 'Welcome to LB Automotive. Press 1 for appointments, 2 for emergency services.', 'Main IVR greeting message'),
         ('ivr_closed_message', 'We are currently closed. Our hours are 8 AM to 6 PM. Please call back during business hours.', 'Message played when closed'),
-        ('ivr_voice', 'alice', 'Voice for text-to-speech (alice, man, woman)'),
+        ('ivr_voice', '', 'Override TTS voice; blank = male by language (Polly.Matthew en, Polly.Miguel es)'),
         ('ivr_language', 'en-US', 'Language for text-to-speech'),
         ('staff_count', '5', 'Number of staff members available per day')
     ]
