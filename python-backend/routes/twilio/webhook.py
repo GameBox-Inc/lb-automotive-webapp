@@ -541,6 +541,11 @@ def handle_language_choice(user_input, language, CallSid, metadata, response):
     metadata["step_repair_count"] = step_repair
     upsert_call_state(CallSid, "language_choice", language, metadata)
     _ivr_pause(response)
+    # Welcome as first IVR content (L-B Automotive) then language choice
+    welcome = get_step_prompt("start", "en")
+    if welcome:
+        response.say(welcome, voice=voice)
+        _ivr_pause(response)
     response.say(get_response("language_choice", "en"), voice=voice)
     _ivr_pause(response)
     gather = Gather(num_digits=1, input="dtmf", action=f"{WEBHOOK_BASE_URL}?step=language_choice", timeout=8)
@@ -611,23 +616,25 @@ def check_shop_bandwidth(date_str, slot_time):
         return True # Fallback to allowing
 
 def _format_slot_for_speech(slot_hm: str, language: str) -> str:
-    """Format 'HH:MM' as spoken time for confirmation (e.g. '9 in the morning', '3 in the afternoon')."""
+    """Format 'HH:MM' (24h) as spoken time for confirmation (e.g. '9 in the morning', '4 in the afternoon')."""
     try:
         parts = slot_hm.split(":")
         h, m = int(parts[0], 10), int(parts[1], 10) if len(parts) > 1 else 0
     except (ValueError, IndexError):
         return slot_hm
+    # Convert 24h to 12h for speech: 0->12, 1-11 unchanged, 12->12, 13-23->1-11
+    h12 = 12 if h == 0 else (h if h <= 12 else h - 12)
     if language == "es":
         if h < 12:
-            return f"{h} de la mañana" if m == 0 else f"{h} y {m} de la mañana"
-        return f"{h} de la tarde" if m == 0 else f"{h} y {m} de la tarde"
+            return f"{h12} de la mañana" if m == 0 else f"{h12} y {m} de la mañana"
+        return f"{h12} de la tarde" if m == 0 else f"{h12} y {m} de la tarde"
     if h == 0:
         return "12 in the morning" if m == 0 else f"12 {m} in the morning"
     if h < 12:
-        return f"{h} in the morning" if m == 0 else f"{h} {m} in the morning"
+        return f"{h12} in the morning" if m == 0 else f"{h12} {m} in the morning"
     if h == 12:
         return "noon" if m == 0 else f"12 {m} in the afternoon"
-    return f"{h} in the afternoon" if m == 0 else f"{h} {m} in the afternoon"
+    return f"{h12} in the afternoon" if m == 0 else f"{h12} {m} in the afternoon"
 
 
 def handle_time_selection(user_input, language, CallSid, metadata, response):
@@ -671,12 +678,15 @@ def handle_time_selection(user_input, language, CallSid, metadata, response):
         response.hangup()
         return None
 
-    # Spoken date for time_ask (e.g. "tomorrow" or "Tuesday, March 15")
+    # Spoken date for time_ask: "tomorrow"/"mañana" (no "on") or "on Monday, March 15" / "el lunes 15 de marzo"
     tomorrow_str = (datetime.now() + timedelta(days=1)).strftime("%Y-%m-%d")
     is_tomorrow = target_date == tomorrow_str
     try:
         d = datetime.strptime(target_date, "%Y-%m-%d")
-        date_spoken = "tomorrow" if is_tomorrow and language != "es" else ("mañana" if is_tomorrow else d.strftime("%A, %B %d") if language != "es" else d.strftime("%A %d de %B"))
+        if is_tomorrow:
+            date_spoken = "tomorrow" if language != "es" else "mañana"
+        else:
+            date_spoken = ("on " + d.strftime("%A, %B %d")) if language != "es" else ("el " + d.strftime("%A %d de %B"))
     except Exception:
         date_spoken = target_date
 
@@ -1174,6 +1184,9 @@ def twilio_webhook(
                 gc = node.get("gather_config", {})
                 # Timeout / no input: repair or transfer after max retries
                 if not input_data:
+                    first_gather_played_steps = metadata.get("first_gather_played_steps") or []
+                    if not isinstance(first_gather_played_steps, list):
+                        first_gather_played_steps = list(first_gather_played_steps) if first_gather_played_steps else []
                     # First-turn at start: do not play repair on the very first request (no user input yet).
                     if step == "start" and not metadata.get("start_gather_played"):
                         metadata["start_gather_played"] = True
@@ -1186,6 +1199,22 @@ def twilio_webhook(
                                 "step": step,
                                 "repair_played": False,
                                 "reason": "first_gather",
+                            },
+                        )
+                    # First arrival at this step (e.g. after redirect): do not play repair; play prompt only.
+                    elif step not in first_gather_played_steps:
+                        first_gather_played_steps = list(first_gather_played_steps)
+                        first_gather_played_steps.append(step)
+                        metadata["first_gather_played_steps"] = first_gather_played_steps
+                        upsert_call_state(CallSid, step, language, metadata)
+                        next_s = step
+                        logger.info(
+                            "IVR response",
+                            extra={
+                                **get_trace_context(),
+                                "step": step,
+                                "repair_played": False,
+                                "reason": "first_gather_step",
                             },
                         )
                     else:
