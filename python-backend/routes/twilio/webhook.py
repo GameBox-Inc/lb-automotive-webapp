@@ -641,11 +641,9 @@ def handle_language_choice(user_input, language, CallSid, metadata, response):
     metadata["step_repair_count"] = step_repair
     upsert_call_state(CallSid, "language_choice", language, metadata)
     _ivr_pause(response)
-    # Welcome as first IVR content (L-B Automotive) then language choice
-    welcome = get_step_prompt("start", "en")
-    if welcome:
-        response.say(welcome, voice=voice)
-        _ivr_pause(response)
+    # 1) Welcome (short), 2) Language selection, 3) then redirect to start = "how can we help" gather
+    response.say(get_response("welcome", "en"), voice=voice)
+    _ivr_pause(response)
     response.say(get_response("language_choice", "en"), voice=voice)
     _ivr_pause(response)
     gather = Gather(num_digits=1, input="dtmf", action=f"{WEBHOOK_BASE_URL}?step=language_choice", timeout=8)

@@ -2,8 +2,8 @@
   "_comment": "Matrix-driven IVR prompts. Edit this file to change copy without code changes. Use {placeholder} in responses for dynamic values.",
   "steps": {
     "start": {
-      "prompt_en": "Hi, thanks for calling L-B Automotive. We're here to help—would you like to schedule an appointment, get a status update on your vehicle, or speak with someone? Just say what you need.",
-      "prompt_es": "Hola, gracias por llamar a L-B Automotive. Estamos para ayudarle. ¿Le gustaría programar una cita, recibir una actualización de su vehículo o hablar con alguien? Diga lo que necesita."
+      "prompt_en": "How can we help you today? Press 1 or say appointment to schedule. Press 2 or say status for a vehicle update. Press 3 or say representative to speak with someone. For something urgent, say emergency.",
+      "prompt_es": "¿En qué podemos ayudarle hoy? Presione 1 o diga cita para programar. Presione 2 o diga estado para una actualización de su vehículo. Presione 3 o diga representante para hablar con alguien. Si es urgente, diga emergencia."
     },
     "main_menu_en": {
       "prompt_en": "What can we do for you? Press 1 or say appointment to schedule. Press 2 or say status for a vehicle update. Press 3 or say representative to speak with someone. For something urgent, say emergency."
@@ -51,6 +51,10 @@
     }
   },
   "responses": {
+    "welcome": {
+      "en": "Hi, welcome to L-B Automotive Repair. We're here to help.",
+      "es": "Hola, bienvenido a L-B Automotive Repair. Estamos para ayudarle."
+    },
     "language_choice": {
       "en": "For English press 1. Para español press 2.",
       "es": "For English press 1. Para español press 2."

@@ -1,6 +1,6 @@
 import { useState, useEffect, Suspense, lazy, startTransition } from 'react'
 import { Routes, Route, Link, useLocation, Navigate, useNavigate } from 'react-router-dom'
-import { LayoutDashboard, Calendar, Settings, LogOut, Wrench, ClipboardList, Phone, Users, MonitorPlay, CalendarDays } from 'lucide-react'
+import { LayoutDashboard, Calendar, Settings, LogOut, Wrench, ClipboardList, Phone, Users, MonitorPlay, CalendarDays, Sliders } from 'lucide-react'
 import { Toaster } from 'react-hot-toast'
 import { useAppDispatch, useAppSelector } from './store/hooks'
 import { checkAuth, logoutUser, setLoading } from './store/slices/authSlice'
@@ -15,6 +15,7 @@ const Login = lazy(() => import('./pages/Login').then(module => ({ default: modu
 const AdminIVR = lazy(() => import('./pages/AdminIVR'))
 const AdminCustomers = lazy(() => import('./pages/AdminCustomers'))
 const AdminStaff = lazy(() => import('./pages/AdminStaff'))
+const AdminSettingsPage = lazy(() => import('./pages/AdminSettings').then(module => ({ default: module.AdminSettings })))
 const StaffDashboard = lazy(() => import('./pages/StaffDashboard'))
 const CaseDetails = lazy(() => import('./pages/CaseDetails'))
 const CheckIn = lazy(() => import('./pages/CheckIn'))
@@ -134,6 +135,7 @@ function App() {
       case '/settings': return 'Settings';
       case '/repairs': return 'My Repairs';
       case '/admin/ivr': return 'IVR Settings';
+      case '/admin/settings': return 'Admin Settings';
       case '/admin/customers': return 'Customers';
       case '/admin/staff': return 'Staff & Schedule';
       case '/wallboard/calendar': return 'Calendar';
@@ -193,6 +195,7 @@ function App() {
                   </div>
                   <NavItem icon={<ClipboardList className="h-5 w-5" />} text="Services" to="/services" />
                   <NavItem icon={<MonitorPlay className="h-5 w-5" />} text="Launch Kiosk" to="/checkin" />
+                  <NavItem icon={<Sliders className="h-5 w-5" />} text="Admin Settings" to="/admin/settings" />
                   <NavItem icon={<Phone className="h-5 w-5" />} text="IVR Settings" to="/admin/ivr" />
                   <NavItem icon={<Users className="h-5 w-5" />} text="Customers" to="/admin/customers" />
                   <NavItem icon={<CalendarDays className="h-5 w-5" />} text="Staff & Schedule" to="/admin/staff" />
@@ -264,6 +267,7 @@ function App() {
               <Route path="/checkin" element={user?.is_admin ? <CheckIn /> : <Navigate to="/" replace />} />
               <Route path="/wallboard/calendar" element={<Appointments />} />
               <Route path="/admin/ivr" element={user?.is_admin ? <AdminIVR /> : <Navigate to="/" />} />
+              <Route path="/admin/settings" element={user?.is_admin ? <AdminSettingsPage /> : <Navigate to="/" />} />
               <Route path="/admin/customers" element={user?.is_admin ? <AdminCustomers /> : <Navigate to="/" />} />
               <Route path="/admin/staff" element={user?.is_admin ? <AdminStaff /> : <Navigate to="/" />} />
               <Route path="*" element={<Navigate to="/" replace />} />

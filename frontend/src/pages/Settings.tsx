@@ -1,64 +1,44 @@
 import React, { useId, useState, useEffect } from 'react'
-import { apiClient } from '../lib/supabase'
-import { Setting } from '../types'
-import toast from 'react-hot-toast'
-import { LoadingSpinner } from '../components/LoadingSpinner'
+import { useSelector } from 'react-redux'
+import { Link } from 'react-router-dom'
+import { User as UserIcon, Shield, UserCog } from 'lucide-react'
+import { RootState } from '../store/store'
+
+const DISPLAY_TIMEZONE_KEY = 'lb_display_timezone'
+
+const DISPLAY_TIMEZONES = [
+  { value: '', label: 'Use business default' },
+  { value: 'America/New_York', label: 'Eastern (America/New_York)' },
+  { value: 'America/Chicago', label: 'Central (America/Chicago)' },
+  { value: 'America/Denver', label: 'Mountain (America/Denver)' },
+  { value: 'America/Los_Angeles', label: 'Pacific (America/Los_Angeles)' },
+  { value: 'UTC', label: 'UTC' },
+  { value: 'Europe/London', label: 'Europe/London' },
+  { value: 'Asia/Tokyo', label: 'Asia/Tokyo' },
+]
 
 export function Settings() {
   const formId = useId()
-  const [settings, setSettings] = useState<Record<string, string>>({})
-  const [loading, setLoading] = useState(true)
-  const [saving, setSaving] = useState(false)
-
-  // Common timezones
-  const timezones = [
-    'UTC',
-    'America/New_York',
-    'America/Chicago',
-    'America/Denver',
-    'America/Los_Angeles',
-    'Europe/London',
-    'Europe/Paris',
-    'Asia/Tokyo',
-    'Australia/Sydney'
-  ]
-
+  const user = useSelector((state: RootState) => state.auth.user)
+  const [displayTimezone, setDisplayTimezone] = useState('')
   useEffect(() => {
-    fetchSettings()
+    setDisplayTimezone(globalThis.localStorage?.getItem(DISPLAY_TIMEZONE_KEY) ?? '')
   }, [])
 
-  const fetchSettings = async () => {
-    try {
-      const data = await apiClient.getSettings()
-      // Convert array to object for easier access
-      const settingsMap = data.reduce((acc: Record<string, string>, curr: Setting) => {
-        acc[curr.key] = curr.value
-        return acc
-      }, {})
-      setSettings(settingsMap)
-    } catch (error) {
-      console.error('Error fetching settings:', error)
-      toast.error('Failed to load settings')
-    } finally {
-      setLoading(false)
+  const handleDisplayTimezoneChange = (value: string) => {
+    if (value) {
+      globalThis.localStorage?.setItem(DISPLAY_TIMEZONE_KEY, value)
+    } else {
+      globalThis.localStorage?.removeItem(DISPLAY_TIMEZONE_KEY)
     }
+    setDisplayTimezone(value)
   }
 
-  const handleSave = async (key: string, value: string) => {
-    setSaving(true)
-    try {
-      await apiClient.updateSetting(key, value)
-      setSettings(prev => ({ ...prev, [key]: value }))
-      toast.success('Setting updated')
-    } catch (error) {
-      console.error('Error updating setting:', error)
-      toast.error('Failed to update setting')
-    } finally {
-      setSaving(false)
-    }
-  }
-
-  if (loading) return <LoadingSpinner />
+  const roleLabel = (() => {
+    if (user?.is_admin) return 'Administrator'
+    if (user?.staff_id) return 'Staff'
+    return 'User'
+  })()
 
   return (
     <div className="space-y-6">
@@ -69,73 +49,88 @@ export function Settings() {
       <div className="bg-white dark:bg-gray-800 shadow rounded-lg">
         <div className="p-6 space-y-6">
           <div className="border-b border-gray-200 dark:border-gray-700 pb-6">
-            <h2 className="text-lg font-medium text-gray-900 dark:text-white">General Settings</h2>
+            <h2 className="text-lg font-medium text-gray-900 dark:text-white flex items-center gap-2">
+              <UserIcon className="h-5 w-5 text-gray-500" />
+              Account
+            </h2>
             <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
-              Configure global application settings.
+              Your account details and display preferences.
             </p>
           </div>
 
           <div className="grid grid-cols-1 gap-6">
-
-            {/* Timezone Setting */}
             <div>
-              <label htmlFor={`${formId}-timezone`} className="block text-sm font-medium text-gray-700 dark:text-gray-300">
-                Business Timezone
+              <label htmlFor={`${formId}-username`} className="block text-sm font-medium text-gray-700 dark:text-gray-300">
+                Username
+              </label>
+              <div
+                id={`${formId}-username`}
+                className="mt-1 block w-full rounded-md border border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-700 px-3 py-2 text-gray-900 dark:text-white sm:text-sm"
+              >
+                {user?.username || '—'}
+              </div>
+            </div>
+
+            <div>
+              <label htmlFor={`${formId}-role`} className="block text-sm font-medium text-gray-700 dark:text-gray-300">
+                Role
+              </label>
+              <div
+                id={`${formId}-role`}
+                className="mt-1 flex items-center gap-2 w-full rounded-md border border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-700 px-3 py-2 text-gray-900 dark:text-white sm:text-sm"
+              >
+                {user?.is_admin ? (
+                  <Shield className="h-4 w-4 text-amber-500" aria-hidden />
+                ) : (
+                  <UserCog className="h-4 w-4 text-gray-500" aria-hidden />
+                )}
+                {roleLabel}
+              </div>
+            </div>
+
+            <div>
+              <label htmlFor={`${formId}-display-tz`} className="block text-sm font-medium text-gray-700 dark:text-gray-300">
+                Display timezone
               </label>
               <p className="text-sm text-gray-500 dark:text-gray-400 mb-2">
-                All appointments and schedules will be displayed in this timezone.
+                Override how dates and times are shown for you. Does not change business scheduling.
               </p>
               <select
-                id={`${formId}-timezone`}
-                value={settings['timezone'] || 'America/New_York'}
-                onChange={(e) => handleSave('timezone', e.target.value)}
-                disabled={saving}
+                id={`${formId}-display-tz`}
+                value={displayTimezone}
+                onChange={(e) => handleDisplayTimezoneChange(e.target.value)}
                 className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-lb-red-primary focus:ring-lb-red-primary dark:bg-gray-700 dark:border-gray-600 dark:text-white sm:text-sm"
               >
-                {timezones.map(tz => (
-                  <option key={tz} value={tz}>{tz}</option>
+                {DISPLAY_TIMEZONES.map(({ value, label }) => (
+                  <option key={`tz-${value || 'default'}`} value={value}>{label}</option>
                 ))}
               </select>
             </div>
-
-            {/* Staff Count Setting */}
-            <div>
-              <label htmlFor={`${formId}-staff-count`} className="block text-sm font-medium text-gray-700 dark:text-gray-300">
-                Daily Staff Count
-              </label>
-              <p className="text-sm text-gray-500 dark:text-gray-400 mb-2">
-                Maximum number of active staff visible on the schedule.
-              </p>
-              <input
-                id={`${formId}-staff-count`}
-                type="number"
-                value={settings['staff_count'] || '5'}
-                onChange={(e) => handleSave('staff_count', e.target.value)}
-                disabled={saving}
-                className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-lb-red-primary focus:ring-lb-red-primary dark:bg-gray-700 dark:border-gray-600 dark:text-white sm:text-sm"
-              />
-            </div>
-
-            {/* Business Email */}
-            <div>
-              <label htmlFor={`${formId}-email`} className="block text-sm font-medium text-gray-700 dark:text-gray-300">
-                Business Email
-              </label>
-              <input
-                id={`${formId}-email`}
-                type="email"
-                defaultValue="contact@lbautomotive.com"
-                className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-lb-red-primary focus:ring-lb-red-primary dark:bg-gray-700 dark:border-gray-600 dark:text-white sm:text-sm"
-                disabled
-              />
-              <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">Contact admin to change.</p>
-            </div>
-
           </div>
         </div>
       </div>
+
+      {user?.is_admin && (
+        <div className="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-lg p-4">
+          <p className="text-sm text-amber-800 dark:text-amber-200">
+            Business-wide settings (timezone, staff count, contact) are in{' '}
+            <Link to="/admin/settings" className="font-medium underline hover:no-underline">
+              Admin → Admin Settings
+            </Link>
+            .
+          </p>
+        </div>
+      )}
+
+      {!user?.is_admin && (
+        <div className="bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg p-4">
+          <p className="text-sm text-gray-600 dark:text-gray-400">
+            Business and system settings are managed by your administrator.
+          </p>
+        </div>
+      )}
     </div>
   )
 }
 
-export default Settings;
+export default Settings

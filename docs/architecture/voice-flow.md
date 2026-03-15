@@ -39,10 +39,16 @@ Defined in `python-backend/routes/twilio_webhook.py` as `DECISION_TREE`.
 | `function` | Handler performs action (e.g. Smart Jump, booking) |
 | `terminal` | Says message and hangs up |
 
+### Call entry sequence
+
+1. **Welcome** — Short message: "Hi, welcome to L-B Automotive Repair. We're here to help." (from `responses.welcome` in `ivr_prompts.json`).
+2. **Language selection** — "For English press 1. Para español press 2." Gather; 1 → English, 2 → Spanish; then redirect to `start`.
+3. **How can we help** — Step `start` plays the main menu in the chosen language (appointment, status, representative, emergency) and gathers speech/DTMF.
+
 ### Main Flow
 
 ```
-start (conversational greeting)
+start (how can we help — after language chosen)
   ├── 1 / "appointment" → collect_vehicle
   ├── 2 / "emergency"   → emergency_services
   └── 3 / "speak to someone" → transfer_representative
