@@ -85,16 +85,16 @@ def process_smart_jump(intent, llm_result, CallSid, metadata, response, language
                 
                 # Determine next step: if we have vehicle info, go to plate, else to vehicle
                 next_step = "collect_plate" if metadata.get("vehicle_info") else "collect_vehicle"
-                upsert_call_state(CallSid, next_step, language, metadata)
-                response.redirect(f"{WEBHOOK_BASE_URL}?step={next_step}")
+                metadata["after_confirm_intent"] = next_step
+                upsert_call_state(CallSid, "confirm_intent", language, metadata)
+                response.redirect(f"{WEBHOOK_BASE_URL}?step=confirm_intent")
                 return True
 
-        # No specific service, but clear appointment intent:
-        # Fast-path into the appointment flow rather than looping on start.
+        # No specific service, but clear appointment intent: confirm intent then category selection
         if intent == "appointment" and not extracted_service:
-            # Start with high-level service category selection; vehicle/plate collected later.
-            upsert_call_state(CallSid, "select_service_category", language, metadata)
-            response.redirect(f"{WEBHOOK_BASE_URL}?step=select_service_category")
+            metadata["after_confirm_intent"] = "select_service_category"
+            upsert_call_state(CallSid, "confirm_intent", language, metadata)
+            response.redirect(f"{WEBHOOK_BASE_URL}?step=confirm_intent")
             return True
 
     return False

@@ -2,7 +2,7 @@
 from typing import List, Dict, Any, Optional
 from fastapi import APIRouter, Depends, Query
 from auth import get_current_active_user
-from database import get_db_connection, fmt_query
+from database import get_db_connection
 from datetime import datetime, timedelta
 
 router = APIRouter(prefix="/api/reports", tags=["reports"])
@@ -32,19 +32,20 @@ def get_report_summary(
     else:
         start_date = "1970-01-01" # All time
         
+    # PostgreSQL: session duration in minutes (SQLite julianday not available)
     query = """
         SELECT 
             COUNT(c.id) as total_repairs,
             SUM(s.price) as total_revenue,
             AVG(s.duration) as avg_duration,
-            AVG((julianday(c.closed_at) - julianday(COALESCE(c.started_at, c.created_at))) * 1440) as avg_session_time
+            AVG(EXTRACT(EPOCH FROM (c.closed_at::timestamptz - (COALESCE(c.started_at, c.created_at)::timestamptz))) / 60) as avg_session_time
         FROM cases c
         JOIN appointments a ON c.appointment_id = a.id
         LEFT JOIN services s ON (a.service_id = s.id OR (a.service_id IS NULL AND a.service_type = s.name))
         WHERE c.status = 'completed'
-        AND c.closed_at >= ?
+        AND c.closed_at >= %s
     """
-    cursor.execute(fmt_query(query), (start_date,))
+    cursor.execute(query, (start_date,))
     row = cursor.fetchone()
     conn.close()
     
@@ -77,6 +78,7 @@ def get_report_history(
     else:
         start_date = "1970-01-01"  # All time
     
+    # PostgreSQL: actual_duration in minutes (SQLite julianday not available)
     query = """
         SELECT 
             c.case_number,
@@ -85,16 +87,16 @@ def get_report_history(
             COALESCE(s.name, a.service_type) as service_name,
             s.price,
             s.duration,
-            CAST((julianday(c.closed_at) - julianday(COALESCE(c.started_at, c.created_at))) * 1440 AS INTEGER) as actual_duration
+            (EXTRACT(EPOCH FROM (c.closed_at::timestamptz - (COALESCE(c.started_at, c.created_at)::timestamptz))) / 60)::INTEGER as actual_duration
         FROM cases c
         JOIN appointments a ON c.appointment_id = a.id
         LEFT JOIN services s ON (a.service_id = s.id OR (a.service_id IS NULL AND a.service_type = s.name))
         WHERE c.status = 'completed'
-        AND c.closed_at >= ?
+        AND c.closed_at >= %s
         ORDER BY c.closed_at DESC
-        LIMIT ?
+        LIMIT %s
     """
-    cursor.execute(fmt_query(query), (start_date, limit))
+    cursor.execute(query, (start_date, limit))
     rows = cursor.fetchall()
     conn.close()
     
