@@ -1,4 +1,3 @@
-import sqlite3
 import os
 import json
 from datetime import datetime
@@ -583,6 +582,7 @@ def seed_data():
         ('ivr_speech_timeout', 'auto', 'Twilio speechTimeout: auto or seconds (e.g. 3)'),
         ('ivr_repair_max_retries', '2', 'Max timeouts before offering transfer'),
         ('ivr_transfer_number', '', 'E.164 number for representative transfer (Dial)'),
+        ('ivr_transfer_timeout', '30', 'Seconds to ring before transfer no-answer (10-60)'),
         ('ivr_language_prompt_enabled', 'false', 'Play language selection at start (true/false)'),
         ('ivr_recording_disclaimer_en', 'This call may be recorded for quality purposes.', 'Recording disclaimer (English)'),
         ('ivr_recording_disclaimer_es', 'Esta llamada puede ser grabada para fines de calidad.', 'Recording disclaimer (Spanish)'),

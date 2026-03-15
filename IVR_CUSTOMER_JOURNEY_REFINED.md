@@ -52,16 +52,13 @@
 ┌─────────────────────────────────────────────────────────────────┐
 │  STEP 2: MAIN MENU                                              │
 │  ─────────────────────────────────────────────────────────────  │
-│  English: "To schedule an appointment, press 1 or say          │
-│            appointment. For road-side assistance and            │
-│            emergencies, press 2 or say emergency."             │
-│                                                                  │
-│  Spanish: "Para programar una cita, presione 1 o diga cita.   │
-│            Para emergencias, presione 2 o diga emergencia."   │
-│                                                                  │
-│  Options:                                                       │
+│  Options: 1 = Appointment, 2 = Emergency, 3 = Speak to someone  │
 │  • Press 1 / Say "Appointment" → Regular Booking              │
 │  • Press 2 / Say "Emergency" → Emergency Services             │
+│  • Press 3 / Say "Representative" → Transfer (Dial when        │
+│    ivr_transfer_number is set; else "unable to transfer")     │
+│  • Status: Check status looks up next appointment by phone     │
+│    and speaks it, or says no appointment on file.             │
 └─────────────────────────────────────────────────────────────────┘
                               │
                     ┌─────────┴─────────┐

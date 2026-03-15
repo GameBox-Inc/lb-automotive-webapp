@@ -236,6 +236,15 @@ def _ivr_pause(response: VoiceResponse, seconds: Optional[float] = None) -> None
     except (TypeError, ValueError):
         pass
 
+
+def _voice_for_language(language: str) -> str:
+    """Return TTS voice: ivr_voice from settings if set, else Polly by language (Matthew en, Lupe es)."""
+    v = (get_setting("ivr_voice", "") or "").strip()
+    if v:
+        return v
+    return "Polly.Lupe" if language == "es" else "Polly.Matthew"
+
+
 # --- Decision Tree Structure ---
 # Prompts are written to be inquisitive and customer-service focused; future: extend to FAQ-style answers.
 DECISION_TREE = {
@@ -424,7 +433,7 @@ DECISION_TREE = {
         },
         "transitions": {
             "1": "collect_contact",
-            "9": "start"
+            "9": "select_time"
         },
         "default": "confirm_details"
     },
@@ -484,17 +493,103 @@ DECISION_TREE = {
     },
 
     "transfer_representative": {
-        "type": "terminal",
+        "type": "dynamic",
+        "handler": "handle_transfer_representative",
         "prompt_en": "We’re connecting you with a team member now. Thanks for your patience—one moment please.",
         "prompt_es": "Le estamos conectando con un asesor. Gracias por su paciencia. Un momento por favor."
     },
 
     "check_status": {
-        "type": "terminal",
-        "prompt_en": "A service advisor will call you back shortly with an update on your vehicle. Is there anything else we can help with? If not, thanks for calling—goodbye.",
-        "prompt_es": "Un asesor le llamará pronto con una actualización de su vehículo. ¿Algo más en lo que podamos ayudarle? Si no, gracias por llamar. Adiós."
+        "type": "dynamic",
+        "handler": "handle_check_status"
     }
 }
+
+
+def handle_transfer_representative(user_input, language, CallSid, metadata, response):
+    """
+    Transfer caller to staff. If ivr_transfer_number is set, Dial it with timeout and no-answer action.
+    If not set, say we're unable to transfer and hang up.
+    """
+    voice = "Polly.Lupe" if language == "es" else "Polly.Matthew"
+    transfer_number = (get_setting("ivr_transfer_number", "") or "").strip()
+    try:
+        timeout_sec = min(60, max(10, int(get_setting("ivr_transfer_timeout", "30") or 30)))
+    except (TypeError, ValueError):
+        timeout_sec = 30
+    no_answer_url = f"{WEBHOOK_BASE_URL}?step=transfer_no_answer"
+
+    if transfer_number:
+        # E.164-ish: normalize spaces/dashes, then ensure + prefix for dialing
+        transfer_number = transfer_number.replace(" ", "").replace("-", "")
+        if transfer_number.startswith("+") and transfer_number[1:].isdigit():
+            pass
+        elif transfer_number.isdigit() and len(transfer_number) >= 10:
+            transfer_number = "+1" + transfer_number if len(transfer_number) == 10 else "+" + transfer_number
+        else:
+            transfer_number = None
+
+    if transfer_number:
+        response.say(get_response("transfer_connecting", language), voice=voice)
+        dial = response.dial(timeout=timeout_sec, action=no_answer_url)
+        dial.number(transfer_number)
+    else:
+        response.say(get_response("transfer_unable", language), voice=voice)
+        response.hangup()
+
+
+def handle_check_status(user_input, language, CallSid, metadata, response):
+    """Look up next upcoming appointment by caller phone; say status or no-appointment message, then hang up."""
+    voice = "Polly.Lupe" if language == "es" else "Polly.Matthew"
+    from_phone = (metadata.get("from_phone") or "").strip()
+    if not from_phone:
+        response.say(get_response("check_status_none", language), voice=voice)
+        response.hangup()
+        return None
+    try:
+        with DatabaseContextManager(read_only=True) as conn:
+            cursor = conn.cursor()
+            # Upcoming: appointment_time >= today, status pending/confirmed; match phone with/without +1
+            today = datetime.now().strftime("%Y-%m-%d")
+            today_ts = datetime.now().strftime("%Y-%m-%dT%H:%M:%S")
+            alt_phone = from_phone.lstrip("+1") if from_phone.startswith("+1") else ("+1" + from_phone if len(from_phone) == 10 else from_phone)
+            digits_only = from_phone.replace(" ", "").replace("-", "").lstrip("+")
+            cursor.execute(fmt_query("""
+                SELECT id, appointment_time, status, service_type, start_time
+                FROM appointments
+                WHERE (phone_number = ? OR phone_number = ? OR REPLACE(REPLACE(REPLACE(phone_number, ' ', ''), '-', ''), '+', '') = ?)
+                AND status IN ('pending', 'confirmed')
+                AND (appointment_time >= ? OR start_time >= ?)
+                ORDER BY COALESCE(start_time, appointment_time) ASC
+                LIMIT 1
+            """), (from_phone, alt_phone, digits_only, today, today_ts))
+            row = cursor.fetchone()
+        if row:
+            appt_time = row.get("appointment_time") or row.get("start_time") or ""
+            status = (row.get("status") or "pending").lower()
+            status_spoken = "scheduled" if status == "pending" else ("confirmed" if status == "confirmed" else status)
+            if language == "es":
+                status_spoken = "programada" if status == "pending" else ("confirmada" if status == "confirmed" else status)
+            try:
+                if "T" in appt_time:
+                    dt = datetime.strptime(appt_time.replace("Z", "")[:19], "%Y-%m-%dT%H:%M:%S")
+                else:
+                    dt = datetime.strptime(appt_time[:10], "%Y-%m-%d")
+                date_spoken = dt.strftime("%A, %B %d") if language != "es" else dt.strftime("%A %d de %B")
+                time_str = appt_time.split("T")[1][:5] if "T" in appt_time else "09:00"
+                time_spoken = _format_slot_for_speech(time_str, language)
+            except Exception:
+                date_spoken = appt_time[:10] if appt_time else ""
+                time_spoken = "unknown"
+            response.say(get_response("check_status_found", language, date_spoken=date_spoken, time_spoken=time_spoken, status_spoken=status_spoken), voice=voice)
+        else:
+            response.say(get_response("check_status_none", language), voice=voice)
+        response.hangup()
+    except Exception as e:
+        logger.error("IVR check_status failed", extra={**get_trace_context(), "call_sid": CallSid, "error": str(e)}, exc_info=True)
+        response.say(get_response("check_status_none", language), voice=voice)
+        response.hangup()
+    return None
 
 
 def handle_smart_jump(intent, llm_result, CallSid, metadata, response, language):
@@ -752,19 +847,28 @@ def handle_booking(user_input, language, CallSid, metadata, response):
         if metadata.get("symptoms"): notes_parts.append(f"Issue: {metadata['symptoms']}")
         final_notes = " | ".join(notes_parts)
 
-        # Use Primary for write; set start_time/end_time/service_id/source so scheduling engine includes this in conflict detection
-        with DatabaseContextManager(read_only=False) as conn:
-            cursor = conn.cursor()
-            cursor.execute(fmt_query("""
-                INSERT INTO appointments (id, customer_name, phone_number, appointment_time, service_type, status, notes, start_time, end_time, service_id, source)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """), (aid, metadata.get("customer_name", "Voice Customer"), metadata.get("from_phone"), appt_time, svc.get("name", "General Service"), "pending", final_notes, start_ts, end_ts, service_id_val, "ivr"))
-            conn.commit()
-        
-        upsert_call_state(CallSid, "completed", language, metadata, aid)
-        time_spoken = _format_slot_for_speech(chosen_slot, language)
-        response.say(get_response("booking_confirmed", language, time_spoken=time_spoken), voice=voice)
-        response.hangup()
+        try:
+            # Use Primary for write; set start_time/end_time/service_id/source so scheduling engine includes this in conflict detection
+            with DatabaseContextManager(read_only=False) as conn:
+                cursor = conn.cursor()
+                cursor.execute(fmt_query("""
+                    INSERT INTO appointments (id, customer_name, phone_number, appointment_time, service_type, status, notes, start_time, end_time, service_id, source)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """), (aid, metadata.get("customer_name", "Voice Customer"), metadata.get("from_phone"), appt_time, svc.get("name", "General Service"), "pending", final_notes, start_ts, end_ts, service_id_val, "ivr"))
+                conn.commit()
+
+            upsert_call_state(CallSid, "completed", language, metadata, aid)
+            time_spoken = _format_slot_for_speech(chosen_slot, language)
+            response.say(get_response("booking_confirmed", language, time_spoken=time_spoken), voice=voice)
+            response.hangup()
+        except Exception as e:
+            logger.error(
+                "IVR booking failed",
+                extra={**get_trace_context(), "call_sid": CallSid, "error": str(e)},
+                exc_info=True,
+            )
+            response.say(get_response("booking_error", language), voice=voice)
+            response.redirect(f"{WEBHOOK_BASE_URL}?step=transfer_representative")
     else:
         response.say(get_response("slot_unavailable", language), voice=voice)
         response.redirect(f"{WEBHOOK_BASE_URL}?step=select_time")
@@ -980,9 +1084,17 @@ def twilio_webhook(
         language = get_setting("ivr_language", "en-US")
         call_state = existing_state or {"call_sid": CallSid, "current_step": "start", "language": "en", "metadata": {}}
         language = call_state.get("language", "en")
-        voice = "Polly.Lupe" if language == "es" else "Polly.Matthew"
+        voice = _voice_for_language(language)
         metadata = call_state.get("metadata", {})
         metadata["from_phone"] = From
+
+        # Dial no-answer: when transfer times out or is not answered, Twilio requests this step.
+        if step == "transfer_no_answer":
+            response.say(get_response("transfer_no_answer", language), voice=voice)
+            response.hangup()
+            update_phase(PHASE_TTS_READY)
+            logger.info("IVR response", extra={**get_trace_context(), "step": step})
+            return Response(content=str(response), media_type="application/xml")
 
         # Play recording disclaimer once per call at entry (skip at language_choice so it plays at start in chosen language).
         if step != "language_choice":
@@ -1311,6 +1423,8 @@ def twilio_webhook(
                 elif handler_name == "handle_confirm_emergency": handle_confirm_emergency(input_data, language, CallSid, metadata, response)
                 elif handler_name == "handle_confirm_intent": handle_confirm_intent(input_data, language, CallSid, metadata, response)
                 elif handler_name == "handle_confirm_appointment": handle_confirm_appointment(input_data, language, CallSid, metadata, response)
+                elif handler_name == "handle_transfer_representative": handle_transfer_representative(input_data, language, CallSid, metadata, response)
+                elif handler_name == "handle_check_status": handle_check_status(input_data, language, CallSid, metadata, response)
             elif node_type == "terminal":
                 prompt_text = get_step_prompt(step, language) or node.get(f"prompt_{language}", node.get("prompt_en"))
                 smooth_hangup(response, voice, language, message=prompt_text)
@@ -1324,6 +1438,13 @@ def twilio_webhook(
         return Response(content=str(response), media_type="application/xml")
     except Exception as e:
         update_phase("error")
-        logger.error(f"IVR Error: {e}", extra=get_trace_context())
-        smooth_hangup(response, "Polly.Matthew", language, message="An error occurred.")
+        logger.error(f"IVR Error: {e}", extra=get_trace_context(), exc_info=True)
+        try:
+            err_state = get_call_state(CallSid)
+            err_lang = (err_state or {}).get("language") or "en"
+        except Exception:
+            err_lang = "en"
+        err_voice = _voice_for_language(err_lang)
+        err_msg = get_response("generic_error", err_lang)
+        smooth_hangup(response, err_voice, err_lang, message=err_msg)
         return Response(content=str(response), media_type="application/xml")

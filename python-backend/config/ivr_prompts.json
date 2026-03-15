@@ -118,6 +118,34 @@
     "for_option_press": {
       "en": "For {option}, press {digit}",
       "es": "Para {option}, presione {digit}"
+    },
+    "transfer_connecting": {
+      "en": "Connecting you with a team member now. Please hold.",
+      "es": "Conectando con un asesor. Por favor espere."
+    },
+    "transfer_unable": {
+      "en": "We're unable to transfer at this time. Please call back during business hours or book online. Goodbye.",
+      "es": "No podemos transferir en este momento. Por favor llame durante horario de atención o reserve en línea. Adiós."
+    },
+    "transfer_no_answer": {
+      "en": "We're unable to connect right now. Please try again or leave a message. Goodbye.",
+      "es": "No pudimos conectar. Por favor intente de nuevo. Adiós."
+    },
+    "booking_error": {
+      "en": "We couldn't complete the booking right now. Let me connect you to someone who can help.",
+      "es": "No pudimos completar la cita. Le conecto con alguien que puede ayudarle."
+    },
+    "generic_error": {
+      "en": "An error occurred. We're sorry for the inconvenience. Goodbye.",
+      "es": "Ocurrió un error. Lamentamos las molestias. Adiós."
+    },
+    "check_status_found": {
+      "en": "You have an appointment on {date_spoken} at {time_spoken}, status {status_spoken}. Goodbye.",
+      "es": "Tiene una cita el {date_spoken} a las {time_spoken}, estado {status_spoken}. Adiós."
+    },
+    "check_status_none": {
+      "en": "We don't have an appointment on file for this number. I can connect you to schedule one. Goodbye.",
+      "es": "No tenemos una cita registrada para este número. Puedo conectarlo para programar una. Adiós."
     }
   }
 }

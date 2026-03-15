@@ -80,6 +80,13 @@ sudo k3s kubectl logs -n gamebox-security -l app.kubernetes.io/name=traefik -f
 
 ---
 
+## Transfer not working
+
+- **Check:** `ivr_transfer_number` in Admin → IVR Settings (or `settings` table). Must be E.164 (e.g. `+15551234567`). Leave blank to disable live transfer; callers then hear “unable to transfer” and hang up.
+- **Check:** `ivr_transfer_timeout` (seconds to ring, 10–60). No-answer uses `transfer_no_answer` step (message + hangup).
+
+---
+
 ## Validation Failures (403)
 
 1. **X-Twilio-Signature** — HMAC of URL + params; URL must match what Twilio used.

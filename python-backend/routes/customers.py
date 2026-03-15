@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
 from typing import List, Optional
 from pydantic import BaseModel, field_validator
-from database import get_db_connection, fmt_query
+from database import DatabaseContextManager, fmt_query
 from auth import get_current_active_user
 from security import sanitize_input
 import uuid
@@ -74,20 +74,14 @@ def search_customers(q: str = Query(..., min_length=3, max_length=50), current_u
     sanitized_query = sanitize_input(q, "text")
     normalized_query = normalize_phone(q)
     
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    
-    # Search by name or phone (handling partially formatted phone numbers)
-    # Using parameterized queries to prevent SQL injection
-    cursor.execute(fmt_query("""
-        SELECT * FROM customers 
-        WHERE name LIKE ? OR phone LIKE ? OR phone LIKE ?
-        LIMIT 10
-    """), (f"%{sanitized_query}%", f"%{q}%", f"%{normalized_query}%"))
-    
-    rows = cursor.fetchall()
-    conn.close()
-    
+    with DatabaseContextManager(read_only=True) as conn:
+        cursor = conn.cursor()
+        cursor.execute(fmt_query("""
+            SELECT * FROM customers 
+            WHERE name LIKE ? OR phone LIKE ? OR phone LIKE ?
+            LIMIT 10
+        """), (f"%{sanitized_query}%", f"%{q}%", f"%{normalized_query}%"))
+        rows = cursor.fetchall()
     return [dict(row) for row in rows]
 
 @router.post("", response_model=Customer)
@@ -98,36 +92,28 @@ def create_customer(customer: CustomerCreate, current_user: dict = Depends(get_c
          raise HTTPException(status_code=400, detail="Invalid phone number")
 
     customer_id = str(uuid.uuid4())
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    
     try:
-        cursor.execute(fmt_query(
-            "INSERT INTO customers (id, name, phone, email) VALUES (?, ?, ?, ?)"),
-            (customer_id, customer.name, clean_phone, customer.email)
-        )
-        conn.commit()
+        with DatabaseContextManager() as conn:
+            cursor = conn.cursor()
+            cursor.execute(fmt_query(
+                "INSERT INTO customers (id, name, phone, email) VALUES (?, ?, ?, ?)"),
+                (customer_id, customer.name, clean_phone, customer.email)
+            )
+            cursor.execute(fmt_query("SELECT * FROM customers WHERE id = ?"), (customer_id,))
+            new_customer = dict(cursor.fetchone())
+        return new_customer
     except Exception as e:
-        conn.close()
-        if "UNIQUE constraint failed" in str(e):
-             raise HTTPException(status_code=400, detail="Customer with this phone number already exists")
-        raise e
-    
-    cursor.execute(fmt_query("SELECT * FROM customers WHERE id = ?"), (customer_id,))
-    new_customer = dict(cursor.fetchone())
-    conn.close()
-    
-    return new_customer
+        if "unique" in str(e).lower() or "duplicate" in str(e).lower() or "UNIQUE" in str(e):
+            raise HTTPException(status_code=400, detail="Customer with this phone number already exists")
+        raise
 
 @router.get("", response_model=List[Customer])
 def list_customers(skip: int = Query(0, ge=0), limit: int = Query(100, ge=1, le=500), current_user: dict = Depends(get_current_active_user)):
     """List all customers with pagination. Maximum 500 per request."""
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    cursor.execute(fmt_query("SELECT * FROM customers ORDER BY created_at DESC LIMIT ? OFFSET ?"), (limit, skip))
-    rows = cursor.fetchall()
-    conn.close()
-    
+    with DatabaseContextManager(read_only=True) as conn:
+        cursor = conn.cursor()
+        cursor.execute(fmt_query("SELECT * FROM customers ORDER BY created_at DESC LIMIT ? OFFSET ?"), (limit, skip))
+        rows = cursor.fetchall()
     return [dict(row) for row in rows]
 
 @router.get("/{customer_id}", response_model=Customer)

@@ -373,6 +373,16 @@ const AdminIVR = () => {
                                                 <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
                                                     {setting.description || setting.key}
                                                 </label>
+                                                {setting.key === 'ivr_transfer_number' && (
+                                                    <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                                                        E.164 number (e.g. +15551234567). Leave blank to disable live transfer.
+                                                    </p>
+                                                )}
+                                                {setting.key === 'ivr_transfer_timeout' && (
+                                                    <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                                                        Seconds to ring before no-answer (10–60). Used when transfer number is set.
+                                                    </p>
+                                                )}
                                                 {editingKey === setting.key ? (
                                                     <textarea
                                                         rows={3}
