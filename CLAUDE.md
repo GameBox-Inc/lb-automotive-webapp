@@ -116,8 +116,8 @@ lb-automotive-dashboard/
 │
 └── Documentation files:
     ├── API_REFERENCE.md
-    ├── SECURITY_IMPROVEMENTS_SUMMARY.md
-    ├── ARCHITECTURE_GAP_ANALYSIS.md
+    ├── docs/architecture/   # Voice flow, IVR, Vault
+    ├── docs/runbooks/       # K8s, Twilio, ingress
     └── [various setup guides]
 ```
 
@@ -246,8 +246,7 @@ CSP_POLICY=strict  # or "development"
 - **Key:** Business hours defined per day (Mon-Sun), IVR accepts calls 24/7, appointments scheduled for future days even if currently closed
 
 ### Security Improvements
-- **Status:** ✅ 15+ improvements completed
-- **See:** `SECURITY_IMPROVEMENTS_SUMMARY.md`
+- **Status:** ✅ 15+ improvements completed (see Security section in this doc and `docs/`)
 - **Key Changes:**
   - SECRET_KEY hardening (no defaults)
   - CORS whitelist only
@@ -395,7 +394,7 @@ Every new feature MUST follow these security practices:
 ### Medium Priority
 - TLS/HTTPS certificate automation (currently self-signed)
 - Enhanced monitoring and observability
-- Multi-business architecture (see `ARCHITECTURE_GAP_ANALYSIS.md`)
+- Multi-business architecture (see "Future Architecture Vision" below)
 - Restore Ollama support (requires 8GB+ RAM server)
 
 ### Recently Completed
@@ -408,7 +407,7 @@ Every new feature MUST follow these security practices:
 - ✅ Ollama removed (uses Anthropic Claude API instead)
 
 ### Known Bugs
-- `getCases()` and `createCase()` methods missing from API client (StaffDashboard needs them)
+- None currently; `getCases()` and `createCase()` are implemented in `frontend/src/lib/supabase.ts`.
 
 ---
 
@@ -425,8 +424,7 @@ Every new feature MUST follow these security practices:
 - `DEPLOYMENT_2GB_SERVER.md` - **Complete 2GB server deployment guide**
 - `QUICK_FIX_2GB_SERVER.md` - **Emergency OOM fix guide**
 - `API_REFERENCE.md` - API endpoint documentation
-- `SECURITY_IMPROVEMENTS_SUMMARY.md` - Security changes log
-- `ARCHITECTURE_GAP_ANALYSIS.md` - Current vs. future architecture
+- Security and architecture notes - See CLAUDE.md sections above and `docs/architecture/`
 - `python-backend/README.md` - Backend-specific docs
 - `docs/howto/vault-transit-token-management.md` - **Vault transit token + Jenkins credential management**
 - `docs/incidents/common-failures.md` - Common failure modes and fixes
@@ -572,8 +570,6 @@ ssh lb-admin@178.156.223.196  # Port 22 (default)
 ---
 
 ## Future Architecture Vision
-
-See `ARCHITECTURE_GAP_ANALYSIS.md` for detailed comparison.
 
 **Current:** Single-instance, K3s, PostgreSQL/Supabase
 **Target:** Multi-business, Kubernetes clusters, high availability
