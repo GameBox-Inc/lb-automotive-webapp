@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from typing import List
-from database import get_db_connection, fmt_query
-from auth import get_current_active_user
+from database import DatabaseContextManager, fmt_query
+from auth import get_current_active_user, get_current_admin_user
 from models import BusinessHours, BusinessHoursUpdate
 from security import sanitize_input
 import logging
@@ -24,17 +24,14 @@ DAY_NAMES = {
 @router.get("", response_model=List[BusinessHours])
 def get_business_hours(current_user: dict = Depends(get_current_active_user)):
     """Get all business hours (one per day of week)."""
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    
-    cursor.execute(fmt_query("""
-        SELECT day_of_week, opening_time, closing_time, is_closed, updated_at, updated_by
-        FROM business_hours
-        ORDER BY day_of_week
-    """))
-    rows = cursor.fetchall()
-    conn.close()
-    
+    with DatabaseContextManager(read_only=True) as conn:
+        cursor = conn.cursor()
+        cursor.execute(fmt_query("""
+            SELECT day_of_week, opening_time, closing_time, is_closed, updated_at, updated_by
+            FROM business_hours
+            ORDER BY day_of_week
+        """))
+        rows = cursor.fetchall()
     business_hours = []
     for row in rows:
         business_hours.append(BusinessHours(
@@ -54,16 +51,9 @@ def get_business_hours(current_user: dict = Depends(get_current_active_user)):
 def update_business_hours(
     day_of_week: int,
     hours_update: BusinessHoursUpdate,
-    current_user: dict = Depends(get_current_active_user)
+    current_user: dict = Depends(get_current_admin_user)
 ):
     """Update business hours for a specific day (Admin only)."""
-    if not current_user.get("is_admin"):
-        logger.warning(f"Unauthorized business hours update attempt by {current_user.get('username')}")
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Not authorized to update business hours"
-        )
-    
     if day_of_week < 0 or day_of_week > 6:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -93,32 +83,23 @@ def update_business_hours(
     opening_time = sanitize_input(hours_update.opening_time, "text") if hours_update.opening_time else None
     closing_time = sanitize_input(hours_update.closing_time, "text") if hours_update.closing_time else None
     
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    
-    # Check if record exists
-    cursor.execute(fmt_query("SELECT * FROM business_hours WHERE day_of_week = ?"), (day_of_week,))
-    if not cursor.fetchone():
-        # Create if doesn't exist
-        cursor.execute(fmt_query("""
-            INSERT INTO business_hours (day_of_week, opening_time, closing_time, is_closed, updated_by)
-            VALUES (?, ?, ?, ?, ?)
-        """), (day_of_week, opening_time, closing_time, int(hours_update.is_closed), current_user["username"]))
-    else:
-        # Update existing
-        cursor.execute(fmt_query("""
-            UPDATE business_hours 
-            SET opening_time = ?, closing_time = ?, is_closed = ?, 
-                updated_at = CURRENT_TIMESTAMP, updated_by = ?
-            WHERE day_of_week = ?
-        """), (opening_time, closing_time, int(hours_update.is_closed), current_user["username"], day_of_week))
-    
-    conn.commit()
-    
-    # Fetch updated
-    cursor.execute(fmt_query("SELECT * FROM business_hours WHERE day_of_week = ?"), (day_of_week,))
-    row = cursor.fetchone()
-    conn.close()
+    with DatabaseContextManager() as conn:
+        cursor = conn.cursor()
+        cursor.execute(fmt_query("SELECT * FROM business_hours WHERE day_of_week = ?"), (day_of_week,))
+        if not cursor.fetchone():
+            cursor.execute(fmt_query("""
+                INSERT INTO business_hours (day_of_week, opening_time, closing_time, is_closed, updated_by)
+                VALUES (?, ?, ?, ?, ?)
+            """), (day_of_week, opening_time, closing_time, int(hours_update.is_closed), current_user["username"]))
+        else:
+            cursor.execute(fmt_query("""
+                UPDATE business_hours 
+                SET opening_time = ?, closing_time = ?, is_closed = ?, 
+                    updated_at = CURRENT_TIMESTAMP, updated_by = ?
+                WHERE day_of_week = ?
+            """), (opening_time, closing_time, int(hours_update.is_closed), current_user["username"], day_of_week))
+        cursor.execute(fmt_query("SELECT * FROM business_hours WHERE day_of_week = ?"), (day_of_week,))
+        row = cursor.fetchone()
     
     logger.info(f"Business hours for {DAY_NAMES.get(day_of_week)} updated by {current_user['username']}")
     
@@ -142,16 +123,14 @@ def get_business_hours_for_day(day_of_week: int):
             detail="day_of_week must be between 0 (Monday) and 6 (Sunday)"
         )
     
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    
-    cursor.execute(fmt_query("""
-        SELECT day_of_week, opening_time, closing_time, is_closed, updated_at, updated_by
-        FROM business_hours
-        WHERE day_of_week = ?
-    """), (day_of_week,))
-    row = cursor.fetchone()
-    conn.close()
+    with DatabaseContextManager(read_only=True) as conn:
+        cursor = conn.cursor()
+        cursor.execute(fmt_query("""
+            SELECT day_of_week, opening_time, closing_time, is_closed, updated_at, updated_by
+            FROM business_hours
+            WHERE day_of_week = ?
+        """), (day_of_week,))
+        row = cursor.fetchone()
     
     if not row:
         # Return default if not configured

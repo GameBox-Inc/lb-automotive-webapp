@@ -7,8 +7,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.exceptions import RequestValidationError
 from fastapi.staticfiles import StaticFiles
-from database import init_db, seed_data, get_db_connection, DB_PATH
-from routes import appointments, services, auth_routes, cases, staff, customers, settings, business_hours
+from database import init_db, seed_data, DatabaseContextManager
 from security import rate_limit_middleware, security_headers_middleware
 from observability import setup_logging
 from auth import get_current_admin_user
@@ -120,9 +119,11 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
     )
 
 
-# Security middlewares (order matters - tracing first so correlation IDs available everywhere)
+# Observability: Prometheus request tracking (before security so all requests are counted)
+from observability.monitoring import track_request, metrics_endpoint
 app.add_middleware(SecurityLoggingMiddleware)
 app.add_middleware(RequestTracingMiddleware)
+app.middleware("http")(track_request)
 app.middleware("http")(rate_limit_middleware)
 app.middleware("http")(security_headers_middleware)
 
@@ -165,33 +166,32 @@ if _audio_dir.exists():
 @app.get("/api/debug/db")
 async def debug_db(current_user: dict = Depends(get_current_admin_user)):
     """
-    Debug endpoint for database information.
-    Requires admin authentication.
+    Debug endpoint for database information (PostgreSQL).
+    Requires admin authentication. Returns minimal schema info only.
     """
     try:
-        conn = get_db_connection()
-        cursor = conn.cursor()
-        
-        # Get schema for cases table
-        cursor.execute("PRAGMA table_info(cases)")
-        columns = [dict(row) for row in cursor.fetchall()]
-        
-        # Get count of tables
-        cursor.execute("SELECT name FROM sqlite_master WHERE type='table'")
-        tables = [row["name"] for row in cursor.fetchall()]
-        
-        conn.close()
-        
-        # Return minimal information, no sensitive paths
-        return {
-            "db_exists": os.path.exists(DB_PATH),
-            "tables": tables,
-            "cases_schema": columns,
-        }
+        with DatabaseContextManager(read_only=True) as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                """
+                SELECT table_name
+                FROM information_schema.tables
+                WHERE table_schema = 'public' AND table_type = 'BASE TABLE'
+                ORDER BY table_name
+                """
+            )
+            tables = [row["table_name"] for row in cursor.fetchall()]
+            cursor.execute(
+                """
+                SELECT column_name, data_type, is_nullable
+                FROM information_schema.columns
+                WHERE table_schema = 'public' AND table_name = 'cases'
+                ORDER BY ordinal_position
+                """
+            )
+            columns = [dict(row) for row in cursor.fetchall()]
+        return {"tables": tables, "cases_schema": columns}
     except Exception as e:
-        # Don't expose traceback in production
-        import logging
-        logger = logging.getLogger(__name__)
         logger.error(f"Debug endpoint error: {str(e)}", exc_info=True)
         return {"error": "Internal server error"}
 
@@ -222,10 +222,9 @@ async def health_check():
     
     # Check database
     try:
-        conn = get_db_connection()
-        cursor = conn.cursor()
-        cursor.execute("SELECT 1")
-        conn.close()
+        with DatabaseContextManager(read_only=True) as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT 1")
         status_data["components"]["database"] = "healthy"
     except Exception as e:
         status_data["status"] = "degraded"
@@ -257,6 +256,12 @@ async def health_check():
         return Response(content=json.dumps(status_data), status_code=503, media_type="application/json")
         
     return status_data
+
+
+@app.get("/metrics")
+async def metrics():
+    """Prometheus metrics endpoint for scraping."""
+    return await metrics_endpoint()
 
 
 if __name__ == "__main__":

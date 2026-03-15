@@ -119,41 +119,29 @@ def list_customers(skip: int = Query(0, ge=0), limit: int = Query(100, ge=1, le=
 @router.get("/{customer_id}", response_model=Customer)
 def get_customer(customer_id: str, current_user: dict = Depends(get_current_active_user)):
     """Get customer by ID."""
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    cursor.execute(fmt_query("SELECT * FROM customers WHERE id = ?"), (customer_id,))
-    row = cursor.fetchone()
-    conn.close()
-    
+    with DatabaseContextManager(read_only=True) as conn:
+        cursor = conn.cursor()
+        cursor.execute(fmt_query("SELECT * FROM customers WHERE id = ?"), (customer_id,))
+        row = cursor.fetchone()
     if not row:
         raise HTTPException(status_code=404, detail="Customer not found")
-        
     return dict(row)
 
 @router.get("/{customer_id}/history")
 def get_customer_history(customer_id: str, current_user: dict = Depends(get_current_active_user)):
     """Get customer's appointment history."""
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    
-    # First check if customer exists
-    cursor.execute(fmt_query("SELECT phone FROM customers WHERE id = ?"), (customer_id,))
-    customer = cursor.fetchone()
-    
-    if not customer:
-        conn.close()
-        raise HTTPException(status_code=404, detail="Customer not found")
-    
-    # Get appointments by phone number
-    cursor.execute(fmt_query("""
-        SELECT * FROM appointments 
-        WHERE phone_number = ?
-        ORDER BY appointment_time DESC
-    """), (customer["phone"],))
-    
-    rows = cursor.fetchall()
-    conn.close()
-    
+    with DatabaseContextManager(read_only=True) as conn:
+        cursor = conn.cursor()
+        cursor.execute(fmt_query("SELECT phone FROM customers WHERE id = ?"), (customer_id,))
+        customer = cursor.fetchone()
+        if not customer:
+            raise HTTPException(status_code=404, detail="Customer not found")
+        cursor.execute(fmt_query("""
+            SELECT * FROM appointments 
+            WHERE phone_number = ?
+            ORDER BY appointment_time DESC
+        """), (customer["phone"],))
+        rows = cursor.fetchall()
     return [dict(row) for row in rows]
 
 @router.put("/{customer_id}", response_model=Customer)
@@ -162,62 +150,46 @@ def update_customer(customer_id: str, customer: CustomerCreate, current_user: di
     clean_phone = normalize_phone(customer.phone)
     if not clean_phone:
         raise HTTPException(status_code=400, detail="Invalid phone number")
-    
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    
-    # Check if customer exists
-    cursor.execute(fmt_query("SELECT * FROM customers WHERE id = ?"), (customer_id,))
-    if not cursor.fetchone():
-        conn.close()
-        raise HTTPException(status_code=404, detail="Customer not found")
-    
     try:
-        cursor.execute(fmt_query("""
-            UPDATE customers 
-            SET name = ?, phone = ?, email = ?,
-                vehicle_make = COALESCE(?, vehicle_make),
-                vehicle_model = COALESCE(?, vehicle_model),
-                vehicle_color = COALESCE(?, vehicle_color),
-                vehicle_year = COALESCE(?, vehicle_year),
-                updated_at = CURRENT_TIMESTAMP
-            WHERE id = ?
-        """), (
-            customer.name, clean_phone, customer.email,
-            customer.vehicle_make,
-            customer.vehicle_model,
-            customer.vehicle_color,
-            customer.vehicle_year,
-            customer_id,
-        ))
-        conn.commit()
+        with DatabaseContextManager() as conn:
+            cursor = conn.cursor()
+            cursor.execute(fmt_query("SELECT * FROM customers WHERE id = ?"), (customer_id,))
+            if not cursor.fetchone():
+                raise HTTPException(status_code=404, detail="Customer not found")
+            cursor.execute(fmt_query("""
+                UPDATE customers 
+                SET name = ?, phone = ?, email = ?,
+                    vehicle_make = COALESCE(?, vehicle_make),
+                    vehicle_model = COALESCE(?, vehicle_model),
+                    vehicle_color = COALESCE(?, vehicle_color),
+                    vehicle_year = COALESCE(?, vehicle_year),
+                    updated_at = CURRENT_TIMESTAMP
+                WHERE id = ?
+            """), (
+                customer.name, clean_phone, customer.email,
+                customer.vehicle_make,
+                customer.vehicle_model,
+                customer.vehicle_color,
+                customer.vehicle_year,
+                customer_id,
+            ))
+            cursor.execute(fmt_query("SELECT * FROM customers WHERE id = ?"), (customer_id,))
+            updated_customer = dict(cursor.fetchone())
+        return updated_customer
+    except HTTPException:
+        raise
     except Exception as e:
-        conn.close()
-        if "UNIQUE constraint failed" in str(e):
+        if "unique" in str(e).lower() or "duplicate" in str(e).lower() or "UNIQUE" in str(e):
             raise HTTPException(status_code=400, detail="Customer with this phone number already exists")
-        raise e
-    
-    # Return updated customer
-    cursor.execute(fmt_query("SELECT * FROM customers WHERE id = ?"), (customer_id,))
-    updated_customer = dict(cursor.fetchone())
-    conn.close()
-    
-    return updated_customer
+        raise
 
 @router.delete("/{customer_id}")
 def delete_customer(customer_id: str, current_user: dict = Depends(get_current_active_user)):
     """Delete a customer."""
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    
-    # Check if customer exists
-    cursor.execute(fmt_query("SELECT * FROM customers WHERE id = ?"), (customer_id,))
-    if not cursor.fetchone():
-        conn.close()
-        raise HTTPException(status_code=404, detail="Customer not found")
-    
-    cursor.execute(fmt_query("DELETE FROM customers WHERE id = ?"), (customer_id,))
-    conn.commit()
-    conn.close()
-    
+    with DatabaseContextManager() as conn:
+        cursor = conn.cursor()
+        cursor.execute(fmt_query("SELECT * FROM customers WHERE id = ?"), (customer_id,))
+        if not cursor.fetchone():
+            raise HTTPException(status_code=404, detail="Customer not found")
+        cursor.execute(fmt_query("DELETE FROM customers WHERE id = ?"), (customer_id,))
     return {"message": "Customer deleted successfully"}

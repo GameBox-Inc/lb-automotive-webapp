@@ -139,10 +139,15 @@ def get_db_connection(read_only: bool = False, use_app_role: bool = True):
 class DatabaseContextManager:
     """
     Context manager for database connections to ensure proper cleanup.
+    Use this for all request-scoped DB access; avoids connection leaks on exception.
+
     Usage:
         with DatabaseContextManager() as conn:
             cursor = conn.cursor()
             cursor.execute(...)
+        # commit on success, rollback and close on exception
+
+    For read-only operations use read_only=True to prefer the read replica when configured.
     """
     def __init__(self, read_only: bool = False):
         self.conn = None

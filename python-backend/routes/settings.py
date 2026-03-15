@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from typing import List, Dict, Any
-from database import get_db_connection, fmt_query
-from auth import get_current_active_user
+from database import DatabaseContextManager, fmt_query
+from auth import get_current_admin_user
 from models import Setting, SettingUpdate
 from security import sanitize_input
 import logging
@@ -10,20 +10,12 @@ router = APIRouter(prefix="/api/settings", tags=["settings"])
 logger = logging.getLogger(__name__)
 
 @router.get("", response_model=List[Setting])
-def get_settings(current_user: Dict[str, Any] = Depends(get_current_active_user)):
+def get_settings(current_user: Dict[str, Any] = Depends(get_current_admin_user)):
     """Get all settings (Admin only)."""
-    if not current_user.get("is_admin"):
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Not authorized to view settings"
-        )
-    
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    cursor.execute(fmt_query("SELECT * FROM settings ORDER BY key"))
-    rows = cursor.fetchall()
-    conn.close()
-    
+    with DatabaseContextManager(read_only=True) as conn:
+        cursor = conn.cursor()
+        cursor.execute(fmt_query("SELECT * FROM settings ORDER BY key"))
+        rows = cursor.fetchall()
     settings = []
     for row in rows:
         settings.append(Setting(
@@ -41,44 +33,27 @@ def get_settings(current_user: Dict[str, Any] = Depends(get_current_active_user)
 def update_setting(
     key: str,
     setting_update: SettingUpdate,
-    current_user: Dict[str, Any] = Depends(get_current_active_user)
+    current_user: Dict[str, Any] = Depends(get_current_admin_user)
 ):
     """Update a setting (Admin only)."""
-    if not current_user.get("is_admin"):
-        logger.warning(f"Unauthorized settings update attempt by {current_user.get('username')}")
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Not authorized to update settings"
-        )
-    
     # Sanitize input
     sanitized_value = sanitize_input(setting_update.value, "text")
     
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    
-    # Check if setting exists
-    cursor.execute(fmt_query("SELECT * FROM settings WHERE key = ?"), (key,))
-    if not cursor.fetchone():
-        conn.close()
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Setting '{key}' not found"
-        )
-    
-    # Update setting
-    cursor.execute(fmt_query("""
-        UPDATE settings 
-        SET value = ?, updated_at = CURRENT_TIMESTAMP, updated_by = ?
-        WHERE key = ?
-    """), (sanitized_value, current_user["username"], key))
-    
-    conn.commit()
-    
-    # Fetch updated
-    cursor.execute(fmt_query("SELECT * FROM settings WHERE key = ?"), (key,))
-    row = cursor.fetchone()
-    conn.close()
+    with DatabaseContextManager() as conn:
+        cursor = conn.cursor()
+        cursor.execute(fmt_query("SELECT * FROM settings WHERE key = ?"), (key,))
+        if not cursor.fetchone():
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Setting '{key}' not found"
+            )
+        cursor.execute(fmt_query("""
+            UPDATE settings 
+            SET value = ?, updated_at = CURRENT_TIMESTAMP, updated_by = ?
+            WHERE key = ?
+        """), (sanitized_value, current_user["username"], key))
+        cursor.execute(fmt_query("SELECT * FROM settings WHERE key = ?"), (key,))
+        row = cursor.fetchone()
     
     logger.info(f"Setting '{key}' updated by {current_user['username']} to '{sanitized_value}'")
     

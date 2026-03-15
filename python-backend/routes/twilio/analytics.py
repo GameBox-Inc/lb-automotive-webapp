@@ -1,7 +1,7 @@
 from typing import List, Dict, Any, Optional
 from fastapi import APIRouter, Depends, Query, HTTPException
 from auth import get_current_active_user
-from database import get_db_connection
+from database import DatabaseContextManager
 from datetime import datetime, timedelta
 
 router = APIRouter(prefix="/api/ivr/analytics", tags=["ivr_analytics"])
@@ -16,10 +16,6 @@ def get_analytics_summary(
     - Total Calls
     - Average Duration (if applicable from session)
     """
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    
-    # Calculate start date
     if timeframe == "24h":
         start_date = (datetime.now() - timedelta(hours=24)).isoformat()
     elif timeframe == "7d":
@@ -29,29 +25,20 @@ def get_analytics_summary(
     elif timeframe == "90d":
         start_date = (datetime.now() - timedelta(days=90)).isoformat()
     else:
-        start_date = "1970-01-01" 
+        start_date = "1970-01-01"
 
-    # We can get total calls from call_states or ivr_analytics
-    # Using call_states gives unique calls
-    query_calls = """
-        SELECT COUNT(*) as total_calls
-        FROM call_states
-        WHERE created_at >= ?
-    """
-    cursor.execute(query_calls, (start_date,))
-    total_calls = cursor.fetchone()["total_calls"]
-    
-    # Get total interactions (steps logged)
-    query_interactions = """
-        SELECT COUNT(*) as total_steps
-        FROM ivr_analytics
-        WHERE timestamp >= ?
-    """
-    cursor.execute(query_interactions, (start_date,))
-    total_steps = cursor.fetchone()["total_steps"]
-
-    conn.close()
-    
+    with DatabaseContextManager(read_only=True) as conn:
+        cursor = conn.cursor()
+        cursor.execute(
+            "SELECT COUNT(*) as total_calls FROM call_states WHERE created_at >= %s",
+            (start_date,)
+        )
+        total_calls = cursor.fetchone()["total_calls"]
+        cursor.execute(
+            "SELECT COUNT(*) as total_steps FROM ivr_analytics WHERE timestamp >= %s",
+            (start_date,)
+        )
+        total_steps = cursor.fetchone()["total_steps"]
     return {
         "total_calls": total_calls or 0,
         "total_steps": total_steps or 0,
@@ -66,10 +53,6 @@ def get_node_analytics(
     """
     Get visit counts for each IVR node/step.
     """
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    
-    # Calculate start date
     if timeframe == "24h":
         start_date = (datetime.now() - timedelta(hours=24)).isoformat()
     elif timeframe == "7d":
@@ -80,17 +63,18 @@ def get_node_analytics(
         start_date = (datetime.now() - timedelta(days=90)).isoformat()
     else:
         start_date = "1970-01-01"
-        
-    query = """
-        SELECT node_name, COUNT(*) as visits
-        FROM ivr_analytics
-        WHERE timestamp >= ?
-        GROUP BY node_name
-        ORDER BY visits DESC
-    """
-    
-    cursor.execute(query, (start_date,))
-    rows = cursor.fetchall()
-    conn.close()
-    
+
+    with DatabaseContextManager(read_only=True) as conn:
+        cursor = conn.cursor()
+        cursor.execute(
+            """
+            SELECT node_name, COUNT(*) as visits
+            FROM ivr_analytics
+            WHERE timestamp >= %s
+            GROUP BY node_name
+            ORDER BY visits DESC
+            """,
+            (start_date,)
+        )
+        rows = cursor.fetchall()
     return [dict(row) for row in rows]

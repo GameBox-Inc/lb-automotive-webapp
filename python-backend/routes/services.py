@@ -1,6 +1,6 @@
 from typing import List, Optional
 from fastapi import APIRouter, HTTPException
-from database import get_db_connection, fmt_query
+from database import DatabaseContextManager, fmt_query
 from models import Service, ServiceCreate
 from cache import get_cached, set_cached, invalidate_cache, TTL_SERVICES, TTL_CATEGORIES, cache_key
 from observability.monitoring import db_query_duration_seconds
@@ -12,30 +12,22 @@ router = APIRouter(prefix="/api/services", tags=["services"])
 @router.get("", response_model=List[Service])
 def list_services(category: str = None, is_emergency: bool = None):
     """List all services with optional filters."""
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    
     query = "SELECT * FROM services"
     params = []
     filters = []
-    
     if category:
         filters.append("category = ?")
         params.append(category)
-    
     if is_emergency is not None:
         filters.append("is_emergency = ?")
         params.append(int(is_emergency))
-    
     if filters:
         query += " WHERE " + " AND ".join(filters)
-    
     query += " ORDER BY category, name"
-    
-    cursor.execute(fmt_query(query), params)
-    rows = cursor.fetchall()
-    conn.close()
-
+    with DatabaseContextManager(read_only=True) as conn:
+        cursor = conn.cursor()
+        cursor.execute(fmt_query(query), params)
+        rows = cursor.fetchall()
     services = []
     for row in rows:
         # Use .get() so missing columns (e.g. category, updated_at in some migrations) don't break the response
@@ -76,11 +68,10 @@ async def get_service_categories():
     
     def fetch_categories():
         try:
-            conn = get_db_connection()
-            cursor = conn.cursor()
-            cursor.execute(fmt_query("SELECT DISTINCT category FROM services ORDER BY category"))
-            rows = cursor.fetchall()
-            conn.close()
+            with DatabaseContextManager(read_only=True) as conn:
+                cursor = conn.cursor()
+                cursor.execute(fmt_query("SELECT DISTINCT category FROM services ORDER BY category"))
+                rows = cursor.fetchall()
             out = []
             for row in rows:
                 r = dict(row) if not isinstance(row, dict) else row
@@ -105,13 +96,10 @@ async def get_service_categories():
 @router.get("/emergency", response_model=List[Service])
 def list_emergency_services():
     """Get list of emergency services."""
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    
-    cursor.execute(fmt_query("SELECT * FROM services WHERE is_emergency = 1 ORDER BY name"))
-    rows = cursor.fetchall()
-    conn.close()
-
+    with DatabaseContextManager(read_only=True) as conn:
+        cursor = conn.cursor()
+        cursor.execute(fmt_query("SELECT * FROM services WHERE is_emergency = 1 ORDER BY name"))
+        rows = cursor.fetchall()
     services = []
     for row in rows:
         r = dict(row) if not isinstance(row, dict) else row
@@ -137,13 +125,10 @@ def list_emergency_services():
 @router.get("/{service_id}", response_model=Service)
 def get_service(service_id: str):
     """Get a specific service by ID."""
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    
-    cursor.execute(fmt_query("SELECT * FROM services WHERE id = ?"), (service_id,))
-    row = cursor.fetchone()
-    conn.close()
-    
+    with DatabaseContextManager(read_only=True) as conn:
+        cursor = conn.cursor()
+        cursor.execute(fmt_query("SELECT * FROM services WHERE id = ?"), (service_id,))
+        row = cursor.fetchone()
     if not row:
         from fastapi import HTTPException
         raise HTTPException(status_code=404, detail="Service not found")
@@ -193,32 +178,24 @@ async def create_service(
     if service.description:
         service.description = sanitize_input(service.description, "text")
     service.category = sanitize_input(service.category, "text")
-    
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    
     import uuid
     service_id = str(uuid.uuid4())
-    
-    cursor.execute(fmt_query("""
-        INSERT INTO services (id, name, description, duration, price, is_emergency, category)
-        VALUES (?, ?, ?, ?, ?, ?, ?)
-    """), (
-        service_id,
-        service.name,
-        service.description,
-        service.duration,
-        service.price,
-        int(service.is_emergency),
-        service.category
-    ))
-    
-    conn.commit()
-    
-    cursor.execute(fmt_query("SELECT * FROM services WHERE id = ?"), (service_id,))
-    row = cursor.fetchone()
-    conn.close()
-
+    with DatabaseContextManager() as conn:
+        cursor = conn.cursor()
+        cursor.execute(fmt_query("""
+            INSERT INTO services (id, name, description, duration, price, is_emergency, category)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+        """), (
+            service_id,
+            service.name,
+            service.description,
+            service.duration,
+            service.price,
+            int(service.is_emergency),
+            service.category
+        ))
+        cursor.execute(fmt_query("SELECT * FROM services WHERE id = ?"), (service_id,))
+        row = cursor.fetchone()
     logger.info(f"Service created by {current_user['username']}: {service.name}")
 
     await invalidate_cache("services:*")
@@ -256,20 +233,8 @@ async def update_service(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Not authorized to update services"
         )
-    
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    
-    # Check existence
-    cursor.execute(fmt_query("SELECT * FROM services WHERE id = ?"), (service_id,))
-    if not cursor.fetchone():
-        conn.close()
-        raise HTTPException(status_code=404, detail="Service not found")
-    
-    # Build update query
     updates = []
     params = []
-    
     if service_update.name is not None:
         updates.append("name = ?")
         params.append(sanitize_input(service_update.name, "text"))
@@ -288,24 +253,19 @@ async def update_service(
     if service_update.category is not None:
         updates.append("category = ?")
         params.append(sanitize_input(service_update.category, "text"))
-        
     if not updates:
-        conn.close()
         raise HTTPException(status_code=400, detail="No updates provided")
-        
     updates.append("updated_at = CURRENT_TIMESTAMP")
     params.append(service_id)
-    
     query = f"UPDATE services SET {', '.join(updates)} WHERE id = ?"  # nosec B608
-    cursor.execute(fmt_query(query), params)
-    
-    conn.commit()
-    
-    # Fetch updated
-    cursor.execute(fmt_query("SELECT * FROM services WHERE id = ?"), (service_id,))
-    row = cursor.fetchone()
-    conn.close()
-    
+    with DatabaseContextManager() as conn:
+        cursor = conn.cursor()
+        cursor.execute(fmt_query("SELECT * FROM services WHERE id = ?"), (service_id,))
+        if not cursor.fetchone():
+            raise HTTPException(status_code=404, detail="Service not found")
+        cursor.execute(fmt_query(query), params)
+        cursor.execute(fmt_query("SELECT * FROM services WHERE id = ?"), (service_id,))
+        row = cursor.fetchone()
     logger.info(f"Service {service_id} updated by {current_user['username']}")
 
     await invalidate_cache("services:*")
@@ -336,40 +296,24 @@ async def delete_service(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Not authorized to delete services"
         )
-    
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    
-    # Check existence and get name for appointment check
-    cursor.execute(fmt_query("SELECT id, name FROM services WHERE id = ?"), (service_id,))
-    row = cursor.fetchone()
-    if not row:
-        conn.close()
-        raise HTTPException(status_code=404, detail="Service not found")
-    r = dict(row) if row and not isinstance(row, dict) else (row or {})
-    service_name = r.get("name") or ""
-
-    # Block delete if any appointments reference this service (by id or by name)
-    cursor.execute(
-        fmt_query(
-            "SELECT COUNT(*) as n FROM appointments WHERE service_id = ? OR service_type = ?"
-        ),
-        (service_id, service_name or ""),
-    )
-    count_row = cursor.fetchone()
-    if count_row:
-        ref_count = count_row.get("n", count_row[0] if isinstance(count_row, (tuple, list)) else 0) or 0
-    else:
-        ref_count = 0
-    if ref_count > 0:
-        conn.close()
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail=f"Cannot delete service: {ref_count} appointment(s) reference it. Reassign or remove those appointments first.",
+    with DatabaseContextManager() as conn:
+        cursor = conn.cursor()
+        cursor.execute(fmt_query("SELECT id, name FROM services WHERE id = ?"), (service_id,))
+        row = cursor.fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="Service not found")
+        r = dict(row) if row and not isinstance(row, dict) else (row or {})
+        service_name = r.get("name") or ""
+        cursor.execute(
+            fmt_query("SELECT COUNT(*) as n FROM appointments WHERE service_id = ? OR service_type = ?"),
+            (service_id, service_name or ""),
         )
-
-    cursor.execute(fmt_query("DELETE FROM services WHERE id = ?"), (service_id,))
-    conn.commit()
-    conn.close()
-
+        count_row = cursor.fetchone()
+        ref_count = count_row.get("n", count_row[0] if isinstance(count_row, (tuple, list)) else 0) or 0 if count_row else 0
+        if ref_count > 0:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=f"Cannot delete service: {ref_count} appointment(s) reference it. Reassign or remove those appointments first.",
+            )
+        cursor.execute(fmt_query("DELETE FROM services WHERE id = ?"), (service_id,))
     await invalidate_cache("services:*")

@@ -2,7 +2,7 @@
 from typing import List, Dict, Any, Optional
 from fastapi import APIRouter, Depends, Query
 from auth import get_current_active_user
-from database import get_db_connection
+from database import DatabaseContextManager
 from datetime import datetime, timedelta
 
 router = APIRouter(prefix="/api/reports", tags=["reports"])
@@ -19,10 +19,6 @@ def get_report_summary(
     - Total Repairs (count of completed cases)
     - Average Duration (minutes)
     """
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    
-    # Calculate start date based on timeframe
     if timeframe == "7d":
         start_date = (datetime.now() - timedelta(days=7)).isoformat()
     elif timeframe == "30d":
@@ -30,9 +26,8 @@ def get_report_summary(
     elif timeframe == "90d":
         start_date = (datetime.now() - timedelta(days=90)).isoformat()
     else:
-        start_date = "1970-01-01" # All time
-        
-    # PostgreSQL: session duration in minutes (SQLite julianday not available)
+        start_date = "1970-01-01"  # All time
+
     query = """
         SELECT 
             COUNT(c.id) as total_repairs,
@@ -45,10 +40,10 @@ def get_report_summary(
         WHERE c.status = 'completed'
         AND c.closed_at >= %s
     """
-    cursor.execute(query, (start_date,))
-    row = cursor.fetchone()
-    conn.close()
-    
+    with DatabaseContextManager(read_only=True) as conn:
+        cursor = conn.cursor()
+        cursor.execute(query, (start_date,))
+        row = cursor.fetchone()
     return {
         "total_repairs": row["total_repairs"] or 0,
         "total_revenue": row["total_revenue"] or 0,
@@ -65,10 +60,6 @@ def get_report_history(
     """
     Get recent repair history for the report table.
     """
-    conn = get_db_connection()
-    cursor = conn.cursor()
-
-    # Calculate start date based on timeframe (shared logic with /summary)
     if timeframe == "7d":
         start_date = (datetime.now() - timedelta(days=7)).isoformat()
     elif timeframe == "30d":
@@ -77,8 +68,7 @@ def get_report_history(
         start_date = (datetime.now() - timedelta(days=90)).isoformat()
     else:
         start_date = "1970-01-01"  # All time
-    
-    # PostgreSQL: actual_duration in minutes (SQLite julianday not available)
+
     query = """
         SELECT 
             c.case_number,
@@ -96,10 +86,10 @@ def get_report_history(
         ORDER BY c.closed_at DESC
         LIMIT %s
     """
-    cursor.execute(query, (start_date, limit))
-    rows = cursor.fetchall()
-    conn.close()
-    
+    with DatabaseContextManager(read_only=True) as conn:
+        cursor = conn.cursor()
+        cursor.execute(query, (start_date, limit))
+        rows = cursor.fetchall()
     history = []
     for row in rows:
         history.append({
