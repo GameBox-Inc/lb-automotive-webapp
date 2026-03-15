@@ -198,7 +198,16 @@ class AppointmentRepository:
         # Build update query
         update_fields = []
         params = []
-        
+        # #region agent log
+        try:
+            import os
+            _path = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "debug-bcd833.log"))
+            _upd = updates.model_dump(exclude_none=True) if hasattr(updates, "model_dump") else {}
+            with open(_path, "a", encoding="utf-8") as _f:
+                _f.write('{"sessionId":"bcd833","timestamp":' + str(__import__("time").time() * 1000) + ',"location":"appointment_repository.py:update_appointment","message":"update_appointment received","data":{"appointment_id":"' + str(appointment_id) + '","update_keys":' + str(list(_upd.keys())) + ',"has_assigned_staff_id":' + str("assigned_staff_id" in _upd) + ',"assigned_staff_id_value":' + str(_upd.get("assigned_staff_id")) + '},"hypothesisId":"H1"}\n')
+        except Exception:
+            pass
+        # #endregion
         if updates.customer_name is not None:
             update_fields.append("customer_name = ?")
             params.append(updates.customer_name)
@@ -258,6 +267,9 @@ class AppointmentRepository:
             update_fields.append("vehicle_year = ?")
             params.append(updates.vehicle_year)
 
+        if updates.assigned_staff_id is not None:
+            update_fields.append("assigned_staff_id = ?")
+            params.append(updates.assigned_staff_id)
         if updates.service_id is not None:
             update_fields.append("service_id = ?")
             params.append(updates.service_id)
@@ -278,12 +290,33 @@ class AppointmentRepository:
         params.append(appointment_id)
         
         query = f"UPDATE appointments SET {', '.join(update_fields)} WHERE id = ?"  # nosec B608
+        # #region agent log
+        try:
+            import os
+            _path = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "debug-bcd833.log"))
+            with open(_path, "a", encoding="utf-8") as _f:
+                _f.write('{"sessionId":"bcd833","timestamp":' + str(__import__("time").time() * 1000) + ',"location":"appointment_repository.py:update_appointment","message":"UPDATE fields built","data":{"update_fields":' + str(update_fields) + '},"hypothesisId":"H1"}\n')
+        except Exception:
+            pass
+        # #endregion
         with DatabaseContextManager(read_only=False) as conn:
             cursor = conn.cursor()
             cursor.execute(fmt_query(query), params)
             conn.commit()
         
-        return self.get_appointment(appointment_id)
+        result = self.get_appointment(appointment_id)
+        # #region agent log
+        try:
+            import os
+            _path = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "debug-bcd833.log"))
+            _rid = getattr(result, "id", None) if result else None
+            _aid = getattr(result, "assigned_staff_id", None) if result else None
+            with open(_path, "a", encoding="utf-8") as _f:
+                _f.write('{"sessionId":"bcd833","timestamp":' + str(__import__("time").time() * 1000) + ',"location":"appointment_repository.py:update_appointment","message":"after get_appointment","data":{"result_id":' + str(_rid) + ',"assigned_staff_id":' + str(_aid) + '},"hypothesisId":"H1"}\n')
+        except Exception:
+            pass
+        # #endregion
+        return result
 
     def delete_appointment(self, appointment_id: str) -> bool:
         with DatabaseContextManager(read_only=False) as conn:

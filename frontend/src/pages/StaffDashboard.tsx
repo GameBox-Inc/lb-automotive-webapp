@@ -165,15 +165,28 @@ const StaffDashboard = () => {
     const handleAssign = async () => {
         if (!selectedAppointment || !selectedStaffId) return;
         try {
-            await apiClient.updateAppointment(selectedAppointment.id, {
+            // #region agent log
+            fetch('http://127.0.0.1:7810/ingest/e338bfb8-4102-4546-81a7-715184556a92', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': 'bcd833' }, body: JSON.stringify({ sessionId: 'bcd833', location: 'StaffDashboard.tsx:handleAssign', message: 'assign before update', data: { appointmentId: selectedAppointment.id, selectedStaffId }, timestamp: Date.now(), hypothesisId: 'H3' }) }).catch(() => {});
+            // #endregion
+            const updated = await apiClient.updateAppointment(selectedAppointment.id, {
                 assigned_staff_id: selectedStaffId,
                 status: 'in_progress'
             });
+            // #region agent log
+            fetch('http://127.0.0.1:7810/ingest/e338bfb8-4102-4546-81a7-715184556a92', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': 'bcd833' }, body: JSON.stringify({ sessionId: 'bcd833', location: 'StaffDashboard.tsx:handleAssign', message: 'assign after update', data: { response_assigned_staff_id: (updated as any)?.assigned_staff_id }, timestamp: Date.now(), hypothesisId: 'H2' }) }).catch(() => {});
+            // #endregion
             toast.success('Repair assigned successfully');
             setShowAssignModal(false);
             setSelectedAppointment(null);
             setSelectedStaffId('');
-            fetchMyRepairs();
+            await fetchMyRepairs();
+            // #region agent log
+            const data = await apiClient.getAppointments();
+            const user = await apiClient.getCurrentUser();
+            const list = user?.staff_id ? data.filter((a: Appointment) => (a as any).assigned_staff_id === user.staff_id || (!(a as any).assigned_staff_id && ['confirmed', 'pending'].includes(a.status))) : data;
+            const firstAssigned = list.find((a: Appointment) => (a as any).assigned_staff_id === selectedStaffId);
+            fetch('http://127.0.0.1:7810/ingest/e338bfb8-4102-4546-81a7-715184556a92', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': 'bcd833' }, body: JSON.stringify({ sessionId: 'bcd833', location: 'StaffDashboard.tsx:handleAssign', message: 'after fetchMyRepairs', data: { listCount: list.length, firstMatch_assigned_staff_id: firstAssigned ? (firstAssigned as any).assigned_staff_id : null }, timestamp: Date.now(), hypothesisId: 'H3' }) }).catch(() => {});
+            // #endregion
         } catch (error) {
             console.error('Error assigning repair:', error);
             toast.error('Failed to assign repair');
