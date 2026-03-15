@@ -171,6 +171,10 @@ class AppointmentRepository:
             update_fields.append("emergency_request = ?")
             params.append(int(updates.emergency_request))
         
+        if updates.assigned_staff_id is not None:
+            update_fields.append("assigned_staff_id = ?")
+            params.append(updates.assigned_staff_id)
+        
         if not update_fields:
             return self.get_appointment(appointment_id)
 
