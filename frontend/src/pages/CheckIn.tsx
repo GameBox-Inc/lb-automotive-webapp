@@ -270,7 +270,7 @@ export default function CheckIn() {
                                             type="tel"
                                             id="phone"
                                             required
-                                            className="block w-full pl-12 pr-4 py-4 text-2xl border-gray-300 rounded-lg focus:ring-red-500 focus:border-red-500 text-center tracking-widest"
+                                            className="block w-full pl-12 pr-4 py-4 text-2xl border-gray-300 rounded-lg focus:ring-red-500 focus:border-red-500 text-center tracking-widest text-gray-900 placeholder:text-gray-500"
                                             placeholder="(555) 555-5555"
                                             value={phoneNumber}
                                             onChange={(e) => setPhoneNumber(e.target.value)}
@@ -307,7 +307,7 @@ export default function CheckIn() {
                                         <input
                                             type="text"
                                             required
-                                            className="block w-full border-gray-300 rounded-md shadow-sm focus:ring-red-500 focus:border-red-500 sm:text-lg p-3"
+                                            className="block w-full border-gray-300 rounded-md shadow-sm focus:ring-red-500 focus:border-red-500 sm:text-lg p-3 text-gray-900 placeholder:text-gray-500"
                                             value={customerName}
                                             onChange={(e) => setCustomerName(e.target.value)}
                                         />
@@ -382,7 +382,7 @@ export default function CheckIn() {
                                             setSelectedDate(e.target.value)
                                             setSelectedTime(null)
                                         }}
-                                        className="mt-1 block w-full rounded-md border border-gray-300 shadow-sm focus:border-red-500 focus:ring-red-500"
+                                        className="mt-1 block w-full rounded-md border border-gray-300 shadow-sm focus:border-red-500 focus:ring-red-500 text-gray-900"
                                     />
                                 </div>
 
@@ -431,7 +431,7 @@ export default function CheckIn() {
                                             setVehicleMake(e.target.value)
                                             setVehicleModel('')
                                         }}
-                                        className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-red-500 focus:ring-red-500"
+                                        className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-red-500 focus:ring-red-500 text-gray-900"
                                     >
                                         <option value="">Select make</option>
                                         {VEHICLE_MAKE_MODEL_OPTIONS.map(option => (
@@ -448,7 +448,7 @@ export default function CheckIn() {
                                     <select
                                         value={vehicleModel}
                                         onChange={(e) => setVehicleModel(e.target.value)}
-                                        className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-red-500 focus:ring-red-500"
+                                        className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-red-500 focus:ring-red-500 text-gray-900"
                                         disabled={!vehicleMake}
                                     >
                                         <option value="">Select model</option>

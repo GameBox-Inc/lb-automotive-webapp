@@ -314,7 +314,7 @@ const CaseDetails = () => {
                                     value={newNote}
                                     onChange={(e) => setNewNote(e.target.value)}
                                     placeholder="Add a note... (Dictate roughly and click wand to polish)"
-                                    className="w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+                                    className="w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-gray-900 placeholder:text-gray-500 dark:bg-gray-700 dark:border-gray-600 dark:text-white dark:placeholder:text-gray-400"
                                     rows={3}
                                 />
                                 <button
@@ -369,7 +369,7 @@ const CaseDetails = () => {
                                         value={newPartName}
                                         onChange={(e) => setNewPartName(e.target.value)}
                                         placeholder="Part Name"
-                                        className="w-full rounded-md border-gray-300 shadow-sm sm:text-sm dark:bg-gray-800 dark:border-gray-600"
+                                        className="w-full rounded-md border-gray-300 shadow-sm sm:text-sm text-gray-900 dark:bg-gray-800 dark:border-gray-600 dark:text-white dark:placeholder:text-gray-400"
                                     />
                                 </div>
                                 <div className="col-span-1">
@@ -378,7 +378,7 @@ const CaseDetails = () => {
                                         value={newPartQty}
                                         onChange={(e) => setNewPartQty(parseInt(e.target.value))}
                                         min="1"
-                                        className="w-full rounded-md border-gray-300 shadow-sm sm:text-sm dark:bg-gray-800 dark:border-gray-600"
+                                        className="w-full rounded-md border-gray-300 shadow-sm sm:text-sm text-gray-900 dark:bg-gray-800 dark:border-gray-600 dark:text-white dark:placeholder:text-gray-400"
                                     />
                                 </div>
                                 <div className="col-span-2">
@@ -388,7 +388,7 @@ const CaseDetails = () => {
                                         onChange={(e) => setNewPartPrice(e.target.value)}
                                         placeholder="Price"
                                         step="0.01"
-                                        className="w-full rounded-md border-gray-300 shadow-sm sm:text-sm dark:bg-gray-800 dark:border-gray-600"
+                                        className="w-full rounded-md border-gray-300 shadow-sm sm:text-sm text-gray-900 dark:bg-gray-800 dark:border-gray-600 dark:text-white dark:placeholder:text-gray-400"
                                     />
                                 </div>
                             </div>

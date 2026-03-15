@@ -243,7 +243,7 @@ export function Services() {
                       type="text"
                       value={currentService.name}
                       onChange={e => setCurrentService({ ...currentService, name: e.target.value })}
-                      className="w-full px-4 py-2 rounded-lg border border-gray-300 focus:ring-2 focus:ring-red-500 focus:border-red-500 transition-all"
+                      className="w-full px-4 py-2 rounded-lg border border-gray-300 focus:ring-2 focus:ring-red-500 focus:border-red-500 transition-all text-gray-900 placeholder:text-gray-500"
                       required
                       placeholder="e.g. Synthetic Oil Change"
                     />
@@ -254,7 +254,7 @@ export function Services() {
                     <textarea
                       value={currentService.description}
                       onChange={e => setCurrentService({ ...currentService, description: e.target.value })}
-                      className="w-full px-4 py-2 rounded-lg border border-gray-300 focus:ring-2 focus:ring-red-500 focus:border-red-500 transition-all"
+                      className="w-full px-4 py-2 rounded-lg border border-gray-300 focus:ring-2 focus:ring-red-500 focus:border-red-500 transition-all text-gray-900 placeholder:text-gray-500"
                       required
                       rows={3}
                       placeholder="Describe what this service entails..."
@@ -273,7 +273,7 @@ export function Services() {
                       list="service-categories"
                       value={currentService.category}
                       onChange={e => setCurrentService({ ...currentService, category: e.target.value })}
-                      className="w-full px-4 py-2 rounded-lg border border-gray-300 focus:ring-2 focus:ring-red-500 focus:border-red-500 transition-all capitalize"
+                      className="w-full px-4 py-2 rounded-lg border border-gray-300 focus:ring-2 focus:ring-red-500 focus:border-red-500 transition-all capitalize text-gray-900 placeholder:text-gray-500"
                       placeholder="e.g. maintenance, repair"
                     />
                     <datalist id="service-categories">
@@ -316,7 +316,7 @@ export function Services() {
                       type="number"
                       value={currentService.duration}
                       onChange={e => setCurrentService({ ...currentService, duration: parseInt(e.target.value) })}
-                      className="w-full px-4 py-2 rounded-lg border border-gray-300 focus:ring-2 focus:ring-red-500 focus:border-red-500 transition-all font-mono"
+                      className="w-full px-4 py-2 rounded-lg border border-gray-300 focus:ring-2 focus:ring-red-500 focus:border-red-500 transition-all font-mono text-gray-900"
                       required
                       min="5"
                       step="5"
@@ -335,7 +335,7 @@ export function Services() {
                         type="number"
                         value={currentService.price}
                         onChange={e => setCurrentService({ ...currentService, price: parseFloat(e.target.value) })}
-                        className="w-full pl-8 pr-4 py-2 rounded-lg border border-gray-300 focus:ring-2 focus:ring-red-500 focus:border-red-500 transition-all font-mono"
+                        className="w-full pl-8 pr-4 py-2 rounded-lg border border-gray-300 focus:ring-2 focus:ring-red-500 focus:border-red-500 transition-all font-mono text-gray-900"
                         required
                         min="0"
                         step="0.01"

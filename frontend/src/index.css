@@ -49,6 +49,18 @@
     @apply border-gray-200;
   }
 
+  /* Ensure form controls have sufficient text contrast (WCAG) */
+  input,
+  select,
+  textarea {
+    @apply text-gray-900;
+  }
+
+  input::placeholder,
+  textarea::placeholder {
+    @apply text-gray-500;
+  }
+
   body {
     @apply bg-gradient-to-br from-gray-50 via-gray-100 to-gray-50 text-gray-900;
     font-family: var(--font-body);

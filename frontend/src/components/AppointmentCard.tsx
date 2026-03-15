@@ -371,7 +371,7 @@ export const AppointmentCard: React.FC<AppointmentCardProps> = ({ appointment, o
                   type="datetime-local"
                   value={format(newDate, "yyyy-MM-dd'T'HH:mm")}
                   onChange={(e) => setNewDate(new Date(e.target.value))}
-                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-gray-900 dark:bg-gray-700 dark:border-gray-600 dark:text-white"
                 />
               </div>
               <div className="flex justify-end gap-3">
@@ -408,7 +408,7 @@ export const AppointmentCard: React.FC<AppointmentCardProps> = ({ appointment, o
                 <select
                   value={selectedStaff}
                   onChange={(e) => setSelectedStaff(e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-gray-900 dark:bg-gray-700 dark:border-gray-600 dark:text-white"
                 >
                   <option value="">-- Select a staff member --</option>
                   {staff.map((s) => (
@@ -459,7 +459,7 @@ export const AppointmentCard: React.FC<AppointmentCardProps> = ({ appointment, o
                     type="text"
                     value={editData.customer_name}
                     onChange={(e) => setEditData({ ...editData, customer_name: e.target.value })}
-                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 rounded-md focus:ring-2 focus:ring-blue-500"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 text-gray-900 dark:bg-gray-700 dark:border-gray-600 dark:text-white"
                   />
                 </div>
                 <div>
@@ -468,7 +468,7 @@ export const AppointmentCard: React.FC<AppointmentCardProps> = ({ appointment, o
                     type="text"
                     value={editData.phone_number}
                     onChange={(e) => setEditData({ ...editData, phone_number: e.target.value })}
-                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 rounded-md focus:ring-2 focus:ring-blue-500"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 text-gray-900 dark:bg-gray-700 dark:border-gray-600 dark:text-white"
                   />
                 </div>
               </div>
@@ -478,7 +478,7 @@ export const AppointmentCard: React.FC<AppointmentCardProps> = ({ appointment, o
                 <select
                   value={editData.service_type}
                   onChange={(e) => setEditData({ ...editData, service_type: e.target.value })}
-                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 rounded-md focus:ring-2 focus:ring-blue-500"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 text-gray-900 dark:bg-gray-700 dark:border-gray-600 dark:text-white"
                 >
                   {availableServices.map(s => (
                     <option key={s.id} value={s.id}>{s.name}</option>
@@ -495,7 +495,7 @@ export const AppointmentCard: React.FC<AppointmentCardProps> = ({ appointment, o
                   value={editData.notes}
                   onChange={(e) => setEditData({ ...editData, notes: e.target.value })}
                   rows={3}
-                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 rounded-md focus:ring-2 focus:ring-blue-500"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 text-gray-900 dark:bg-gray-700 dark:border-gray-600 dark:text-white"
                 />
               </div>
 
