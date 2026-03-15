@@ -3,6 +3,7 @@ import React from 'react';
 import { format } from 'date-fns';
 import { Appointment, Service } from '../lib/supabase';
 import { User, Clock } from 'lucide-react';
+import { EmptyState } from './EmptyState';
 
 interface DailyTimelineProps {
     appointments: Appointment[];
@@ -44,17 +45,19 @@ export const DailyTimeline: React.FC<DailyTimelineProps> = ({ appointments, serv
     const statusColors: Record<string, string> = {
         pending: 'bg-yellow-500',
         confirmed: 'bg-green-500',
-        in_progress: 'bg-blue-600',
+        in_progress: 'bg-lb-red-primary',
         completed: 'bg-gray-600',
         cancelled: 'bg-red-500',
     };
 
     if (todaysAppointments.length === 0) {
         return (
-            <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm p-8 text-center border border-gray-100 dark:border-gray-700">
-                <Clock className="mx-auto h-12 w-12 text-gray-300 dark:text-gray-600" />
-                <h3 className="mt-4 text-lg font-medium text-gray-900 dark:text-white">No Appointments Today</h3>
-                <p className="mt-1 text-gray-500 dark:text-gray-400">The schedule is clear for the day.</p>
+            <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm p-8 border border-gray-100 dark:border-gray-700">
+                <EmptyState
+                    icon={<Clock className="h-7 w-7" />}
+                    title="No Appointments Today"
+                    description="The schedule is clear for the day."
+                />
             </div>
         );
     }

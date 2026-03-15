@@ -1,9 +1,11 @@
 import { useState, useEffect, useMemo } from 'react';
+import { Dialog, DialogPanel, DialogTitle, Transition, TransitionChild } from '@headlessui/react';
 import { apiClient, Appointment } from '../lib/supabase';
 import { Car, Wrench, LayoutGrid, LayoutList, Phone, AlertCircle, User, Filter, X } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import { LoadingSpinner } from '../components/LoadingSpinner';
+import { EmptyState } from '../components/EmptyState';
 
 // ── Status helpers ────────────────────────────────────────────────────────────
 const STATUS_CONFIG: Record<string, { label: string; classes: string; progress: number }> = {
@@ -76,7 +78,7 @@ function AssigneeChip({ staffId, staffList }: { staffId?: string | null; staffLi
     const initials = name.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase();
     return (
         <div className="flex items-center gap-1.5">
-            <div className="h-6 w-6 rounded-full bg-indigo-600 flex items-center justify-center text-white text-xs font-bold flex-shrink-0">
+            <div className="h-6 w-6 rounded-full bg-lb-red-primary flex items-center justify-center text-white text-xs font-bold flex-shrink-0">
                 {initials}
             </div>
             <span className="text-sm text-gray-700 dark:text-gray-300 truncate">{name}</span>
@@ -247,7 +249,7 @@ const StaffDashboard = () => {
                         <Filter className="h-4 w-4" />
                         Filter
                         {activeFilters > 0 && (
-                            <span className="absolute -top-1 -right-1 h-4 w-4 flex items-center justify-center rounded-full bg-indigo-600 text-white text-xs">
+                            <span className="absolute -top-1 -right-1 h-4 w-4 flex items-center justify-center rounded-full bg-lb-red-primary text-white text-xs">
                                 {activeFilters}
                             </span>
                         )}
@@ -272,7 +274,7 @@ const StaffDashboard = () => {
                     <select
                         value={filterStatus}
                         onChange={e => setFilterStatus(e.target.value)}
-                        className="px-3 py-2 bg-gray-50 dark:bg-gray-900/50 border border-gray-200 dark:border-gray-700 rounded-lg text-sm text-gray-700 dark:text-gray-200 focus:ring-2 focus:ring-indigo-500/50"
+                        className="px-3 py-2 bg-gray-50 dark:bg-gray-900/50 border border-gray-200 dark:border-gray-700 rounded-lg text-sm text-gray-700 dark:text-gray-200 focus:ring-2 focus:ring-lb-red-primary/50"
                     >
                         <option value="all">All Statuses</option>
                         {Object.entries(STATUS_CONFIG).map(([key, { label }]) => (
@@ -284,7 +286,7 @@ const StaffDashboard = () => {
                     <select
                         value={filterAssignee}
                         onChange={e => setFilterAssignee(e.target.value)}
-                        className="px-3 py-2 bg-gray-50 dark:bg-gray-900/50 border border-gray-200 dark:border-gray-700 rounded-lg text-sm text-gray-700 dark:text-gray-200 focus:ring-2 focus:ring-indigo-500/50"
+                        className="px-3 py-2 bg-gray-50 dark:bg-gray-900/50 border border-gray-200 dark:border-gray-700 rounded-lg text-sm text-gray-700 dark:text-gray-200 focus:ring-2 focus:ring-lb-red-primary/50"
                     >
                         <option value="all">All Technicians</option>
                         <option value="unassigned">Unassigned</option>
@@ -333,14 +335,12 @@ const StaffDashboard = () => {
 
             {/* ── Empty state ── */}
             {filteredAppointments.length === 0 ? (
-                <div className="text-center py-12 bg-gray-50 dark:bg-gray-800 rounded-lg border-2 border-dashed border-gray-300 dark:border-gray-700">
-                    <Wrench className="mx-auto h-12 w-12 text-gray-400" />
-                    <h3 className="mt-2 text-sm font-medium text-gray-900 dark:text-white">
-                        {activeFilters > 0 ? 'No repairs match your filters' : 'No repairs assigned'}
-                    </h3>
-                    <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
-                        {activeFilters > 0 ? 'Try adjusting your filters.' : "You don't have any active repairs assigned to you."}
-                    </p>
+                <div className="bg-gray-50 dark:bg-gray-800 rounded-lg border-2 border-dashed border-gray-300 dark:border-gray-700">
+                    <EmptyState
+                        icon={<Wrench className="h-7 w-7" />}
+                        title={activeFilters > 0 ? 'No repairs match your filters' : 'No repairs assigned'}
+                        description={activeFilters > 0 ? 'Try adjusting your filters.' : "You don't have any active repairs assigned to you."}
+                    />
                 </div>
             ) : viewMode === 'table' ? (
 
@@ -407,7 +407,7 @@ const StaffDashboard = () => {
                                     <td className="px-5 py-4 whitespace-nowrap text-right text-sm font-medium space-x-3">
                                         <button
                                             onClick={() => handleOpenCase(apt)}
-                                            className="inline-flex items-center px-3 py-1.5 rounded-lg bg-indigo-600 text-white text-xs font-semibold hover:bg-indigo-700 transition-colors"
+                                            className="inline-flex items-center px-3 py-1.5 rounded-lg bg-lb-red-primary text-white text-xs font-semibold hover:bg-lb-red-light transition-colors"
                                         >
                                             Open Case
                                         </button>
@@ -464,7 +464,7 @@ const StaffDashboard = () => {
                                 <div className="mt-4 flex gap-2">
                                     <button
                                         onClick={() => handleOpenCase(apt)}
-                                        className="flex-1 py-2 px-3 rounded-lg text-sm font-semibold text-white bg-indigo-600 hover:bg-indigo-700 transition-colors text-center"
+                                        className="flex-1 py-2 px-3 rounded-lg text-sm font-semibold text-white bg-lb-red-primary hover:bg-lb-red-light transition-colors text-center"
                                     >
                                         Open Case
                                     </button>
@@ -482,43 +482,59 @@ const StaffDashboard = () => {
             )}
 
             {/* ── Assign Modal ── */}
-            {showAssignModal && selectedAppointment && (
-                <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-                    <div className="bg-white dark:bg-gray-800 rounded-xl p-6 w-full max-w-md shadow-xl">
-                        <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-1">
-                            Assign Technician
-                        </h3>
-                        <p className="text-sm text-gray-500 dark:text-gray-400 mb-4">
-                            {selectedAppointment.customer_name} — {selectedAppointment.service_type}
-                        </p>
-                        <div className="space-y-4">
-                            <div>
-                                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                                    Technician
-                                </label>
-                                <select
-                                    value={selectedStaffId}
-                                    onChange={e => setSelectedStaffId(e.target.value)}
-                                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                                >
-                                    <option value="">— Select technician —</option>
-                                    {staff.map(s => (
-                                        <option key={s.id} value={s.id}>{s.name}</option>
-                                    ))}
-                                </select>
-                            </div>
-                            <div className="flex justify-end gap-3">
-                                <button onClick={() => setShowAssignModal(false)} className="px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors">
-                                    Cancel
-                                </button>
-                                <button onClick={handleAssign} disabled={!selectedStaffId} className="px-4 py-2 text-sm font-semibold text-white bg-indigo-600 rounded-lg hover:bg-indigo-700 disabled:opacity-50 transition-colors">
-                                    Assign
-                                </button>
-                            </div>
-                        </div>
+            <Transition show={!!(showAssignModal && selectedAppointment)}>
+                <Dialog
+                    open={showAssignModal && !!selectedAppointment}
+                    onClose={() => { setShowAssignModal(false); setSelectedAppointment(null); }}
+                    className="relative z-50"
+                >
+                    <TransitionChild enter="ease-out duration-200" enterFrom="opacity-0" enterTo="opacity-100" leave="ease-in duration-150" leaveFrom="opacity-100" leaveTo="opacity-0">
+                        <div className="fixed inset-0 bg-black/50" aria-hidden="true" />
+                    </TransitionChild>
+                    <div className="fixed inset-0 flex items-center justify-center p-4">
+                        <TransitionChild enter="ease-out duration-200" enterFrom="opacity-0 scale-95" enterTo="opacity-100 scale-100" leave="ease-in duration-150" leaveFrom="opacity-100 scale-100" leaveTo="opacity-0 scale-95">
+                            <DialogPanel className="bg-white dark:bg-gray-800 rounded-xl p-6 w-full max-w-md shadow-xl">
+                                <DialogTitle className="text-lg font-semibold text-gray-900 dark:text-white mb-1">
+                                    Assign Technician
+                                </DialogTitle>
+                                {selectedAppointment && (
+                                    <>
+                                        <p className="text-sm text-gray-500 dark:text-gray-400 mb-4">
+                                            {selectedAppointment.customer_name} — {selectedAppointment.service_type}
+                                        </p>
+                                        <div className="space-y-4">
+                                            <div>
+                                                <label htmlFor="assign-technician-select" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                                                    Technician
+                                                </label>
+                                                <select
+                                                    id="assign-technician-select"
+                                                    value={selectedStaffId}
+                                                    onChange={e => setSelectedStaffId(e.target.value)}
+                                                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded-lg focus:outline-none focus:ring-2 focus:ring-lb-red-primary"
+                                                >
+                                                    <option value="">— Select technician —</option>
+                                                    {staff.map(s => (
+                                                        <option key={s.id} value={s.id}>{s.name}</option>
+                                                    ))}
+                                                </select>
+                                            </div>
+                                            <div className="flex justify-end gap-3">
+                                                <button type="button" onClick={() => { setShowAssignModal(false); setSelectedAppointment(null); }} className="px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors">
+                                                    Cancel
+                                                </button>
+                                                <button type="button" onClick={handleAssign} disabled={!selectedStaffId} className="px-4 py-2 text-sm font-semibold text-white bg-lb-red-primary rounded-lg hover:bg-lb-red-light disabled:opacity-50 transition-colors">
+                                                    Assign
+                                                </button>
+                                            </div>
+                                        </div>
+                                    </>
+                                )}
+                            </DialogPanel>
+                        </TransitionChild>
                     </div>
-                </div>
-            )}
+                </Dialog>
+            </Transition>
         </div>
     );
 };

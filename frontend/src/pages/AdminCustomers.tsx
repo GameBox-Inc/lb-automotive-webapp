@@ -4,6 +4,7 @@ import { apiClient, Customer } from '../lib/supabase';
 import { Users, UserPlus, Edit2, Trash2, Phone, Mail, Calendar, History } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { LoadingSpinner } from '../components/LoadingSpinner';
+import { EmptyState } from '../components/EmptyState';
 
 const AdminCustomers = () => {
     const formId = useId();
@@ -132,7 +133,7 @@ const AdminCustomers = () => {
                 </div>
                 <button
                     onClick={() => setShowAddModal(true)}
-                    className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700"
+                    className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-lb-red-primary hover:bg-lb-red-light"
                 >
                     <UserPlus className="h-4 w-4 mr-2" />
                     Add Customer
@@ -163,9 +164,21 @@ const AdminCustomers = () => {
                     <tbody className="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
                         {customers.length === 0 ? (
                             <tr>
-                                <td colSpan={5} className="px-6 py-10 text-center text-gray-500 dark:text-gray-400">
-                                    <Users className="h-12 w-12 mx-auto mb-3 opacity-50" />
-                                    <p>No customers yet. Add your first customer to get started.</p>
+                                <td colSpan={5} className="px-6 py-10">
+                                    <EmptyState
+                                        icon={<Users className="h-7 w-7" />}
+                                        title="No customers yet"
+                                        description="Add your first customer to get started."
+                                        action={
+                                            <button
+                                                type="button"
+                                                onClick={() => { setShowAddModal(true); resetForm(); }}
+                                                className="inline-flex items-center px-4 py-2 text-sm font-medium text-white bg-lb-red-primary rounded-md hover:bg-lb-red-light"
+                                            >
+                                                Add Customer
+                                            </button>
+                                        }
+                                    />
                                 </td>
                             </tr>
                         ) : (
@@ -254,7 +267,7 @@ const AdminCustomers = () => {
                                         value={formData.name}
                                         onChange={(e) => setFormData({ ...formData, name: e.target.value })}
                                         required
-                                        className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+                                        className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-lb-red-primary focus:ring-lb-red-primary sm:text-sm dark:bg-gray-700 dark:border-gray-600 dark:text-white"
                                     />
                                 </div>
                                 <div>
@@ -268,7 +281,7 @@ const AdminCustomers = () => {
                                         onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
                                         required
                                         placeholder="(555) 555-5555"
-                                        className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+                                        className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-lb-red-primary focus:ring-lb-red-primary sm:text-sm dark:bg-gray-700 dark:border-gray-600 dark:text-white"
                                     />
                                 </div>
                                 <div>
@@ -280,7 +293,7 @@ const AdminCustomers = () => {
                                         type="email"
                                         value={formData.email}
                                         onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-                                        className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+                                        className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-lb-red-primary focus:ring-lb-red-primary sm:text-sm dark:bg-gray-700 dark:border-gray-600 dark:text-white"
                                     />
                                 </div>
                             </div>
@@ -294,7 +307,7 @@ const AdminCustomers = () => {
                                 </button>
                                 <button
                                     type="submit"
-                                    className="px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700"
+                                    className="px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-lb-red-primary hover:bg-lb-red-light"
                                 >
                                     Add Customer
                                 </button>
@@ -328,7 +341,7 @@ const AdminCustomers = () => {
                                         value={formData.name}
                                         onChange={(e) => setFormData({ ...formData, name: e.target.value })}
                                         required
-                                        className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+                                        className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-lb-red-primary focus:ring-lb-red-primary sm:text-sm dark:bg-gray-700 dark:border-gray-600 dark:text-white"
                                     />
                                 </div>
                                 <div>
@@ -341,7 +354,7 @@ const AdminCustomers = () => {
                                         value={formData.phone}
                                         onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
                                         required
-                                        className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+                                        className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-lb-red-primary focus:ring-lb-red-primary sm:text-sm dark:bg-gray-700 dark:border-gray-600 dark:text-white"
                                     />
                                 </div>
                                 <div>
@@ -353,7 +366,7 @@ const AdminCustomers = () => {
                                         type="email"
                                         value={formData.email}
                                         onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-                                        className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+                                        className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-lb-red-primary focus:ring-lb-red-primary sm:text-sm dark:bg-gray-700 dark:border-gray-600 dark:text-white"
                                     />
                                 </div>
                             </div>
@@ -367,7 +380,7 @@ const AdminCustomers = () => {
                                 </button>
                                 <button
                                     type="submit"
-                                    className="px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700"
+                                    className="px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-lb-red-primary hover:bg-lb-red-light"
                                 >
                                     Save Changes
                                 </button>

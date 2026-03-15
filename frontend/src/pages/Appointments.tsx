@@ -7,6 +7,8 @@ import { apiClient } from '../lib/supabase'
 import { AppointmentCard } from '../components/AppointmentCard'
 import { DailyTimeline } from '../components/DailyTimeline'
 import { LoadingSpinner } from '../components/LoadingSpinner'
+import { SkeletonList, SkeletonCard } from '../components/Skeleton'
+import { EmptyState } from '../components/EmptyState'
 import { VoicePrompt } from '../components/VoicePrompt'
 import { Dialog, DialogPanel, DialogTitle, Transition, TransitionChild } from '@headlessui/react';
 import { Plus, Search, Calendar, Clock, X, Maximize2, Minimize2, RefreshCw } from 'lucide-react';
@@ -395,7 +397,7 @@ export function Appointments() {
                 type="date"
                 value={filterDate}
                 onChange={(e) => setFilterDate(e.target.value)}
-                className="pl-9 pr-4 py-2 w-full sm:w-auto bg-gray-50 dark:bg-gray-900/50 border border-gray-200 dark:border-gray-700 rounded-xl text-sm text-gray-700 dark:text-gray-200 focus:ring-2 focus:ring-indigo-500/50 focus:border-indigo-500 transition-all hover:bg-white dark:hover:bg-gray-800"
+                className="pl-9 pr-4 py-2 w-full sm:w-auto bg-gray-50 dark:bg-gray-900/50 border border-gray-200 dark:border-gray-700 rounded-xl text-sm text-gray-700 dark:text-gray-200 focus:ring-2 focus:ring-lb-red-primary/50 focus:border-lb-red-primary transition-all hover:bg-white dark:hover:bg-gray-800"
               />
             </div>
 
@@ -407,7 +409,7 @@ export function Appointments() {
               <select
                 value={filterStatus}
                 onChange={(e) => setFilterStatus(e.target.value)}
-                className="pl-9 pr-8 py-2 w-full sm:w-auto bg-gray-50 dark:bg-gray-900/50 border border-gray-200 dark:border-gray-700 rounded-xl text-sm text-gray-700 dark:text-gray-200 focus:ring-2 focus:ring-indigo-500/50 focus:border-indigo-500 transition-all hover:bg-white dark:hover:bg-gray-800 appearance-none cursor-pointer"
+                className="pl-9 pr-8 py-2 w-full sm:w-auto bg-gray-50 dark:bg-gray-900/50 border border-gray-200 dark:border-gray-700 rounded-xl text-sm text-gray-700 dark:text-gray-200 focus:ring-2 focus:ring-lb-red-primary/50 focus:border-lb-red-primary transition-all hover:bg-white dark:hover:bg-gray-800 appearance-none cursor-pointer"
               >
                 <option value="all">All Statuses</option>
                 <option value="pending">Pending</option>
@@ -503,14 +505,31 @@ export function Appointments() {
       )}
 
       {loading ? (
-        <div className="text-center py-12">
-          <LoadingSpinner size="lg" className="mx-auto" />
-          <p className="mt-4 text-gray-500 dark:text-gray-400">Loading appointments...</p>
+        <div className="space-y-4">
+          <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
+            <SkeletonCard />
+            <SkeletonCard />
+            <SkeletonCard />
+          </div>
+          <div className="bg-white dark:bg-gray-800 shadow rounded-lg overflow-hidden p-4">
+            <SkeletonList rows={5} />
+          </div>
         </div>
       ) : filteredAppointments.length === 0 ? (
-        <div className="text-center py-12">
-          <p className="text-gray-500 dark:text-gray-400">No appointments found</p>
-        </div>
+        <EmptyState
+          icon={<Calendar className="h-7 w-7" />}
+          title="No appointments found"
+          description="Try adjusting filters or add a new appointment."
+          action={apiClient.getStoredUser()?.is_admin && (
+            <button
+              type="button"
+              onClick={() => setShowAddModal(true)}
+              className="inline-flex items-center px-4 py-2 text-sm font-medium text-white bg-lb-red-primary rounded-md hover:bg-lb-red-light"
+            >
+              Add Appointment
+            </button>
+          )}
+        />
       ) : (
         <>
           {viewMode === 'card' && (
@@ -659,7 +678,7 @@ export function Appointments() {
                         setNewAppointment({ ...newAppointment, customer_name: e.target.value })
                         setCustomerQuery(e.target.value)
                       }}
-                      className="block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+                      className="block w-full rounded-md border-gray-300 shadow-sm focus:border-lb-red-primary focus:ring-lb-red-primary dark:bg-gray-700 dark:border-gray-600 dark:text-white"
                       required
                     />
                     <div className="absolute right-3 top-2.5 text-gray-400">
@@ -693,7 +712,7 @@ export function Appointments() {
                   type="tel"
                   value={newAppointment.phone_number}
                   onChange={e => setNewAppointment({ ...newAppointment, phone_number: e.target.value })}
-                  className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+                  className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-lb-red-primary focus:ring-lb-red-primary dark:bg-gray-700 dark:border-gray-600 dark:text-white"
                   required
                 />
               </div>
@@ -709,7 +728,7 @@ export function Appointments() {
                     setSelectedCategory(e.target.value)
                     setNewAppointment({ ...newAppointment, service_type: '' })
                   }}
-                  className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+                  className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-lb-red-primary focus:ring-lb-red-primary dark:bg-gray-700 dark:border-gray-600 dark:text-white"
                   required
                 >
                   <option value="">Select a category</option>
@@ -730,7 +749,7 @@ export function Appointments() {
                     id={`${formId}-service`}
                     value={newAppointment.service_type}
                     onChange={e => setNewAppointment({ ...newAppointment, service_type: e.target.value, appointment_time: '' })}
-                    className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+                    className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-lb-red-primary focus:ring-lb-red-primary dark:bg-gray-700 dark:border-gray-600 dark:text-white"
                     required
                   >
                     <option value="">Select a service</option>
@@ -758,16 +777,16 @@ export function Appointments() {
                   value={selectedDate}
                   onChange={(e) => setSelectedDate(e.target.value)}
                   min={format(new Date(), 'yyyy-MM-dd')}
-                  className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+                  className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-lb-red-primary focus:ring-lb-red-primary dark:bg-gray-700 dark:border-gray-600 dark:text-white"
                   required
                 />
               </div>
 
               {selectedService && (
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                <div role="group" aria-labelledby="available-times-heading">
+                  <p id="available-times-heading" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                     Available Times
-                  </label>
+                  </p>
                   {checkingAvailability ? (
                     <div className="flex items-center text-sm text-gray-500 dark:text-gray-400">
                       <LoadingSpinner size="sm" className="mr-2" />
@@ -781,7 +800,7 @@ export function Appointments() {
                           type="button"
                           onClick={() => setNewAppointment(prev => ({ ...prev, appointment_time: time }))}
                           className={`px-2 py-1 text-sm border rounded hover:bg-blue-50 dark:hover:bg-blue-900 ${newAppointment.appointment_time === time
-                            ? 'bg-blue-600 text-white border-blue-600'
+                            ? 'bg-lb-red-primary text-white border-lb-red-primary'
                             : 'bg-white dark:bg-gray-700 text-gray-700 dark:text-gray-200 border-gray-300 dark:border-gray-600'
                             }`}
                         >
@@ -811,7 +830,7 @@ export function Appointments() {
                     id={`${formId}-vmake`}
                     value={newAppointment.vehicle_make}
                     onChange={e => setNewAppointment({ ...newAppointment, vehicle_make: e.target.value, vehicle_model: '' })}
-                    className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+                    className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-lb-red-primary focus:ring-lb-red-primary dark:bg-gray-700 dark:border-gray-600 dark:text-white"
                   >
                     <option value="">Select make</option>
                     {VEHICLE_MAKE_MODEL_OPTIONS.map(opt => (
@@ -827,7 +846,7 @@ export function Appointments() {
                     id={`${formId}-vmodel`}
                     value={newAppointment.vehicle_model}
                     onChange={e => setNewAppointment({ ...newAppointment, vehicle_model: e.target.value })}
-                    className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+                    className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-lb-red-primary focus:ring-lb-red-primary dark:bg-gray-700 dark:border-gray-600 dark:text-white"
                     disabled={!newAppointment.vehicle_make}
                   >
                     <option value="">Select model</option>
@@ -846,7 +865,7 @@ export function Appointments() {
                     id={`${formId}-vcolor`}
                     value={newAppointment.vehicle_color}
                     onChange={e => setNewAppointment({ ...newAppointment, vehicle_color: e.target.value })}
-                    className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+                    className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-lb-red-primary focus:ring-lb-red-primary dark:bg-gray-700 dark:border-gray-600 dark:text-white"
                   >
                     <option value="">Select color</option>
                     {COMMON_COLORS.map(c => (
@@ -862,7 +881,7 @@ export function Appointments() {
                     id={`${formId}-vyear`}
                     value={newAppointment.vehicle_year ?? ''}
                     onChange={e => setNewAppointment({ ...newAppointment, vehicle_year: Number(e.target.value) || new Date().getFullYear() })}
-                    className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+                    className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-lb-red-primary focus:ring-lb-red-primary dark:bg-gray-700 dark:border-gray-600 dark:text-white"
                   >
                     <option value="">Select year</option>
                     {Array.from({ length: 32 }, (_, i) => new Date().getFullYear() + 1 - i).map(y => (
@@ -880,7 +899,7 @@ export function Appointments() {
                   id={`${formId}-notes`}
                   value={newAppointment.notes}
                   onChange={e => setNewAppointment({ ...newAppointment, notes: e.target.value })}
-                  className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+                  className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-lb-red-primary focus:ring-lb-red-primary dark:bg-gray-700 dark:border-gray-600 dark:text-white"
                   rows={3}
                 />
               </div>
@@ -891,7 +910,7 @@ export function Appointments() {
                   id={`${formId}-emergency`}
                   checked={newAppointment.emergency_request}
                   onChange={e => setNewAppointment({ ...newAppointment, emergency_request: e.target.checked })}
-                  className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded dark:bg-gray-700 dark:border-gray-600"
+                  className="h-4 w-4 text-lb-red-primary focus:ring-lb-red-primary border-gray-300 rounded dark:bg-gray-700 dark:border-gray-600"
                 />
                 <label htmlFor={`${formId}-emergency`} className="ml-2 block text-sm text-gray-900 dark:text-white">
                   Emergency Request
@@ -911,7 +930,7 @@ export function Appointments() {
                 </button>
                 <button
                   type="submit"
-                  className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-md hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="px-4 py-2 text-sm font-medium text-white bg-lb-red-primary rounded-md hover:bg-lb-red-light disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   Create Appointment
                 </button>

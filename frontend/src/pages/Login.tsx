@@ -226,7 +226,7 @@ export function Login() {
             <button
               type="submit"
               disabled={loading}
-              className="w-full bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 text-white font-bold py-3 px-4 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed group active:scale-95 shadow-lg hover:shadow-xl hover:shadow-blue-500/50 flex justify-center items-center gap-2"
+              className="w-full bg-gradient-to-r from-lb-red-primary to-lb-red-dark hover:from-lb-red-light hover:to-lb-red-primary text-white font-bold py-3 px-4 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed group active:scale-95 shadow-lg hover:shadow-xl hover:shadow-lb-red-primary/50 flex justify-center items-center gap-2"
             >
               {loading ? (
                 <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white"></div>

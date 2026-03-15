@@ -1,4 +1,5 @@
 import React, { useId, useState, useEffect } from 'react'
+import { Dialog, DialogPanel, DialogTitle, Transition, TransitionChild } from '@headlessui/react'
 import { Phone, CheckCircle, ChevronRight } from 'lucide-react'
 import { apiClient, Service, Customer } from '../lib/supabase'
 import { formatCurrency } from '../utils/format'
@@ -220,28 +221,37 @@ export default function CheckIn() {
     return (
         <div className="min-h-screen bg-gray-50 flex flex-col items-center justify-center p-4 relative">
             {/* Exit Prompt Modal */}
-            {showExitPrompt && (
-                <div className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50">
-                    <div className="bg-white rounded-lg p-8 max-w-md">
-                        <h3 className="text-xl font-bold text-gray-900 mb-4">Exit Kiosk Mode?</h3>
-                        <p className="text-gray-600 mb-6">This will return to the admin dashboard.</p>
-                        <div className="flex gap-4">
-                            <button
-                                onClick={() => setShowExitPrompt(false)}
-                                className="flex-1 px-4 py-2 border border-gray-300 rounded-md text-gray-700 hover:bg-gray-50"
-                            >
-                                Cancel
-                            </button>
-                            <button
-                                onClick={handleExitKiosk}
-                                className="flex-1 px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700"
-                            >
-                                Exit Kiosk
-                            </button>
-                        </div>
+            <Transition show={showExitPrompt}>
+                <Dialog open={showExitPrompt} onClose={() => setShowExitPrompt(false)} className="relative z-50">
+                    <TransitionChild enter="ease-out duration-200" enterFrom="opacity-0" enterTo="opacity-100" leave="ease-in duration-150" leaveFrom="opacity-100" leaveTo="opacity-0">
+                        <div className="fixed inset-0 bg-black/75" aria-hidden="true" />
+                    </TransitionChild>
+                    <div className="fixed inset-0 flex items-center justify-center p-4">
+                        <TransitionChild enter="ease-out duration-200" enterFrom="opacity-0 scale-95" enterTo="opacity-100 scale-100" leave="ease-in duration-150" leaveFrom="opacity-100 scale-100" leaveTo="opacity-0 scale-95">
+                            <DialogPanel className="bg-white rounded-lg p-8 max-w-md shadow-xl">
+                                <DialogTitle className="text-xl font-bold text-gray-900 mb-4">Exit Kiosk Mode?</DialogTitle>
+                                <p className="text-gray-600 mb-6">This will return to the admin dashboard.</p>
+                                <div className="flex gap-4">
+                                    <button
+                                        type="button"
+                                        onClick={() => setShowExitPrompt(false)}
+                                        className="flex-1 px-4 py-2 border border-gray-300 rounded-md text-gray-700 hover:bg-gray-50"
+                                    >
+                                        Cancel
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={handleExitKiosk}
+                                        className="flex-1 px-4 py-2 bg-lb-red-primary text-white rounded-md hover:bg-lb-red-light"
+                                    >
+                                        Exit Kiosk
+                                    </button>
+                                </div>
+                            </DialogPanel>
+                        </TransitionChild>
                     </div>
-                </div>
-            )}
+                </Dialog>
+            </Transition>
 
             <div className="w-full max-w-lg bg-white rounded-2xl shadow-xl overflow-hidden">
                 <div

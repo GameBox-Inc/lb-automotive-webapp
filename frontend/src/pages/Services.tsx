@@ -14,6 +14,8 @@ export function Services() {
   const [isAdmin, setIsAdmin] = useState(false)
   const [showModal, setShowModal] = useState(false)
   const [isEditing, setIsEditing] = useState(false)
+  const [serviceToDelete, setServiceToDelete] = useState<{ id: string; name: string } | null>(null)
+  const [isDeleting, setIsDeleting] = useState(false)
 
   // Form State
   const [currentService, setCurrentService] = useState<Partial<Service>>({
@@ -66,13 +68,18 @@ export function Services() {
     setShowModal(true)
   }
 
-  const handleDelete = async (id: string, name: string) => {
-    if (!window.confirm(`Are you sure you want to delete "${name}"?`)) return
+  const handleDeleteClick = (id: string, name: string) => {
+    setServiceToDelete({ id, name })
+  }
 
+  const handleConfirmDelete = async () => {
+    if (!serviceToDelete) return
+    setIsDeleting(true)
     try {
-      await apiClient.deleteService(id)
+      await apiClient.deleteService(serviceToDelete.id)
       toast.success('Service deleted successfully')
       fetchServices()
+      setServiceToDelete(null)
     } catch (error: unknown) {
       console.error('Error deleting service:', error)
       const msg = error instanceof Error ? error.message : ''
@@ -81,6 +88,8 @@ export function Services() {
       } else {
         toast.error('Failed to delete service')
       }
+    } finally {
+      setIsDeleting(false)
     }
   }
 
@@ -137,7 +146,7 @@ export function Services() {
         {isAdmin && (
           <button
             onClick={handleOpenAdd}
-            className="px-4 py-2 bg-red-700 text-white rounded-lg hover:bg-red-800 shadow-sm transition-colors flex items-center gap-2"
+            className="px-4 py-2 bg-lb-red-primary text-white rounded-lg hover:bg-lb-red-light shadow-sm transition-colors flex items-center gap-2"
           >
             <Plus className="h-4 w-4" />
             Add New Service
@@ -200,7 +209,7 @@ export function Services() {
                           <Pencil className="h-4 w-4" />
                         </button>
                         <button
-                          onClick={() => handleDelete(service.id, service.name)}
+                          onClick={() => handleDeleteClick(service.id, service.name)}
                           className="p-2 text-red-600 hover:bg-red-50 rounded-full transition-colors"
                           title="Delete Service"
                         >
@@ -252,7 +261,7 @@ export function Services() {
                       type="text"
                       value={currentService.name}
                       onChange={e => setCurrentService({ ...currentService, name: e.target.value })}
-                      className="w-full px-4 py-2 rounded-lg border border-gray-300 focus:ring-2 focus:ring-red-500 focus:border-red-500 transition-all text-gray-900 placeholder:text-gray-500"
+                      className="w-full px-4 py-2 rounded-lg border border-gray-300 focus:ring-2 focus:ring-lb-red-primary focus:border-lb-red-primary transition-all text-gray-900 placeholder:text-gray-500"
                       required
                       placeholder="e.g. Synthetic Oil Change"
                     />
@@ -264,7 +273,7 @@ export function Services() {
                       id={`${formId}-description`}
                       value={currentService.description}
                       onChange={e => setCurrentService({ ...currentService, description: e.target.value })}
-                      className="w-full px-4 py-2 rounded-lg border border-gray-300 focus:ring-2 focus:ring-red-500 focus:border-red-500 transition-all text-gray-900 placeholder:text-gray-500"
+                      className="w-full px-4 py-2 rounded-lg border border-gray-300 focus:ring-2 focus:ring-lb-red-primary focus:border-lb-red-primary transition-all text-gray-900 placeholder:text-gray-500"
                       required
                       rows={3}
                       placeholder="Describe what this service entails..."
@@ -284,7 +293,7 @@ export function Services() {
                       list="service-categories"
                       value={currentService.category}
                       onChange={e => setCurrentService({ ...currentService, category: e.target.value })}
-                      className="w-full px-4 py-2 rounded-lg border border-gray-300 focus:ring-2 focus:ring-red-500 focus:border-red-500 transition-all capitalize text-gray-900 placeholder:text-gray-500"
+                      className="w-full px-4 py-2 rounded-lg border border-gray-300 focus:ring-2 focus:ring-lb-red-primary focus:border-lb-red-primary transition-all capitalize text-gray-900 placeholder:text-gray-500"
                       placeholder="e.g. maintenance, repair"
                     />
                     <datalist id="service-categories">
@@ -301,7 +310,7 @@ export function Services() {
                         type="checkbox"
                         checked={currentService.is_emergency}
                         onChange={e => setCurrentService({ ...currentService, is_emergency: e.target.checked })}
-                        className="h-5 w-5 text-red-600 focus:ring-red-500 border-gray-300 rounded"
+                        className="h-5 w-5 text-lb-red-primary focus:ring-lb-red-primary border-gray-300 rounded"
                       />
                       <span className="text-sm font-medium text-gray-900 flex items-center gap-2">
                         <AlertCircle className="h-4 w-4 text-red-600" />
@@ -329,7 +338,7 @@ export function Services() {
                       type="number"
                       value={currentService.duration}
                       onChange={e => setCurrentService({ ...currentService, duration: parseInt(e.target.value) })}
-                      className="w-full px-4 py-2 rounded-lg border border-gray-300 focus:ring-2 focus:ring-red-500 focus:border-red-500 transition-all font-mono text-gray-900"
+                      className="w-full px-4 py-2 rounded-lg border border-gray-300 focus:ring-2 focus:ring-lb-red-primary focus:border-lb-red-primary transition-all font-mono text-gray-900"
                       required
                       min="5"
                       step="5"
@@ -349,7 +358,7 @@ export function Services() {
                         type="number"
                         value={currentService.price}
                         onChange={e => setCurrentService({ ...currentService, price: parseFloat(e.target.value) })}
-                        className="w-full pl-8 pr-4 py-2 rounded-lg border border-gray-300 focus:ring-2 focus:ring-red-500 focus:border-red-500 transition-all font-mono text-gray-900"
+                        className="w-full pl-8 pr-4 py-2 rounded-lg border border-gray-300 focus:ring-2 focus:ring-lb-red-primary focus:border-lb-red-primary transition-all font-mono text-gray-900"
                         required
                         min="0"
                         step="0.01"
@@ -382,7 +391,7 @@ export function Services() {
                 </button>
                 <button
                   type="submit"
-                  className="px-6 py-2.5 text-sm font-medium text-white bg-red-700 hover:bg-red-800 rounded-lg shadow-md hover:shadow-lg transition-all flex items-center gap-2"
+                  className="px-6 py-2.5 text-sm font-medium text-white bg-lb-red-primary hover:bg-lb-red-light rounded-lg shadow-md hover:shadow-lg transition-all flex items-center gap-2"
                 >
                   {isEditing ? (
                     <>
@@ -403,6 +412,50 @@ export function Services() {
           </div>
         </Dialog>
       </Transition>
+
+      {/* Delete confirmation modal */}
+      <Dialog open={!!serviceToDelete} onClose={() => !isDeleting && setServiceToDelete(null)} className="relative z-50">
+        <div className="fixed inset-0 bg-black/50" aria-hidden="true" />
+        <div className="fixed inset-0 flex items-center justify-center p-4">
+          <DialogPanel className="bg-white dark:bg-gray-800 rounded-xl shadow-2xl w-full max-w-md p-6">
+            <DialogTitle className="text-lg font-semibold text-gray-900 dark:text-white flex items-center gap-2">
+              <AlertTriangle className="h-5 w-5 text-lb-red-primary" />
+              Delete service?
+            </DialogTitle>
+            <p className="mt-2 text-gray-600 dark:text-gray-300">
+              Are you sure you want to delete &quot;{serviceToDelete?.name}&quot;? This cannot be undone.
+            </p>
+            <div className="mt-6 flex justify-end gap-3">
+              <button
+                type="button"
+                onClick={() => setServiceToDelete(null)}
+                disabled={isDeleting}
+                className="px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg border border-gray-300 dark:border-gray-600 transition-colors disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmDelete}
+                disabled={isDeleting}
+                className="px-4 py-2 text-sm font-medium text-white bg-lb-red-primary hover:bg-lb-red-light rounded-lg transition-colors disabled:opacity-50 flex items-center gap-2"
+              >
+                {isDeleting ? (
+                  <>
+                    <span className="animate-spin rounded-full h-4 w-4 border-2 border-white border-t-transparent" />
+                    Deleting...
+                  </>
+                ) : (
+                  <>
+                    <Trash2 className="h-4 w-4" />
+                    Delete
+                  </>
+                )}
+              </button>
+            </div>
+          </DialogPanel>
+        </div>
+      </Dialog>
     </div>
   )
 }

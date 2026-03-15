@@ -90,7 +90,7 @@ export function Settings() {
                 value={settings['timezone'] || 'America/New_York'}
                 onChange={(e) => handleSave('timezone', e.target.value)}
                 disabled={saving}
-                className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 dark:bg-gray-700 dark:border-gray-600 dark:text-white sm:text-sm"
+                className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-lb-red-primary focus:ring-lb-red-primary dark:bg-gray-700 dark:border-gray-600 dark:text-white sm:text-sm"
               >
                 {timezones.map(tz => (
                   <option key={tz} value={tz}>{tz}</option>
@@ -112,7 +112,7 @@ export function Settings() {
                 value={settings['staff_count'] || '5'}
                 onChange={(e) => handleSave('staff_count', e.target.value)}
                 disabled={saving}
-                className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 dark:bg-gray-700 dark:border-gray-600 dark:text-white sm:text-sm"
+                className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-lb-red-primary focus:ring-lb-red-primary dark:bg-gray-700 dark:border-gray-600 dark:text-white sm:text-sm"
               />
             </div>
 
@@ -125,7 +125,7 @@ export function Settings() {
                 id={`${formId}-email`}
                 type="email"
                 defaultValue="contact@lbautomotive.com"
-                className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 dark:bg-gray-700 dark:border-gray-600 dark:text-white sm:text-sm"
+                className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-lb-red-primary focus:ring-lb-red-primary dark:bg-gray-700 dark:border-gray-600 dark:text-white sm:text-sm"
                 disabled
               />
               <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">Contact admin to change.</p>

@@ -154,7 +154,7 @@ export function VoicePrompt({ onAppointmentCreated }: VoicePromptProps) {
     <div className="fixed bottom-4 right-4">
       <button
         onClick={isRecording ? stopRecording : startRecording}
-        className={`p-4 rounded-full shadow-lg ${isRecording ? 'bg-red-600' : 'bg-blue-600'
+        className={`p-4 rounded-full shadow-lg ${isRecording ? 'bg-red-600' : 'bg-lb-red-primary'
           } text-white hover:opacity-90 transition-opacity`}
       >
         {isRecording ? (

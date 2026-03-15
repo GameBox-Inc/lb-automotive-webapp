@@ -206,7 +206,7 @@ const AdminIVR = () => {
                                                         type="text"
                                                         value={editValue}
                                                         onChange={(e) => setEditValue(e.target.value)}
-                                                        className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+                                                        className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-lb-red-primary focus:ring-lb-red-primary sm:text-sm dark:bg-gray-700 dark:border-gray-600 dark:text-white"
                                                     />
                                                 ) : (
                                                     <p className="mt-1 text-lg font-semibold text-gray-900 dark:text-white">
@@ -281,7 +281,7 @@ const AdminIVR = () => {
                                                                 type="checkbox"
                                                                 checked={!editHours.is_closed}
                                                                 onChange={(e) => setEditHours({ ...editHours, is_closed: !e.target.checked })}
-                                                                className="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
+                                                                className="rounded border-gray-300 text-lb-red-primary focus:ring-lb-red-primary"
                                                             />
                                                             <span className="ml-2 text-sm text-gray-700 dark:text-gray-300">
                                                                 {editHours.is_closed ? 'Closed' : 'Open'}
@@ -300,7 +300,7 @@ const AdminIVR = () => {
                                                             value={editHours.opening_time || ''}
                                                             onChange={(e) => setEditHours({ ...editHours, opening_time: e.target.value })}
                                                             disabled={editHours.is_closed}
-                                                            className="block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm dark:bg-gray-700 dark:border-gray-600 dark:text-white disabled:opacity-50"
+                                                            className="block w-full rounded-md border-gray-300 shadow-sm focus:border-lb-red-primary focus:ring-lb-red-primary sm:text-sm dark:bg-gray-700 dark:border-gray-600 dark:text-white disabled:opacity-50"
                                                         />
                                                     ) : (
                                                         <span className="text-sm text-gray-900 dark:text-white">
@@ -315,7 +315,7 @@ const AdminIVR = () => {
                                                             value={editHours.closing_time || ''}
                                                             onChange={(e) => setEditHours({ ...editHours, closing_time: e.target.value })}
                                                             disabled={editHours.is_closed}
-                                                            className="block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm dark:bg-gray-700 dark:border-gray-600 dark:text-white disabled:opacity-50"
+                                                            className="block w-full rounded-md border-gray-300 shadow-sm focus:border-lb-red-primary focus:ring-lb-red-primary sm:text-sm dark:bg-gray-700 dark:border-gray-600 dark:text-white disabled:opacity-50"
                                                         />
                                                     ) : (
                                                         <span className="text-sm text-gray-900 dark:text-white">
@@ -378,7 +378,7 @@ const AdminIVR = () => {
                                                         rows={3}
                                                         value={editValue}
                                                         onChange={(e) => setEditValue(e.target.value)}
-                                                        className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+                                                        className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-lb-red-primary focus:ring-lb-red-primary sm:text-sm dark:bg-gray-700 dark:border-gray-600 dark:text-white"
                                                     />
                                                 ) : (
                                                     <p className="mt-1 text-sm text-gray-900 dark:text-white whitespace-pre-wrap">
@@ -439,7 +439,7 @@ const AdminIVR = () => {
                                                         type="text"
                                                         value={editValue}
                                                         onChange={(e) => setEditValue(e.target.value)}
-                                                        className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+                                                        className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-lb-red-primary focus:ring-lb-red-primary sm:text-sm dark:bg-gray-700 dark:border-gray-600 dark:text-white"
                                                     />
                                                 ) : (
                                                     <p className="mt-1 text-sm font-mono text-gray-900 dark:text-white">

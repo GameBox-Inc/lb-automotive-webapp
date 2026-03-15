@@ -29,7 +29,7 @@ export const AppSwitcher: React.FC<AppSwitcherProps> = ({ onClose, isAdmin }) =>
                 to="/"
                 icon={LayoutDashboard}
                 label="Dashboard"
-                color="bg-blue-600"
+                color="bg-lb-red-primary"
                 onClose={onClose}
             />
             <AppModule
@@ -68,7 +68,7 @@ export const AppSwitcher: React.FC<AppSwitcherProps> = ({ onClose, isAdmin }) =>
                         to="/checkin"
                         icon={CheckSquare}
                         label="Kiosk"
-                        color="bg-indigo-600"
+                        color="bg-lb-yellow"
                         onClose={onClose}
                     />
                     <AppModule

@@ -220,7 +220,7 @@ export const AppointmentCard: React.FC<AppointmentCardProps> = ({ appointment, o
   const statusColors: { [key: string]: string } = {
     pending: 'bg-lb-yellow text-gray-900',
     confirmed: 'bg-green-600 text-white',
-    in_progress: 'bg-blue-600 text-white',
+    in_progress: 'bg-lb-red-primary text-white',
     rescheduled: 'bg-purple-100 text-purple-800',
     cancelled: 'bg-gray-400 text-white',
     completed: 'bg-gray-800 text-white',
@@ -379,7 +379,7 @@ export const AppointmentCard: React.FC<AppointmentCardProps> = ({ appointment, o
                   type="datetime-local"
                   value={format(newDate, "yyyy-MM-dd'T'HH:mm")}
                   onChange={(e) => setNewDate(new Date(e.target.value))}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-gray-900 dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-lb-red-primary text-gray-900 dark:bg-gray-700 dark:border-gray-600 dark:text-white"
                 />
               </div>
               <div className="flex justify-end gap-3">
@@ -392,7 +392,7 @@ export const AppointmentCard: React.FC<AppointmentCardProps> = ({ appointment, o
                 <button
                   onClick={handleReschedule}
                   disabled={isLoading}
-                  className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-md hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                  className="px-4 py-2 text-sm font-medium text-white bg-lb-red-primary rounded-md hover:bg-lb-red-light disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                 >
                   {isLoading ? 'Saving...' : 'Save Changes'}
                 </button>
@@ -424,7 +424,7 @@ export const AppointmentCard: React.FC<AppointmentCardProps> = ({ appointment, o
                   id={`${formId}-staff-select`}
                   value={selectedStaff}
                   onChange={(e) => setSelectedStaff(e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-gray-900 dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-lb-red-primary text-gray-900 dark:bg-gray-700 dark:border-gray-600 dark:text-white"
                 >
                   <option value="">-- Select a staff member --</option>
                   {staff.map((s) => (
@@ -483,7 +483,7 @@ export const AppointmentCard: React.FC<AppointmentCardProps> = ({ appointment, o
                     type="text"
                     value={editData.customer_name}
                     onChange={(e) => setEditData({ ...editData, customer_name: e.target.value })}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 text-gray-900 dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-lb-red-primary text-gray-900 dark:bg-gray-700 dark:border-gray-600 dark:text-white"
                   />
                 </div>
                 <div>
@@ -493,7 +493,7 @@ export const AppointmentCard: React.FC<AppointmentCardProps> = ({ appointment, o
                     type="text"
                     value={editData.phone_number}
                     onChange={(e) => setEditData({ ...editData, phone_number: e.target.value })}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 text-gray-900 dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-lb-red-primary text-gray-900 dark:bg-gray-700 dark:border-gray-600 dark:text-white"
                   />
                 </div>
               </div>
@@ -504,7 +504,7 @@ export const AppointmentCard: React.FC<AppointmentCardProps> = ({ appointment, o
                   id={`${formId}-edit-service`}
                   value={editData.service_type}
                   onChange={(e) => setEditData({ ...editData, service_type: e.target.value })}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 text-gray-900 dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-lb-red-primary text-gray-900 dark:bg-gray-700 dark:border-gray-600 dark:text-white"
                 >
                   {availableServices.map(s => (
                     <option key={s.id} value={s.id}>{s.name}</option>
@@ -522,7 +522,7 @@ export const AppointmentCard: React.FC<AppointmentCardProps> = ({ appointment, o
                   value={editData.notes}
                   onChange={(e) => setEditData({ ...editData, notes: e.target.value })}
                   rows={3}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 text-gray-900 dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-lb-red-primary text-gray-900 dark:bg-gray-700 dark:border-gray-600 dark:text-white"
                 />
               </div>
 
@@ -549,7 +549,7 @@ export const AppointmentCard: React.FC<AppointmentCardProps> = ({ appointment, o
                 <button
                   onClick={handleUpdateDetails}
                   disabled={isLoading}
-                  className="px-4 py-2 text-sm font-bold text-white bg-blue-600 hover:bg-blue-700 rounded-md shadow-sm disabled:opacity-50"
+                  className="px-4 py-2 text-sm font-bold text-white bg-lb-red-primary hover:bg-lb-red-light rounded-md shadow-sm disabled:opacity-50"
                 >
                   {isLoading ? 'Saving...' : 'Save Changes'}
                 </button>

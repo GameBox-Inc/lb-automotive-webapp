@@ -111,7 +111,7 @@ function App() {
   if (loading) {
     return (
       <div className="min-h-screen bg-gray-100 flex items-center justify-center">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-lb-red-primary"></div>
       </div>
     )
   }
@@ -201,10 +201,14 @@ function App() {
             </nav>
           </div>
           <div className="absolute bottom-0 w-full p-6 border-t border-[#374151]">
-            <div className="flex items-center gap-3 text-gray-400 hover:text-lb-yellow cursor-pointer transition-colors" onClick={handleSignOut}>
+            <button
+              type="button"
+              onClick={handleSignOut}
+              className="flex w-full items-center gap-3 text-gray-400 hover:text-lb-yellow transition-colors focus:outline-none focus:ring-2 focus:ring-lb-yellow focus:ring-offset-2 focus:ring-offset-lb-dark-gray rounded p-2 -m-2"
+            >
               <LogOut className="h-5 w-5" />
               <span className="text-sm font-medium">Sign Out</span>
-            </div>
+            </button>
           </div>
         </div>
       )}

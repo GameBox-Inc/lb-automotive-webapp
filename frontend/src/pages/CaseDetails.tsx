@@ -7,6 +7,7 @@ import { ArrowLeft, Save, Plus, Trash2, FileText, CheckCircle, Clock, AlertTrian
 import { formatCurrency } from '../utils/format';
 import toast from 'react-hot-toast';
 import { LoadingSpinner } from '../components/LoadingSpinner';
+import { EmptyState } from '../components/EmptyState';
 import SignatureCanvas from 'react-signature-canvas';
 
 // Interface for strictly typed state
@@ -268,7 +269,7 @@ const CaseDetails = () => {
                         <select
                             value={caseData.status}
                             onChange={(e) => handleStatusChange(e.target.value)}
-                            className="bg-gray-50 dark:bg-gray-700 border-none text-xs font-bold py-1 px-2 rounded-full cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-600 focus:ring-2 focus:ring-indigo-500 transition-all capitalize text-gray-900 dark:text-white"
+                            className="bg-gray-50 dark:bg-gray-700 border-none text-xs font-bold py-1 px-2 rounded-full cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-600 focus:ring-2 focus:ring-lb-red-primary transition-all capitalize text-gray-900 dark:text-white"
                         >
                             <option value="open">Open</option>
                             <option value="diagnosing">Diagnosing</option>
@@ -324,7 +325,11 @@ const CaseDetails = () => {
                     <div className="bg-white dark:bg-gray-800 shadow rounded-lg p-6">
                         <div className="space-y-4 mb-6 max-h-96 overflow-y-auto">
                             {caseData.notes.length === 0 ? (
-                                <p className="text-gray-500 text-center italic">No notes yet.</p>
+                                <EmptyState
+                                    icon={<FileText className="h-7 w-7" />}
+                                    title="No notes yet"
+                                    description="Add a note below to track progress."
+                                />
                             ) : (
                                 caseData.notes.map(note => (
                                     <div key={note.id} className="bg-gray-50 dark:bg-gray-700 p-3 rounded-lg">
@@ -344,7 +349,7 @@ const CaseDetails = () => {
                                     value={newNote}
                                     onChange={(e) => setNewNote(e.target.value)}
                                     placeholder="Add a note... (Dictate roughly and click wand to polish)"
-                                    className="w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-gray-900 placeholder:text-gray-500 dark:bg-gray-700 dark:border-gray-600 dark:text-white dark:placeholder:text-gray-400"
+                                    className="w-full rounded-md border-gray-300 shadow-sm focus:border-lb-red-primary focus:ring-lb-red-primary text-gray-900 placeholder:text-gray-500 dark:bg-gray-700 dark:border-gray-600 dark:text-white dark:placeholder:text-gray-400"
                                     rows={3}
                                 />
                                 <button
@@ -360,7 +365,7 @@ const CaseDetails = () => {
                             <button
                                 type="submit"
                                 disabled={isGenerating}
-                                className="w-full px-4 py-2 bg-indigo-600 text-white rounded-md hover:bg-indigo-700 font-medium"
+                                className="w-full px-4 py-2 bg-lb-red-primary text-white rounded-md hover:bg-lb-red-light font-medium"
                             >
                                 Send Internal Note
                             </button>
@@ -430,7 +435,7 @@ const CaseDetails = () => {
                             </div>
                             <button
                                 type="submit"
-                                className="w-full px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700"
+                                className="w-full px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-lb-red-primary hover:bg-lb-red-light"
                             >
                                 <Plus className="h-4 w-4 inline-block mr-2" />
                                 Add Part
@@ -448,7 +453,11 @@ const CaseDetails = () => {
                                 <LoadingSpinner size="lg" />
                             </div>
                         ) : !historyEvents?.length ? (
-                            <p className="text-gray-500 dark:text-gray-400 text-center py-8">No history yet.</p>
+                            <EmptyState
+                                icon={<History className="h-7 w-7" />}
+                                title="No history yet"
+                                description="Status changes, notes, and parts will appear here."
+                            />
                         ) : (
                             <ul className="space-y-4">
                                 {historyEvents.map((event, index) => {

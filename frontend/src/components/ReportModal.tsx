@@ -140,7 +140,7 @@ export function ReportModal({ isOpen, onClose }: ReportModalProps) {
                                     type="button"
                                     onClick={() => setTimeframe(period)}
                                     className={`px-4 py-2 text-sm font-medium border ${timeframe === period
-                                        ? 'bg-blue-600 text-white border-blue-600'
+                                        ? 'bg-lb-red-primary text-white border-lb-red-primary'
                                         : 'bg-white dark:bg-gray-700 text-gray-700 dark:text-gray-200 border-gray-200 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-600'
                                         } ${period === '7d' ? 'rounded-l-lg' : period === 'all' ? 'rounded-r-lg' : ''
                                         }`}

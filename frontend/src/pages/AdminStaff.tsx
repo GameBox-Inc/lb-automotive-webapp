@@ -186,7 +186,7 @@ const AdminStaff = () => {
                     <button
                         onClick={() => setActiveTab('list')}
                         className={`${activeTab === 'list'
-                            ? 'border-indigo-500 text-indigo-600'
+                            ? 'border-indigo-500 text-lb-red-primary'
                             : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
                             } whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm flex items-center`}
                     >
@@ -196,7 +196,7 @@ const AdminStaff = () => {
                     <button
                         onClick={() => setActiveTab('schedule')}
                         className={`${activeTab === 'schedule'
-                            ? 'border-indigo-500 text-indigo-600'
+                            ? 'border-indigo-500 text-lb-red-primary'
                             : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
                             } whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm flex items-center`}
                     >
@@ -213,7 +213,7 @@ const AdminStaff = () => {
                         <h2 className="text-lg font-medium text-gray-900 dark:text-white">Staff Members</h2>
                         <button
                             onClick={() => setShowAddStaff(!showAddStaff)}
-                            className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700"
+                            className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-lb-red-primary hover:bg-lb-red-light"
                         >
                             <UserPlus className="h-4 w-4 mr-2" />
                             Add Staff
@@ -231,7 +231,7 @@ const AdminStaff = () => {
                                         value={newStaffName}
                                         onChange={(e) => setNewStaffName(e.target.value)}
                                         required
-                                        className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+                                        className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-lb-red-primary focus:ring-lb-red-primary sm:text-sm dark:bg-gray-700 dark:border-gray-600 dark:text-white"
                                     />
                                 </div>
                                 <div>
@@ -240,7 +240,7 @@ const AdminStaff = () => {
                                         id={`${formId}-role`}
                                         value={newStaffRole}
                                         onChange={(e) => setNewStaffRole(e.target.value)}
-                                        className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+                                        className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-lb-red-primary focus:ring-lb-red-primary sm:text-sm dark:bg-gray-700 dark:border-gray-600 dark:text-white"
                                     >
                                         <option value="mechanic">Mechanic</option>
                                         <option value="service_advisor">Service Advisor</option>
@@ -256,7 +256,7 @@ const AdminStaff = () => {
                                 >
                                     Cancel
                                 </button>
-                                <button type="submit" className="px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700">
+                                <button type="submit" className="px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-lb-red-primary hover:bg-lb-red-light">
                                     Save
                                 </button>
                             </div>
@@ -281,7 +281,7 @@ const AdminStaff = () => {
                                 <div className="flex space-x-2">
                                     <button
                                         onClick={() => openCredentialsModal(member.id)}
-                                        className="text-indigo-600 hover:text-indigo-900 dark:text-indigo-400 dark:hover:text-indigo-300 p-1"
+                                        className="text-lb-red-primary hover:text-indigo-900 dark:text-indigo-400 dark:hover:text-indigo-300 p-1"
                                         title="Manage Credentials"
                                     >
                                         <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -323,7 +323,7 @@ const AdminStaff = () => {
                                             type="text"
                                             value={credsData.username}
                                             onChange={e => setCredsData({ ...credsData, username: e.target.value })}
-                                            className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+                                            className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-lb-red-primary focus:ring-lb-red-primary sm:text-sm dark:bg-gray-700 dark:border-gray-600 dark:text-white"
                                             required
                                         />
                                     </div>
@@ -337,7 +337,7 @@ const AdminStaff = () => {
                                             type="password"
                                             value={credsData.password}
                                             onChange={e => setCredsData({ ...credsData, password: e.target.value })}
-                                            className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+                                            className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-lb-red-primary focus:ring-lb-red-primary sm:text-sm dark:bg-gray-700 dark:border-gray-600 dark:text-white"
                                             minLength={6}
                                         />
                                     </div>
@@ -347,7 +347,7 @@ const AdminStaff = () => {
                                             id={`${formId}-isAdmin`}
                                             checked={credsData.is_admin}
                                             onChange={e => setCredsData({ ...credsData, is_admin: e.target.checked })}
-                                            className="h-4 w-4 text-indigo-600 focus:ring-indigo-500 border-gray-300 rounded"
+                                            className="h-4 w-4 text-lb-red-primary focus:ring-lb-red-primary border-gray-300 rounded"
                                         />
                                         <label htmlFor={`${formId}-isAdmin`} className="ml-2 block text-sm text-gray-900 dark:text-white">
                                             Grant Admin Access
@@ -364,7 +364,7 @@ const AdminStaff = () => {
                                         <button
                                             type="submit"
                                             disabled={credsLoading}
-                                            className="px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50"
+                                            className="px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-lb-red-primary hover:bg-lb-red-light disabled:opacity-50"
                                         >
                                             {credsLoading ? 'Saving...' : 'Save Credentials'}
                                         </button>
@@ -386,7 +386,7 @@ const AdminStaff = () => {
                                 id={`${formId}-staff-select`}
                                 value={selectedStaffId || ''}
                                 onChange={(e) => setSelectedStaffId(e.target.value)}
-                                className="block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+                                className="block w-full rounded-md border-gray-300 shadow-sm focus:border-lb-red-primary focus:ring-lb-red-primary sm:text-sm dark:bg-gray-700 dark:border-gray-600 dark:text-white"
                             >
                                 {staff.map(s => (
                                     <option key={s.id} value={s.id}>{s.name}</option>
@@ -437,7 +437,7 @@ const AdminStaff = () => {
                                                     value={day.start_time}
                                                     onChange={(e) => handleScheduleChange(index, 'start_time', e.target.value)}
                                                     disabled={day.is_off}
-                                                    className="block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm disabled:opacity-50 dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+                                                    className="block w-full rounded-md border-gray-300 shadow-sm focus:border-lb-red-primary focus:ring-lb-red-primary sm:text-sm disabled:opacity-50 dark:bg-gray-700 dark:border-gray-600 dark:text-white"
                                                 />
                                             </td>
                                             <td className="px-6 py-4 whitespace-nowrap">
@@ -446,7 +446,7 @@ const AdminStaff = () => {
                                                     value={day.end_time}
                                                     onChange={(e) => handleScheduleChange(index, 'end_time', e.target.value)}
                                                     disabled={day.is_off}
-                                                    className="block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm disabled:opacity-50 dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+                                                    className="block w-full rounded-md border-gray-300 shadow-sm focus:border-lb-red-primary focus:ring-lb-red-primary sm:text-sm disabled:opacity-50 dark:bg-gray-700 dark:border-gray-600 dark:text-white"
                                                 />
                                             </td>
                                         </tr>

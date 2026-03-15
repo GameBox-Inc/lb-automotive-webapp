@@ -6,6 +6,10 @@ export default {
   ],
   theme: {
     extend: {
+      fontFamily: {
+        heading: ['Bebas Neue', 'Impact', 'Arial Black', 'sans-serif'],
+        body: ['Roboto', 'Arial', 'sans-serif'],
+      },
       colors: {
         lb: {
           'red-primary': '#B91C1C',

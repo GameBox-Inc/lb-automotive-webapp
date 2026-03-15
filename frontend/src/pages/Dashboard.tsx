@@ -3,6 +3,7 @@ import { Calendar, PenTool as Tool, User, BarChart3, AlertCircle, Wrench } from 
 import { Link } from 'react-router-dom'
 
 import { LoadingSpinner } from '../components/LoadingSpinner'
+import { SkeletonCard, Skeleton } from '../components/Skeleton'
 import { ReportModal } from '../components/ReportModal'
 import { useAppointments } from '../hooks/useAppointments'
 import { apiClient } from '../lib/supabase'
@@ -10,6 +11,7 @@ import { formatNumber } from '../utils/format'
 import { DailyTimeline } from '../components/DailyTimeline'
 
 export function Dashboard() {
+  const timeframeId = React.useId()
   const {
     appointments,
     metrics,
@@ -26,24 +28,40 @@ export function Dashboard() {
   )
 
   const MetricCard = ({ title, value, icon }: { title: string, value: string | number, icon: React.ReactElement }) => (
-    <div className="group bg-gradient-to-br from-white to-gray-50 dark:from-gray-800 dark:to-gray-900 rounded-xl shadow-lg hover:shadow-2xl p-6 border border-gray-100 dark:border-gray-700 transition-all duration-300 hover:-translate-y-2 hover:scale-105 cursor-pointer">
+    <div className="card group p-6 cursor-pointer hover:-translate-y-2 hover:scale-105 dark:bg-gray-800 dark:border-gray-700">
       <div className="flex items-center justify-between">
         <div>
           <p className="text-sm font-medium text-gray-600 dark:text-gray-400 uppercase tracking-wide">{title}</p>
           <p className="text-3xl font-bold text-gray-900 dark:text-white mt-2 transition-all duration-300 group-hover:scale-110">{value}</p>
         </div>
-        <div className="p-4 bg-gradient-to-br from-blue-500 to-blue-600 dark:from-blue-600 dark:to-blue-700 rounded-2xl shadow-lg group-hover:shadow-xl group-hover:scale-110 transition-all duration-300">
+        <div className="p-4 bg-gradient-to-br from-lb-red-primary to-lb-red-dark dark:from-lb-red-primary dark:to-lb-red-dark rounded-2xl shadow-lg group-hover:shadow-xl group-hover:scale-110 transition-all duration-300">
           {React.cloneElement(icon, { className: 'h-7 w-7 text-white' })}
         </div>
       </div>
-      <div className="mt-3 h-1 bg-gradient-to-r from-blue-500 to-purple-500 rounded-full transform scale-x-0 group-hover:scale-x-100 transition-transform duration-300 origin-left"></div>
+      <div className="mt-3 h-1 bg-gradient-to-r from-lb-red-primary to-lb-yellow rounded-full transform scale-x-0 group-hover:scale-x-100 transition-transform duration-300 origin-left"></div>
     </div>
   )
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center h-full">
-        <LoadingSpinner size="lg" />
+      <div className="space-y-6 fade-in">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+          <Skeleton className="h-8 w-48" />
+        </div>
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+          <SkeletonCard />
+          <SkeletonCard />
+          <SkeletonCard />
+          <SkeletonCard />
+        </div>
+        <div className="mt-8 rounded-xl border border-gray-200 dark:border-gray-700 p-6">
+          <Skeleton className="h-5 w-32 mb-4" />
+          <div className="space-y-3">
+            {[1, 2, 3].map((i) => (
+              <Skeleton key={i} className="h-12 w-full rounded-lg" />
+            ))}
+          </div>
+        </div>
       </div>
     )
   }
@@ -57,7 +75,7 @@ export function Dashboard() {
           {apiClient.getStoredUser()?.staff_id && (
             <Link
               to="/repairs"
-              className="inline-flex items-center px-4 py-2 border border-blue-600 shadow-sm text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700 transition-colors"
+              className="inline-flex items-center px-4 py-2 border border-lb-red-primary shadow-sm text-sm font-medium rounded-md text-white bg-lb-red-primary hover:bg-lb-red-light transition-colors"
             >
               <Wrench className="h-4 w-4 mr-2" />
               My Repairs
@@ -74,10 +92,12 @@ export function Dashboard() {
             </button>
           )}
 
+          <label htmlFor={timeframeId} className="sr-only">Time range</label>
           <select
+            id={timeframeId}
             value={timeframe}
             onChange={(e) => setTimeframe(e.target.value as any)}
-            className="block rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm dark:bg-gray-700 dark:border-gray-600 dark:text-white bg-white w-40 p-2"
+            className="block rounded-md border-gray-300 shadow-sm focus:border-lb-red-primary focus:ring-lb-red-primary sm:text-sm dark:bg-gray-700 dark:border-gray-600 dark:text-white bg-white w-40 p-2"
           >
             <option value="24h">24 Hours</option>
             <option value="7d">7 Days</option>
