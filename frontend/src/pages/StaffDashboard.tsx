@@ -35,7 +35,7 @@ function ProgressBar({ status }: { status: string }) {
                     'bg-yellow-500';
     return (
         <div className="w-full mt-1.5">
-            <div className="flex justify-between text-xs text-gray-400 mb-0.5">
+            <div className="flex justify-between text-xs text-gray-600 dark:text-gray-400 mb-0.5">
                 <span>{cfg.label}</span>
                 <span>{pct}%</span>
             </div>
@@ -214,10 +214,10 @@ const StaffDashboard = () => {
             {/* ── Header ── */}
             <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
                 <div>
-                    <h1 className="text-2xl font-bold text-gray-900 dark:text-white font-heading">
+                    <h1 className="text-2xl font-bold text-gray-900 dark:text-white font-heading tracking-tight">
                         My Repairs
                     </h1>
-                    <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
+                    <p className="mt-1 text-sm text-gray-600 dark:text-gray-300">
                         Manage your assigned repairs and active cases.
                     </p>
                 </div>
