@@ -188,6 +188,7 @@ sudo k3s kubectl create secret generic app-secrets -n lb-automotive \
   --from-literal=REDIS_URL="redis://redis.lb-automotive.svc.cluster.local:6379/0" \
   --from-literal=LLM_PROVIDER="anthropic" \
   --from-literal=CSP_POLICY="strict" \
+  --from-literal=SMS_ENABLED="true" \
   --dry-run=client -o yaml | sudo k3s kubectl apply -f -
 echo "✅ app-secrets applied"
 REMOTEOF
