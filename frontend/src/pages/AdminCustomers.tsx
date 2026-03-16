@@ -21,7 +21,11 @@ const AdminCustomers = () => {
     const [formData, setFormData] = useState({
         name: '',
         phone: '',
-        email: ''
+        email: '',
+        vehicle_make: '',
+        vehicle_model: '',
+        vehicle_color: '',
+        vehicle_year: new Date().getFullYear(),
     });
 
     useEffect(() => {
@@ -44,7 +48,15 @@ const AdminCustomers = () => {
     async function handleAddCustomer(e: React.FormEvent) {
         e.preventDefault();
         try {
-            await apiClient.createCustomer(formData);
+            await apiClient.createCustomer({
+                name: formData.name,
+                phone: formData.phone,
+                email: formData.email,
+                vehicle_make: formData.vehicle_make || undefined,
+                vehicle_model: formData.vehicle_model || undefined,
+                vehicle_color: formData.vehicle_color || undefined,
+                vehicle_year: formData.vehicle_year || undefined,
+            });
             toast.success('Customer added successfully');
             setShowAddModal(false);
             resetForm();
@@ -59,7 +71,15 @@ const AdminCustomers = () => {
         if (!selectedCustomer) return;
 
         try {
-            await apiClient.updateCustomer(selectedCustomer.id, formData);
+            await apiClient.updateCustomer(selectedCustomer.id, {
+                name: formData.name,
+                phone: formData.phone,
+                email: formData.email,
+                vehicle_make: formData.vehicle_make || undefined,
+                vehicle_model: formData.vehicle_model || undefined,
+                vehicle_color: formData.vehicle_color || undefined,
+                vehicle_year: formData.vehicle_year || undefined,
+            });
             toast.success('Customer updated successfully');
             setShowEditModal(false);
             resetForm();
@@ -101,13 +121,25 @@ const AdminCustomers = () => {
         setFormData({
             name: customer.name,
             phone: customer.phone,
-            email: customer.email || ''
+            email: customer.email || '',
+            vehicle_make: customer.vehicle_make || '',
+            vehicle_model: customer.vehicle_model || '',
+            vehicle_color: customer.vehicle_color || '',
+            vehicle_year: customer.vehicle_year || new Date().getFullYear(),
         });
         setShowEditModal(true);
     }
 
     function resetForm() {
-        setFormData({ name: '', phone: '', email: '' });
+        setFormData({
+            name: '',
+            phone: '',
+            email: '',
+            vehicle_make: '',
+            vehicle_model: '',
+            vehicle_color: '',
+            vehicle_year: new Date().getFullYear(),
+        });
         setSelectedCustomer(null);
     }
 
@@ -296,6 +328,63 @@ const AdminCustomers = () => {
                                         className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-lb-red-primary focus:ring-lb-red-primary sm:text-sm dark:bg-gray-700 dark:border-gray-600 dark:text-white"
                                     />
                                 </div>
+                                <div className="pt-2 border-t border-gray-200 dark:border-gray-700">
+                                    <p className="text-xs font-semibold text-gray-500 dark:text-gray-400 mb-2">
+                                        Vehicle Profile (optional)
+                                    </p>
+                                    <div className="grid grid-cols-2 gap-3">
+                                        <div>
+                                            <label htmlFor={`${formId}-add-vehicle-year`} className="block text-xs font-medium text-gray-700 dark:text-gray-300">
+                                                Year
+                                            </label>
+                                            <input
+                                                id={`${formId}-add-vehicle-year`}
+                                                type="number"
+                                                min={1980}
+                                                max={new Date().getFullYear() + 1}
+                                                value={formData.vehicle_year || ''}
+                                                onChange={(e) => setFormData({ ...formData, vehicle_year: Number(e.target.value) || new Date().getFullYear() })}
+                                                className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-lb-red-primary focus:ring-lb-red-primary sm:text-xs dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+                                            />
+                                        </div>
+                                        <div>
+                                            <label htmlFor={`${formId}-add-vehicle-make`} className="block text-xs font-medium text-gray-700 dark:text-gray-300">
+                                                Make
+                                            </label>
+                                            <input
+                                                id={`${formId}-add-vehicle-make`}
+                                                type="text"
+                                                value={formData.vehicle_make}
+                                                onChange={(e) => setFormData({ ...formData, vehicle_make: e.target.value })}
+                                                className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-lb-red-primary focus:ring-lb-red-primary sm:text-xs dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+                                            />
+                                        </div>
+                                        <div>
+                                            <label htmlFor={`${formId}-add-vehicle-model`} className="block text-xs font-medium text-gray-700 dark:text-gray-300">
+                                                Model
+                                            </label>
+                                            <input
+                                                id={`${formId}-add-vehicle-model`}
+                                                type="text"
+                                                value={formData.vehicle_model}
+                                                onChange={(e) => setFormData({ ...formData, vehicle_model: e.target.value })}
+                                                className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-lb-red-primary focus:ring-lb-red-primary sm:text-xs dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+                                            />
+                                        </div>
+                                        <div>
+                                            <label htmlFor={`${formId}-add-vehicle-color`} className="block text-xs font-medium text-gray-700 dark:text-gray-300">
+                                                Color
+                                            </label>
+                                            <input
+                                                id={`${formId}-add-vehicle-color`}
+                                                type="text"
+                                                value={formData.vehicle_color}
+                                                onChange={(e) => setFormData({ ...formData, vehicle_color: e.target.value })}
+                                                className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-lb-red-primary focus:ring-lb-red-primary sm:text-xs dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+                                            />
+                                        </div>
+                                    </div>
+                                </div>
                             </div>
                             <div className="mt-6 flex justify-end space-x-3">
                                 <button
@@ -368,6 +457,63 @@ const AdminCustomers = () => {
                                         onChange={(e) => setFormData({ ...formData, email: e.target.value })}
                                         className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-lb-red-primary focus:ring-lb-red-primary sm:text-sm dark:bg-gray-700 dark:border-gray-600 dark:text-white"
                                     />
+                                </div>
+                                <div className="pt-2 border-t border-gray-200 dark:border-gray-700">
+                                    <p className="text-xs font-semibold text-gray-500 dark:text-gray-400 mb-2">
+                                        Vehicle Profile (optional)
+                                    </p>
+                                    <div className="grid grid-cols-2 gap-3">
+                                        <div>
+                                            <label htmlFor={`${formId}-edit-vehicle-year`} className="block text-xs font-medium text-gray-700 dark:text-gray-300">
+                                                Year
+                                            </label>
+                                            <input
+                                                id={`${formId}-edit-vehicle-year`}
+                                                type="number"
+                                                min={1980}
+                                                max={new Date().getFullYear() + 1}
+                                                value={formData.vehicle_year || ''}
+                                                onChange={(e) => setFormData({ ...formData, vehicle_year: Number(e.target.value) || new Date().getFullYear() })}
+                                                className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-lb-red-primary focus:ring-lb-red-primary sm:text-xs dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+                                            />
+                                        </div>
+                                        <div>
+                                            <label htmlFor={`${formId}-edit-vehicle-make`} className="block text-xs font-medium text-gray-700 dark:text-gray-300">
+                                                Make
+                                            </label>
+                                            <input
+                                                id={`${formId}-edit-vehicle-make`}
+                                                type="text"
+                                                value={formData.vehicle_make}
+                                                onChange={(e) => setFormData({ ...formData, vehicle_make: e.target.value })}
+                                                className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-lb-red-primary focus:ring-lb-red-primary sm:text-xs dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+                                            />
+                                        </div>
+                                        <div>
+                                            <label htmlFor={`${formId}-edit-vehicle-model`} className="block text-xs font-medium text-gray-700 dark:text-gray-300">
+                                                Model
+                                            </label>
+                                            <input
+                                                id={`${formId}-edit-vehicle-model`}
+                                                type="text"
+                                                value={formData.vehicle_model}
+                                                onChange={(e) => setFormData({ ...formData, vehicle_model: e.target.value })}
+                                                className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-lb-red-primary focus:ring-lb-red-primary sm:text-xs dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+                                            />
+                                        </div>
+                                        <div>
+                                            <label htmlFor={`${formId}-edit-vehicle-color`} className="block text-xs font-medium text-gray-700 dark:text-gray-300">
+                                                Color
+                                            </label>
+                                            <input
+                                                id={`${formId}-edit-vehicle-color`}
+                                                type="text"
+                                                value={formData.vehicle_color}
+                                                onChange={(e) => setFormData({ ...formData, vehicle_color: e.target.value })}
+                                                className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-lb-red-primary focus:ring-lb-red-primary sm:text-xs dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+                                            />
+                                        </div>
+                                    </div>
                                 </div>
                             </div>
                             <div className="mt-6 flex justify-end space-x-3">

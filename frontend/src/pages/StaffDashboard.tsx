@@ -86,6 +86,20 @@ function AssigneeChip({ staffId, staffList }: { staffId?: string | null; staffLi
     );
 }
 
+function getVehicleLabel(apt: Appointment): string | null {
+    const parts: string[] = [];
+    if (apt.vehicle_year) parts.push(String(apt.vehicle_year));
+    if (apt.vehicle_make) parts.push(apt.vehicle_make);
+    if (apt.vehicle_model) parts.push(apt.vehicle_model);
+    const base = parts.join(' ');
+    const color = apt.vehicle_color;
+    if (!base && !color) return null;
+    if (color) {
+        return base ? `${base} (${color})` : color;
+    }
+    return base;
+}
+
 // ── Main Component ─────────────────────────────────────────────────────────────
 const StaffDashboard = () => {
     const [loading, setLoading] = useState(true);
@@ -351,6 +365,7 @@ const StaffDashboard = () => {
                             <tr>
                                 <th className="px-5 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Customer</th>
                                 <th className="px-5 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Service</th>
+                                <th className="px-5 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Vehicle</th>
                                 <th className="px-5 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Notes</th>
                                 <th className="px-5 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Assigned To</th>
                                 <th className="px-5 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Progress</th>
@@ -381,6 +396,11 @@ const StaffDashboard = () => {
                                                 🚨 Emergency
                                             </span>
                                         )}
+                                    </td>
+                                    <td className="px-5 py-4 whitespace-nowrap">
+                                        <span className="text-sm text-gray-700 dark:text-gray-300">
+                                            {getVehicleLabel(apt) ?? '—'}
+                                        </span>
                                     </td>
                                     <td className="px-5 py-4 max-w-[200px]">
                                         <span className="text-sm text-gray-600 dark:text-gray-300 truncate block" title={apt.notes || undefined}>
@@ -457,9 +477,19 @@ const StaffDashboard = () => {
                                 )}
 
                                 {/* Assignee */}
-                                <div className="flex items-center gap-1.5 mb-3 text-xs text-gray-500 dark:text-gray-400">
-                                    <User className="h-3.5 w-3.5" />
-                                    <AssigneeChip staffId={apt.assigned_staff_id} staffList={staff} />
+                                <div className="flex items-center justify-between gap-2 mb-3 text-xs text-gray-500 dark:text-gray-400">
+                                    <div className="flex items-center gap-1.5">
+                                        <User className="h-3.5 w-3.5" />
+                                        <AssigneeChip staffId={apt.assigned_staff_id} staffList={staff} />
+                                    </div>
+                                    {getVehicleLabel(apt) && (
+                                        <div className="flex items-center gap-1 text-[11px] text-gray-500 dark:text-gray-400">
+                                            <Car className="h-3 w-3" />
+                                            <span className="truncate max-w-[140px]">
+                                                {getVehicleLabel(apt)}
+                                            </span>
+                                        </div>
+                                    )}
                                 </div>
 
                                 {/* Progress */}

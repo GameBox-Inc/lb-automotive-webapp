@@ -235,19 +235,24 @@ export function Appointments() {
     try {
       await apiClient.createAppointment(payload)
 
-      // Save vehicle to customer profile when a customer was selected and vehicle details provided
+      // Save vehicle to customer profile only if they don't already have one
       if (selectedCustomerId && (newAppointment.vehicle_make || newAppointment.vehicle_model || newAppointment.vehicle_color || newAppointment.vehicle_year)) {
         try {
           const existing = await apiClient.getCustomer(selectedCustomerId)
-          await apiClient.updateCustomer(selectedCustomerId, {
-            name: existing.name,
-            phone: existing.phone,
-            email: existing.email,
-            vehicle_make: newAppointment.vehicle_make || undefined,
-            vehicle_model: newAppointment.vehicle_model || undefined,
-            vehicle_color: newAppointment.vehicle_color || undefined,
-            vehicle_year: newAppointment.vehicle_year || undefined,
-          })
+          const hasExistingVehicle =
+            !!(existing.vehicle_make || existing.vehicle_model || existing.vehicle_color || existing.vehicle_year)
+
+          if (!hasExistingVehicle) {
+            await apiClient.updateCustomer(selectedCustomerId, {
+              name: existing.name,
+              phone: existing.phone,
+              email: existing.email,
+              vehicle_make: newAppointment.vehicle_make || undefined,
+              vehicle_model: newAppointment.vehicle_model || undefined,
+              vehicle_color: newAppointment.vehicle_color || undefined,
+              vehicle_year: newAppointment.vehicle_year || undefined,
+            })
+          }
         } catch (err) {
           console.warn('Could not update customer vehicle profile', err)
         }
