@@ -279,8 +279,8 @@ REMOTEOF
                 echo '💾 Ensuring disk headroom on server (prune unused images before deploy)...'
                 script {
                     sshagent(credentials: ['lb-server-ssh']) {
-                        sh '''
-ssh -o StrictHostKeyChecking=no ${DEPLOY_USER}@${DEPLOY_HOST} bash -s << 'REMOTEOF'
+                        sh(script: '''
+ssh -o StrictHostKeyChecking=no ${DEPLOY_USER}@${DEPLOY_HOST} bash -s << \'REMOTEOF\'
 set +e
 echo "▶ Pruning unused containerd images (K3s)..."
 sudo k3s crictl rmi --prune 2>/dev/null || true
@@ -295,7 +295,36 @@ if [ -n "$FREE_KB" ] && [ "$FREE_KB" -lt 2097152 ]; then
 fi
 echo "✅ Disk headroom step done."
 REMOTEOF
-                        ''' || true
+                        ''', returnStatus: true)
+                    }
+                }
+            }
+        }
+
+        stage('Check node ready (no DiskPressure)') {
+            // Fail the pipeline if the node has DiskPressure so we don't pull new images and make things worse.
+            when {
+                anyOf {
+                    branch 'main'
+                    branch 'master'
+                    expression { env.BRANCH_NAME ==~ /.*release\/.*/ || env.GIT_BRANCH ==~ /.*release\/.*/ }
+                }
+            }
+            steps {
+                echo '🔍 Checking node is not under DiskPressure...'
+                script {
+                    sshagent(credentials: ['lb-server-ssh']) {
+                        def nodeConditions = sh(
+                            script: """
+                                ssh -o StrictHostKeyChecking=no ${env.DEPLOY_USER}@${env.DEPLOY_HOST} \
+                                  'sudo k3s kubectl describe nodes 2>/dev/null | grep DiskPressure || true'
+                            """,
+                            returnStdout: true
+                        ).trim()
+                        if (nodeConditions.contains('DiskPressure') && nodeConditions.contains('True')) {
+                            error("Node has DiskPressure=True. Free disk and clear evictions before deploying. See docs/incidents/common-failures.md §3. Aborting deploy to avoid taking down the application.")
+                        }
+                        echo "✅ Node OK (no DiskPressure)"
                     }
                 }
             }
@@ -391,26 +420,39 @@ REMOTEOF
                 script {
                     sshagent(credentials: ['lb-server-ssh']) {
                         sh """
-                            # Update backend deployment
                             ssh -o StrictHostKeyChecking=no ${DEPLOY_USER}@${DEPLOY_HOST} \
                                 "sudo k3s kubectl set image deployment/backend backend=${BACKEND_IMAGE}:${BUILD_TAG} -n lb-automotive"
                         """
                         sh """
-                            # Update frontend deployment
                             ssh -o StrictHostKeyChecking=no ${DEPLOY_USER}@${DEPLOY_HOST} \
                                 "sudo k3s kubectl set image deployment/frontend frontend=${FRONTEND_IMAGE}:${BUILD_TAG} -n lb-automotive"
                         """
-                        sh """
-                            # Wait for rollouts to complete (non-fatal; if DB/app-secrets are misconfigured, rollout can hang)
+                        // Wait for rollouts; on failure roll back to previous revision so the app stays up
+                        def backendOk = sh(script: """
                             ssh -o StrictHostKeyChecking=no ${DEPLOY_USER}@${DEPLOY_HOST} \
-                                "sudo k3s kubectl rollout status deployment/backend -n lb-automotive --timeout=5m" || \
-                                echo "⚠️ Backend rollout timed out — check backend logs, app-secrets, and DATABASE_URL"
-                        """
-                        sh """
+                                "sudo k3s kubectl rollout status deployment/backend -n lb-automotive --timeout=5m"
+                        """, returnStatus: true) == 0
+                        if (!backendOk) {
+                            echo "⚠️ Backend rollout failed or timed out — rolling back to previous revision to keep app running"
+                            sh """
+                                ssh -o StrictHostKeyChecking=no ${DEPLOY_USER}@${DEPLOY_HOST} \
+                                    "sudo k3s kubectl rollout undo deployment/backend -n lb-automotive"
+                            """
+                        }
+                        def frontendOk = sh(script: """
                             ssh -o StrictHostKeyChecking=no ${DEPLOY_USER}@${DEPLOY_HOST} \
-                                "sudo k3s kubectl rollout status deployment/frontend -n lb-automotive --timeout=5m" || \
-                                echo "⚠️ Frontend rollout timed out"
-                        """
+                                "sudo k3s kubectl rollout status deployment/frontend -n lb-automotive --timeout=5m"
+                        """, returnStatus: true) == 0
+                        if (!frontendOk) {
+                            echo "⚠️ Frontend rollout failed or timed out — rolling back to previous revision to keep app running"
+                            sh """
+                                ssh -o StrictHostKeyChecking=no ${DEPLOY_USER}@${DEPLOY_HOST} \
+                                    "sudo k3s kubectl rollout undo deployment/frontend -n lb-automotive"
+                            """
+                        }
+                        if (!backendOk || !frontendOk) {
+                            error("Deployment failed (rollout timeout or error). Rolled back backend and/or frontend to previous revision so the application stays up. Fix disk pressure, DB, or image then re-run the pipeline.")
+                        }
                     }
                 }
             }
