@@ -280,22 +280,22 @@ REMOTEOF
                 script {
                     sshagent(credentials: ['lb-server-ssh']) {
                         sh '''
-                            ssh -o StrictHostKeyChecking=no ${DEPLOY_USER}@${DEPLOY_HOST} bash -s << 'REMOTEOF'
-                            set +e
-                            echo "▶ Pruning unused containerd images (K3s)..."
-                            sudo k3s crictl rmi --prune 2>/dev/null || true
-                            echo "▶ Pruning old Docker images (not used in 7 days)..."
-                            sudo docker system prune -a -f --filter "until=168h" 2>/dev/null || true
-                            echo "▶ Deleting evicted/failed pods..."
-                            sudo k3s kubectl delete pods --all-namespaces --field-selector=status.phase=Failed --ignore-not-found 2>/dev/null || true
-                            FREE_KB=$(df / | awk "NR==2 {print \\$4}")
-                            echo "▶ Free disk (KB): $FREE_KB"
-                            if [ -n "$FREE_KB" ] && [ "$FREE_KB" -lt 2097152 ]; then
-                              echo "⚠️ WARNING: Less than 2GB free. Deploy may trigger DiskPressure. Consider manual cleanup: sudo /etc/cron.daily/disk-cleanup"
-                            fi
-                            echo "✅ Disk headroom step done."
-                            REMOTEOF
-                        '''
+ssh -o StrictHostKeyChecking=no ${DEPLOY_USER}@${DEPLOY_HOST} bash -s << 'REMOTEOF'
+set +e
+echo "▶ Pruning unused containerd images (K3s)..."
+sudo k3s crictl rmi --prune 2>/dev/null || true
+echo "▶ Pruning old Docker images (not used in 7 days)..."
+sudo docker system prune -a -f --filter "until=168h" 2>/dev/null || true
+echo "▶ Deleting evicted/failed pods..."
+sudo k3s kubectl delete pods --all-namespaces --field-selector=status.phase=Failed --ignore-not-found 2>/dev/null || true
+FREE_KB=$(df / | awk "NR==2 {print \\$4}")
+echo "▶ Free disk (KB): $FREE_KB"
+if [ -n "$FREE_KB" ] && [ "$FREE_KB" -lt 2097152 ]; then
+  echo "⚠️ WARNING: Less than 2GB free. Deploy may trigger DiskPressure. Consider manual cleanup: sudo /etc/cron.daily/disk-cleanup"
+fi
+echo "✅ Disk headroom step done."
+REMOTEOF
+                        ''' || true
                     }
                 }
             }
