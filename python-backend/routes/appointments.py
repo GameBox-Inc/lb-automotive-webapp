@@ -10,6 +10,8 @@ from repositories.appointment_repository import AppointmentRepository
 from scheduling.engine import compute_availability
 from observability.tracing import update_phase, PHASE_BOOKING_CREATE
 from utils.time_utils import get_current_business_time, get_business_timezone
+from services.twilio_sms import send_sms
+from services.sms_templates import build_confirmation_message
 import traceback
 
 router = APIRouter(prefix="/api/appointments", tags=["appointments"])
@@ -130,7 +132,32 @@ def create_appointment(
         user_id = current_user.get("id")
 
         update_phase(PHASE_BOOKING_CREATE)
-        return repo.create_appointment(appointment_data, user_id)
+        created = repo.create_appointment(appointment_data, user_id)
+
+        # Fire-and-forget SMS confirmation (if enabled and phone is valid).
+        try:
+            if created.phone_number:
+                # Use business timezone formatting if available
+                tz = get_business_timezone()
+                appt_time_local = created.appointment_time.astimezone(tz) if created.appointment_time.tzinfo else created.appointment_time
+                body = build_confirmation_message(
+                    shop_name="L-B Automotive",
+                    appointment_time=appt_time_local,
+                )
+                send_sms(
+                    to=created.phone_number,
+                    body=body,
+                    metadata={
+                        "sms_type": "appointment_confirmation",
+                        "appointment_id": created.id,
+                    },
+                )
+        except Exception as sms_exc:
+            logging.getLogger(__name__).warning(
+                "Failed to send appointment confirmation SMS: %s", sms_exc, exc_info=True
+            )
+
+        return created
     except HTTPException:
         raise
     except Exception as e:

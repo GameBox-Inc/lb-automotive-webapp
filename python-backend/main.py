@@ -139,8 +139,9 @@ from routes import (
     reports,
     business_hours,
     deployment_routes,
+    reminders,
 )
-from routes.twilio import webhook_router, stream_router, analytics_router
+from routes.twilio import webhook_router, stream_router, analytics_router, sms_router
 
 # Include Routers
 app.include_router(auth_routes.router)
@@ -148,6 +149,7 @@ app.include_router(appointments.router)
 app.include_router(services.router)
 app.include_router(settings.router)
 app.include_router(webhook_router)
+app.include_router(sms_router)
 app.include_router(cases.router)
 app.include_router(staff.router)
 app.include_router(customers.router)
@@ -156,6 +158,7 @@ app.include_router(stream_router)
 app.include_router(analytics_router)
 app.include_router(business_hours.router)
 app.include_router(deployment_routes.router)
+app.include_router(reminders.router)
 
 # Static audio for IVR (thinking sound, etc.) — served at /audio/*
 _audio_dir = Path(__file__).resolve().parent / "static" / "audio"
