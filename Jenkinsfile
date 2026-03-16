@@ -284,6 +284,8 @@ ssh -o StrictHostKeyChecking=no ${DEPLOY_USER}@${DEPLOY_HOST} bash -s << \'REMOT
 set +e
 echo "▶ Pruning unused containerd images (K3s)..."
 sudo k3s crictl rmi --prune 2>/dev/null || true
+echo "▶ Pruning Docker build cache (often why 'system prune' reclaims 0B)..."
+sudo docker builder prune -a -f 2>/dev/null || true
 echo "▶ Pruning old Docker images (not used in 7 days)..."
 sudo docker system prune -a -f --filter "until=168h" 2>/dev/null || true
 echo "▶ Deleting evicted/failed pods..."
