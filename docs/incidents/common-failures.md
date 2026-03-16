@@ -41,11 +41,49 @@ sudo k3s kubectl get secret app-secrets -n lb-automotive
 **Fix order:**
 1. **Ensure app-secrets exist** — run `deployment/k8s/create-secrets.sh` on the server, or add Jenkins credentials `secret-key` and `allowed-origins` and re-run the pipeline.
 2. **Restart backend** — `sudo k3s kubectl rollout restart deploy/backend -n lb-automotive`
-3. If DB errors: ensure `DATABASE_URL` in `app-secrets` points to a valid DB (e.g. `sqlite:////app/data/lb_automotive.db`).
+3. If DB errors: ensure `DATABASE_URL` in `app-secrets` points to a valid DB (PostgreSQL/Supabase URL).
 
 ---
 
-## 2. Backend CrashLoopBackOff — SQLite / PostgreSQL
+## 2. Backend rollout stuck (0 of 1 updated replicas are available)
+
+**Symptoms:** Jenkins waits on `rollout status deployment/backend`; log repeats "0 of 1 updated replicas are available", "1 old replicas are pending termination".
+
+**Cause:** The **new** backend pod never becomes Ready because the readiness probe fails. The deployment uses a readiness probe; if it fails, the new pod is not considered Ready, so the old pod is not terminated and the rollout never completes.
+
+**Why the probe fails:** The manifest previously used `/health` for readiness. `/health` returns **503** when the database or Redis check fails. So if `DATABASE_URL` is missing/invalid, or DB/Redis is slow or down, the new pod never passes readiness.
+
+**Diagnostic (on server):**
+```bash
+ssh lb-admin@178.156.223.196
+
+# Which pod is the new one (e.g. backend-xxxxx-yyyy)
+sudo k3s kubectl get pods -n lb-automotive -l app=backend -o wide
+
+# Why the new pod isn't Ready
+sudo k3s kubectl describe pod -n lb-automotive -l app=backend | grep -A 20 "Conditions:"
+
+# Backend logs (crash or DB error at startup?)
+BPOD=$(sudo k3s kubectl get pods -n lb-automotive -l app=backend --sort-by=.metadata.creationTimestamp -o jsonpath='{.items[-1].metadata.name}')
+sudo k3s kubectl logs -n lb-automotive $BPOD -c backend --tail=100
+```
+
+**Fix 1 (recommended):** Use `/ready` for readiness so rollout can complete even when DB/Redis is temporarily unavailable. The repo’s `deployment/k8s/backend.yaml` is updated to use `path: /ready` for both `startupProbe` and `readinessProbe`. Redeploy (push the change and re-run Jenkins, or apply the manifest on the server).
+
+**Fix 2 (root cause):** Ensure `app-secrets` has a valid `DATABASE_URL` (PostgreSQL/Supabase) so `/health` would pass. Run `deployment/k8s/create-secrets.sh` or re-run Jenkins "Ensure App Secrets" with the correct credentials.
+
+**Unblock immediately (one-time):** If you need to unblock without redeploying the manifest, on the server you can patch the deployment to use `/ready`:
+```bash
+sudo k3s kubectl patch deployment backend -n lb-automotive --type='json' -p='[
+  {"op":"replace","path":"/spec/template/spec/containers/0/readinessProbe/httpGet/path","value":"/ready"},
+  {"op":"replace","path":"/spec/template/spec/containers/0/startupProbe/httpGet/path","value":"/ready"}
+]'
+```
+Then the next rollout (or the current one if the new pod is still starting) may complete.
+
+---
+
+## 3. Backend CrashLoopBackOff — SQLite / PostgreSQL
 
 **Symptoms:** `sqlite3.OperationalError` or `ValueError: Valid PostgreSQL/Supabase connection string required`.
 
@@ -57,7 +95,7 @@ sudo k3s kubectl get secret app-secrets -n lb-automotive
 
 ---
 
-## 3. Vault 403 — Permission Denied
+## 4. Vault 403 — Permission Denied
 
 **Symptoms:** `vault.read(gamebox/data/clients/lb-autorepair/database): permission denied`
 
@@ -77,7 +115,7 @@ Apply: `vault policy write lb-automotive-policy - < lb-automotive-policy.hcl`
 
 ---
 
-## 4. Twilio Webhook 403 / 503
+## 5. Twilio Webhook 403 / 503
 
 **Symptoms:** `https://twilio.kozytherocket.space/lb-automotive/api/twilio/webhook` returns 403 or 503.
 
@@ -95,7 +133,7 @@ Apply: `vault policy write lb-automotive-policy - < lb-automotive-policy.hcl`
 
 ---
 
-## 5. Traefik / Gateway configuration
+## 6. Traefik / Gateway configuration
 
 **Relevant when:** Twilio webhook returns 403 Invalid Signature, or public requests to `twilio.kozytherocket.space` get 404/502.
 
@@ -116,7 +154,7 @@ Apply: `vault policy write lb-automotive-policy - < lb-automotive-policy.hcl`
 
 ---
 
-## 6. Jenkins Pipeline — pytest / DATABASE_URL
+## 7. Jenkins Pipeline — pytest / DATABASE_URL
 
 **Symptoms:** Docker build fails with `ValueError: Valid PostgreSQL/Supabase connection string required`.
 
@@ -126,7 +164,7 @@ Apply: `vault policy write lb-automotive-policy - < lb-automotive-policy.hcl`
 
 ---
 
-## 7. Vault Uninitialized / CrashLoopBackOff
+## 8. Vault Uninitialized / CrashLoopBackOff
 
 **Symptoms:** `vault-0` in CrashLoopBackOff; logs: "stored unseal keys supported, but none were found".
 
@@ -141,7 +179,7 @@ Store recovery key and root token.
 
 ---
 
-## 8. Main Vault CrashLoopBackOff — Transit Token 403
+## 9. Main Vault CrashLoopBackOff — Transit Token 403
 
 **Symptoms:** `vault-0` in CrashLoopBackOff; logs:
 ```
@@ -223,7 +261,7 @@ sudo k3s kubectl rollout restart deploy/backend -n lb-automotive
 
 ---
 
-## 9. Main Vault — Transit Decrypt 400 (cipher: message authentication failed)
+## 10. Main Vault — Transit Decrypt 400 (cipher: message authentication failed)
 
 **Symptoms:** `vault-0` fails to start; logs:
 ```
@@ -273,7 +311,7 @@ Code: 400. Errors: * cipher: message authentication failed
 
 ---
 
-## 10. OOM / 2GB Server
+## 11. OOM / 2GB Server
 
 **Symptoms:** Pods evicted, OOMKilled.
 

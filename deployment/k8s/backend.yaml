@@ -50,17 +50,18 @@ spec:
             - name: REDIS_URL
               value: "redis://redis.lb-automotive.svc.cluster.local:6379/0"
 
-          # Use /health so older images (e.g. 231) without /ready still pass; newer images have both.
+          # Readiness uses /ready (200 when process is up) so rollout completes even if DB/Redis are slow or temporarily down.
+          # /health returns 503 when DB or Redis fails, which would block rollout indefinitely.
           startupProbe:
             httpGet:
-              path: /health
+              path: /ready
               port: 8000
-            initialDelaySeconds: 10
+            initialDelaySeconds: 5
             periodSeconds: 5
             failureThreshold: 24
           readinessProbe:
             httpGet:
-              path: /health
+              path: /ready
               port: 8000
             periodSeconds: 10
             failureThreshold: 3
