@@ -83,7 +83,63 @@ Then the next rollout (or the current one if the new pod is still starting) may 
 
 ---
 
-## 3. Backend CrashLoopBackOff — SQLite / PostgreSQL
+## 3. DiskPressure and pod evictions
+
+**Symptoms:** Many pods in `Evicted` or `Pending`; `kubectl describe node` shows `DiskPressure: True`, taint `node.kubernetes.io/disk-pressure:NoSchedule`. Rollouts never settle; deleting pods doesn’t help because the control plane keeps creating new ones.
+
+**Cause:** The node’s disk has dropped below the kubelet eviction threshold (e.g. &lt;5% free or &lt;1GB depending on install). The kubelet sets DiskPressure and evicts pods to free space. The Deployment controller immediately creates replacement pods; those get evicted again (or can’t schedule due to the taint), so you get a loop. Root cause is **disk fill** from:
+
+- **Containerd/K3s image store** — Each deploy pulls new backend/frontend images; old layers accumulate until pruned.
+- **Docker** (if Jenkins runs on the same server) — Build cache and image layers.
+- **Logs** — Journal, container logs, Jenkins logs if not rotated.
+- **Evicted pod debris** — Minor; the main gain is from pruning images and logs.
+
+**Diagnostic (on server):**
+```bash
+# Node conditions and taints
+sudo k3s kubectl describe node rocket-1 | grep -A5 "Conditions:\|Taints:"
+
+# Disk usage
+df -h /
+
+# Where space is used (containerd is under K3s agent)
+sudo du -sh /var/lib/rancher/k3s/agent/containerd 2>/dev/null
+sudo du -sh /var/lib/docker 2>/dev/null
+```
+
+**Prevention (before next deploy):**
+1. **Pre-deploy cleanup** — The Jenkins pipeline runs a “Ensure disk headroom” stage that prunes unused containerd and Docker images on the server *before* applying manifests and pulling new images. That keeps headroom so the deploy doesn’t tip the node over the eviction threshold.
+2. **Daily cleanup** — On the server, ensure a daily cron runs (e.g. `deployment/scripts/setup_log_rotation.sh` creates `/etc/cron.daily/disk-cleanup`). Run manually if needed: `sudo /etc/cron.daily/disk-cleanup`.
+3. **When already in trouble** — Scale app deployments to 0 to stop the create/evict loop, free disk (prune containerd/Docker, clean logs), then confirm `DiskPressure: False` before scaling back to 1.
+
+**Immediate recovery (on server):**
+```bash
+# Stop the create/evict loop
+sudo k3s kubectl scale deploy redis -n lb-automotive --replicas=0
+sudo k3s kubectl scale deploy backend -n lb-automotive --replicas=0
+sudo k3s kubectl scale deploy frontend -n lb-automotive --replicas=0
+
+# Free space: prune images (K3s uses containerd, not Docker on the node)
+sudo k3s crictl rmi --prune
+sudo docker system prune -a -f --filter "until=168h" 2>/dev/null || true
+
+# Remove evicted/failed pods (optional, frees little space)
+sudo k3s kubectl delete pods -n lb-automotive --field-selector=status.phase=Failed --ignore-not-found
+
+# Re-check node; wait until DiskPressure is False
+sudo k3s kubectl describe node rocket-1 | grep -A2 "DiskPressure"
+
+# Then scale back up
+sudo k3s kubectl scale deploy redis -n lb-automotive --replicas=1
+sudo k3s kubectl scale deploy backend -n lb-automotive --replicas=1
+sudo k3s kubectl scale deploy frontend -n lb-automotive --replicas=1
+```
+
+See also: `deployment/STORAGE_OPTIMIZATION.md`, `QUICK_FIX_2GB_SERVER.md`, `deployment/scripts/setup_log_rotation.sh`.
+
+---
+
+## 4. Backend CrashLoopBackOff — SQLite / PostgreSQL
 
 **Symptoms:** `sqlite3.OperationalError` or `ValueError: Valid PostgreSQL/Supabase connection string required`.
 
@@ -95,7 +151,7 @@ Then the next rollout (or the current one if the new pod is still starting) may 
 
 ---
 
-## 4. Vault 403 — Permission Denied
+## 5. Vault 403 — Permission Denied
 
 **Symptoms:** `vault.read(gamebox/data/clients/lb-autorepair/database): permission denied`
 
@@ -115,7 +171,7 @@ Apply: `vault policy write lb-automotive-policy - < lb-automotive-policy.hcl`
 
 ---
 
-## 5. Twilio Webhook 403 / 503
+## 6. Twilio Webhook 403 / 503
 
 **Symptoms:** `https://twilio.kozytherocket.space/lb-automotive/api/twilio/webhook` returns 403 or 503.
 
@@ -133,7 +189,7 @@ Apply: `vault policy write lb-automotive-policy - < lb-automotive-policy.hcl`
 
 ---
 
-## 6. Traefik / Gateway configuration
+## 7. Traefik / Gateway configuration
 
 **Relevant when:** Twilio webhook returns 403 Invalid Signature, or public requests to `twilio.kozytherocket.space` get 404/502.
 
@@ -154,7 +210,7 @@ Apply: `vault policy write lb-automotive-policy - < lb-automotive-policy.hcl`
 
 ---
 
-## 7. Jenkins Pipeline — pytest / DATABASE_URL
+## 8. Jenkins Pipeline — pytest / DATABASE_URL
 
 **Symptoms:** Docker build fails with `ValueError: Valid PostgreSQL/Supabase connection string required`.
 
@@ -179,7 +235,7 @@ Store recovery key and root token.
 
 ---
 
-## 9. Main Vault CrashLoopBackOff — Transit Token 403
+## 10. Main Vault CrashLoopBackOff — Transit Token 403
 
 **Symptoms:** `vault-0` in CrashLoopBackOff; logs:
 ```
