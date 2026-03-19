@@ -1,0 +1,39 @@
+---
+- import_playbook: security_hardening_safe.yml
+
+- name: Install K3s minimal + ensure lb-automotive namespace
+  hosts: hetzner_server
+  become: true
+  vars:
+    repo_root: "/opt/lb-automotive-dashboard"
+  tasks:
+    - name: Check if K3s is already installed
+      stat:
+        path: /etc/rancher/k3s/k3s.yaml
+      register: k3s_yaml
+
+    - name: Copy K3s install script
+      when: not k3s_yaml.stat.exists
+      copy:
+        src: "{{ playbook_dir }}/../k8s/install-k3s-minimal.sh"
+        dest: /tmp/install-k3s-minimal.sh
+        mode: "0755"
+
+    - name: Install K3s (minimal)
+      when: not k3s_yaml.stat.exists
+      command: bash /tmp/install-k3s-minimal.sh
+
+    - name: Wait for K3s API to respond
+      command: sudo k3s kubectl get nodes
+      register: nodes_out
+      retries: 20
+      delay: 6
+      until: nodes_out.rc == 0
+
+    - name: Ensure lb-automotive namespace exists
+      shell: |
+        sudo k3s kubectl get namespace lb-automotive >/dev/null 2>&1 \
+          || sudo k3s kubectl create namespace lb-automotive
+      args:
+        executable: /bin/bash
+

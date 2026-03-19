@@ -59,10 +59,14 @@ select_time (dynamic)
   └── handle_time_selection → confirm_details
 
 confirm_details
-  ├── 1 → collect_contact
+  ├── 1 → save_time_choice (resolve and confirm a specific slot, then ask for symptoms)
   └── 9 → select_time (choose a different time)
 
-collect_contact → book_appointment → completed
+save_time_choice (function)
+  └── Says a combined message: confirms {date_spoken} at {time_spoken} and, in the same prompt, asks the caller to briefly describe the issue. Opens a speech Gather posting to process_symptoms.
+
+process_symptoms (function)
+  └── Summarizes symptoms, stores them in call metadata, then moves to confirm_appointment → confirm_booking → completed
 ```
 
 ### Smart Jump

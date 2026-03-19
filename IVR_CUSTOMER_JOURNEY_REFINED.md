@@ -97,13 +97,16 @@
                               │
                               ▼
 ┌─────────────────────────────────────────────────────────────────┐
-│  STEP 4: COLLECT SYMPTOMS (Regular Booking Only)                │
+│  STEP 4: CONFIRM TIME & COLLECT SYMPTOMS (Regular Booking)      │
 │  ─────────────────────────────────────────────────────────────  │
-│  • Prompt: "Please briefly describe the issue with your        │
-│            vehicle after the beep. Press any key when finished."│
-│  • Records up to 10 seconds of audio                            │
-│  • Twilio transcription enabled                                 │
-│  • Symptoms stored in appointment metadata                      │
+│  • IVR confirms the specific slot (date + time) as the closest │
+│    match to what the caller asked for.                         │
+│  • In the same sentence, IVR asks: "In a few words, what are   │
+│    you coming in for? For example, oil change or brakes. After │
+│    the beep."                                                   │
+│  • A speech Gather opens immediately to capture the caller’s   │
+│    description (no second, duplicate question).                │
+│  • Symptoms are summarized and stored in appointment metadata. │
 └─────────────────────────────────────────────────────────────────┘
                               │
                               ▼

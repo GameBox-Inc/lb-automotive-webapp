@@ -121,6 +121,8 @@ sudo k3s kubectl scale deploy frontend -n lb-automotive --replicas=0
 
 # Free space: prune images (K3s uses containerd, not Docker on the node)
 sudo k3s crictl rmi --prune
+# If 'docker system prune' reclaims 0B but /var/lib/docker is large, clear build cache first:
+sudo docker builder prune -a -f 2>/dev/null || true
 sudo docker system prune -a -f --filter "until=168h" 2>/dev/null || true
 
 # Remove evicted/failed pods (optional, frees little space)
@@ -135,7 +137,7 @@ sudo k3s kubectl scale deploy backend -n lb-automotive --replicas=1
 sudo k3s kubectl scale deploy frontend -n lb-automotive --replicas=1
 ```
 
-See also: `deployment/STORAGE_OPTIMIZATION.md`, `QUICK_FIX_2GB_SERVER.md`, `deployment/scripts/setup_log_rotation.sh`.
+See also: `docs/runbooks/disk-pressure-docker-cleanup.md` (why Docker prune reclaims 0B; use `docker builder prune -a -f`), `deployment/STORAGE_OPTIMIZATION.md`, `QUICK_FIX_2GB_SERVER.md`, `deployment/scripts/setup_log_rotation.sh`.
 
 ---
 

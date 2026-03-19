@@ -12,8 +12,8 @@
       "prompt_es": "¿En qué podemos ayudarle? Presione 1 o diga cita para programar. Presione 2 o diga estado para una actualización de su vehículo. Presione 3 o diga representante para hablar con alguien. Si es urgente, diga emergencia."
     },
     "confirm_intent": {
-      "prompt_en": "Did you say you want to schedule an appointment? Press 1 for yes, 2 for no.",
-      "prompt_es": "¿Dijo que desea programar una cita? Presione 1 para sí, 2 para no."
+      "prompt_en": "Did you say you want to schedule an appointment? Press 1 or say yes, or press 2 or say no.",
+      "prompt_es": "¿Dijo que desea programar una cita? Presione 1 o diga sí, o presione 2 o diga no."
     },
     "main_menu_after_no_en": {
       "prompt_en": "No problem. Please state what you need: press 1 or say appointment to schedule, 2 or say emergency for something urgent, or say representative to speak with someone."
@@ -34,8 +34,8 @@
       "prompt_es": "Si desea, podemos anotar su placa; diga el número o presione asterisco para saltar."
     },
     "confirm_details": {
-      "prompt_en": "Does that work for you? Press 1 to confirm your appointment, or 9 to choose a different time.",
-      "prompt_es": "¿Le queda bien? Presione 1 para confirmar su cita o 9 para elegir otro horario."
+      "prompt_en": "Does that work for you? Press 1 or say yes to confirm, or press 9 or say different time to pick another slot.",
+      "prompt_es": "¿Le queda bien? Presione 1 o diga sí para confirmar, o presione 9 o diga otro horario para elegir otra hora."
     },
     "completed": {
       "prompt_en": "Your appointment is all set. Thank you for choosing L-B Automotive—we look forward to seeing you. Goodbye.",
@@ -56,8 +56,8 @@
       "es": "Hola, bienvenido a L-B Automotive Repair. Estamos para ayudarle."
     },
     "language_choice": {
-      "en": "For English press 1. Para español press 2.",
-      "es": "For English press 1. Para español press 2."
+      "en": "For English, press 1 or say English. For Spanish, press 2 or say Spanish.",
+      "es": "For English, press 1 or say English. For Spanish, press 2 or say Spanish."
     },
     "language_choice_reprompt": {
       "en": "I didn't catch that. For English press 1. Para español press 2.",
@@ -80,12 +80,12 @@
       "es": "Tenemos disponibilidad {date_spoken}. ¿Qué horario le vendría mejor? Puede decir una hora, por ejemplo las 3 o las 10 de la mañana, o decir mañana o tarde. Si prefiere, marque 1 para mañana o 2 para tarde."
     },
     "save_time_confirm": {
-      "en": "I'd be happy to get you in at {time_spoken} on {date_spoken}—that's our closest opening to what you asked for. Next, just so we can note it for the tech, in a few words what are you coming in for? For example, oil change or brakes. After the beep.",
-      "es": "Perfecto. Le reservamos a las {time_spoken} el {date_spoken}—es la hora más cercana a lo que pidió. Ahora, para anotarlo para el técnico, en pocas palabras ¿por qué nos visita? Por ejemplo, cambio de aceite o frenos. Después del tono."
+      "en": "I'd be happy to get you in at {time_spoken} on {date_spoken}—that's our closest opening to what you asked for. Next, in a few words what are you coming in for? For example, oil change or brakes. After the beep. Or press star to skip.",
+      "es": "Perfecto. Le reservamos a las {time_spoken} el {date_spoken}—es la hora más cercana a lo que pidió. Ahora, en pocas palabras ¿por qué nos visita? Por ejemplo, cambio de aceite o frenos. Después del tono. O presione asterisco para omitir."
     },
     "confirm_appointment_ask": {
-      "en": "You're all set for {service_name} on {date_spoken} at {time_spoken}. Press 1 to confirm, or 9 to choose a different time.",
-      "es": "Quedó reservado {service_name} el {date_spoken} a las {time_spoken}. Presione 1 para confirmar o 9 para elegir otro horario."
+      "en": "You're all set for {service_name} on {date_spoken} at {time_spoken}. Press 1 or say confirm to book it, or press 9 or say different time to pick another slot.",
+      "es": "Quedó reservado {service_name} el {date_spoken} a las {time_spoken}. Presione 1 o diga confirmar para reservar, o presione 9 o diga otro horario para cambiar."
     },
     "booking_confirmed": {
       "en": "Your appointment is confirmed. We'll see you at {time_spoken}. Thank you for choosing L-B Automotive—we look forward to helping you. Goodbye.",

@@ -88,7 +88,7 @@ kubectl get svc -n lb-automotive
 
 # Test backend
 kubectl port-forward svc/backend -n lb-automotive 8000:8000
-curl http://localhost:8000/api/health
+curl http://localhost:8000/api/health 
 
 # Get ArgoCD admin password
 kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath="{.data.password}" | base64 -d

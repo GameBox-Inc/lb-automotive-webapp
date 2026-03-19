@@ -232,9 +232,113 @@ def _ivr_pause(response: VoiceResponse, seconds: Optional[float] = None) -> None
     try:
         duration = float(seconds) if seconds is not None else float(get_setting("ivr_pause_seconds", "0.5"))
         if duration > 0:
-            response.pause(length=int(round(duration)))
+            length = int(round(duration))
+            if length <= 0:
+                length = 1
+            response.pause(length=length)
     except (TypeError, ValueError):
         pass
+
+
+def _speech_to_confirm_details_choice(text: str, language: str) -> Optional[str]:
+    """Map natural speech to DTMF 1 (confirm slot) or 9 (pick another time)."""
+    if not text:
+        return None
+    s = text.strip().lower()
+    if s in ("1", "9"):
+        return s
+    affirm = (
+        "yes", "yeah", "yep", "sure", "ok", "okay", "confirm", "perfect", "great",
+        "correct", "works", "good", "book", "sí", "si ", "si,", "claro", "vale", "correcto",
+    )
+    change = (
+        "different", "change", "another", "reschedule", "other time", "not that",
+        "doesn't work", "doesnt work", "nine", "later", "tomorrow", "otro", "cambiar",
+        "diferente", "horario", "no ", "nope",
+    )
+    if any(a in s for a in affirm) and not any(c in s for c in (" not ", "n't ", "different", "change")):
+        return "1"
+    if any(c in s for c in change):
+        return "9"
+    return None
+
+
+def _speech_to_yes_no_choice(text: str, language: str) -> Optional[str]:
+    """1 = yes, 2 = no (confirm_intent)."""
+    if not text:
+        return None
+    s = text.strip().lower()
+    if s in ("1", "2"):
+        return s
+    if s == "no" or s.startswith("no ") or "nope" in s or "not really" in s or "don't" in s or "do not" in s:
+        return "2"
+    if any(x in s for x in ("yes", "yeah", "yep", "sure", "correct", "right", "schedule", "book", "sí", "si,", "claro")):
+        return "1"
+    return None
+
+
+def _speech_to_confirm_appointment_choice(text: str, language: str) -> Optional[str]:
+    """1 = confirm booking, 9 = pick different time."""
+    if not text:
+        return None
+    s = text.strip().lower()
+    if s in ("1", "9"):
+        return s
+    if any(x in s for x in ("different", "change", "another time", "reschedule", "other", "nine", "not that", "otro", "cambiar")):
+        return "9"
+    if any(x in s for x in ("yes", "confirm", "book", "sounds good", "perfect", "sure", "ok", "okay", "sí", "confirmar", "dale")):
+        return "1"
+    return None
+
+
+def _speech_to_language_choice(text: str) -> Optional[str]:
+    """1 = English, 2 = Spanish."""
+    if not text:
+        return None
+    s = text.strip().lower()
+    if s in ("1", "2"):
+        return s
+    if any(w in s for w in ("english", "inglés", "ingles")):
+        return "1"
+    if any(w in s for w in ("spanish", "español", "espanol")):
+        return "2"
+    return None
+
+
+def _speech_to_menu_index(text: str, max_n: int) -> Optional[int]:
+    """Return 1-based index from speech (one, two, …) or digit string."""
+    if not text or max_n < 1:
+        return None
+    s = text.strip().lower()
+    if s.isdigit():
+        i = int(s)
+        return i if 1 <= i <= max_n else None
+    words = ("one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten")
+    for i, w in enumerate(words[:max_n], 1):
+        if s == w or s.startswith(w + " ") or f" {w} " in f" {s} ":
+            return i
+    return None
+
+
+def _resolve_list_choice(user_input: Optional[str], labels: list) -> int:
+    """0-based index from DTMF, spoken number (one, two), or partial label match."""
+    if not labels:
+        return 0
+    s = (user_input or "").strip()
+    if not s:
+        return 0
+    if s.isdigit():
+        i = int(s) - 1
+        return i if 0 <= i < len(labels) else 0
+    n = _speech_to_menu_index(s, len(labels))
+    if n is not None:
+        return n - 1
+    low = s.lower()
+    for i, lab in enumerate(labels):
+        l = str(lab).lower().replace("_", " ")
+        if l in low or (len(low) >= 3 and low in l):
+            return i
+    return 0
 
 
 # Male voices only for consistent IVR experience: Matthew (en-US), Miguel (es-US).
@@ -432,9 +536,10 @@ DECISION_TREE = {
         "prompt_es": "¿Le queda bien? Presione 1 para confirmar su cita o 9 para elegir otro horario.",
         "gather_config": {
             "num_digits": 1,
-            "timeout": 5,
+            "timeout": 8,
             "bargein": True,
-            "input": "dtmf"
+            "input": "speech dtmf",
+            "speech_timeout": "auto"
         },
         "transitions": {
             "1": "collect_contact",
@@ -608,7 +713,8 @@ def handle_smart_jump(intent, llm_result, CallSid, metadata, response, language)
 
 def handle_language_choice(user_input, language, CallSid, metadata, response):
     """First step: bilingual prompt for language; 1=English, 2=Spanish. Invalid digits re-prompt; no-input uses repair count then transfer."""
-    inp = (user_input or "").strip()
+    raw = (user_input or "").strip()
+    inp = raw if len(raw) == 1 and raw in "12" else (_speech_to_language_choice(raw) or raw)
     voice = IVR_VOICE_MALE_EN  # Bilingual prompt before language chosen; consistent male
     if inp == "1":
         upsert_call_state(CallSid, "start", "en", metadata)
@@ -624,7 +730,14 @@ def handle_language_choice(user_input, language, CallSid, metadata, response):
         _ivr_pause(response)
         response.say(get_response("language_choice", "en"), voice=voice)
         _ivr_pause(response)
-        gather = Gather(num_digits=1, input="dtmf", action=f"{WEBHOOK_BASE_URL}?step=language_choice", timeout=8)
+        gather = Gather(
+            num_digits=1,
+            input="speech dtmf",
+            action=f"{WEBHOOK_BASE_URL}?step=language_choice",
+            timeout=10,
+            speech_timeout=get_setting("ivr_speech_timeout", "auto"),
+            barge_in=True,
+        )
         response.append(gather)
         return None
     # No input: repair/retry then transfer after max
@@ -646,7 +759,14 @@ def handle_language_choice(user_input, language, CallSid, metadata, response):
     _ivr_pause(response)
     response.say(get_response("language_choice", "en"), voice=voice)
     _ivr_pause(response)
-    gather = Gather(num_digits=1, input="dtmf", action=f"{WEBHOOK_BASE_URL}?step=language_choice", timeout=8)
+    gather = Gather(
+        num_digits=1,
+        input="speech dtmf",
+        action=f"{WEBHOOK_BASE_URL}?step=language_choice",
+        timeout=10,
+        speech_timeout=get_setting("ivr_speech_timeout", "auto"),
+        barge_in=True,
+    )
     response.append(gather)
     return None
 
@@ -667,8 +787,19 @@ def handle_service_category(user_input, language, CallSid, metadata, response):
 
     for idx, cat in enumerate(categories, 1):
         response.say(f"For {cat.replace('_', ' ')}, press {idx}", voice=voice)
-    
-    gather = Gather(num_digits=1, input="dtmf", action=f"{WEBHOOK_BASE_URL}?step=select_service_detail")
+    response.say(
+        "Or say the category name, or the option number." if language != "es"
+        else "O diga el nombre de la categoría, o el número de opción.",
+        voice=voice,
+    )
+    gather = Gather(
+        num_digits=1,
+        input="speech dtmf",
+        action=f"{WEBHOOK_BASE_URL}?step=select_service_detail",
+        timeout=10,
+        speech_timeout=get_setting("ivr_speech_timeout", "auto"),
+        barge_in=True,
+    )
     response.append(gather)
     return None
 
@@ -891,7 +1022,7 @@ def handle_save_time_choice(user_input, language, CallSid, metadata, response):
     metadata["time_slot_choice"] = user_input
     upsert_call_state(CallSid, "save_time_choice", language, metadata)
 
-    # Confirm recommended time in a customer-service way, then lead into describing the visit
+    # Confirm recommended time in a customer-service way, then immediately gather symptoms in one combined prompt.
     time_spoken = _format_slot_for_speech(chosen_slot, language)
     target_date = metadata.get("target_date", "")
     try:
@@ -901,19 +1032,35 @@ def handle_save_time_choice(user_input, language, CallSid, metadata, response):
     except Exception:
         date_spoken = target_date
 
-    response.say(get_response("save_time_confirm", language, time_spoken=time_spoken, date_spoken=date_spoken), voice=voice)
-    return "collect_symptoms"
+    prompt_text = get_response("save_time_confirm", language, time_spoken=time_spoken, date_spoken=date_spoken)
+    gather = Gather(
+        num_digits=1,
+        input="speech dtmf",
+        timeout=8,
+        speech_timeout=get_setting("ivr_speech_timeout", "auto"),
+        barge_in=True,
+        action=f"{WEBHOOK_BASE_URL}?step=process_symptoms",
+    )
+    gather.say(prompt_text, voice=voice)
+    response.append(gather)
+    return None
 
 
 def handle_symptoms_processing(user_input, language, CallSid, metadata, response):
     """Summarizes user symptoms using LLM."""
     from services.llm import generate_response
-    
-    symptoms = user_input or "No description provided."
-    if user_input and len(user_input) > 5:
+
+    raw = (user_input or "").strip()
+    if raw in ("*", "#"):
+        symptoms = "Not specified"
+    elif not raw:
+        symptoms = "No description provided."
+    else:
+        symptoms = raw
+    if symptoms not in ("Not specified", "No description provided.") and len(symptoms) > 5:
         system_prompt = "Summarize car issue in 1 sentence for a mechanic. Brief and technical. Speak to the mechanic directly."
         try:
-            summary = generate_response(user_input, "", system_prompt)
+            summary = generate_response(symptoms, "", system_prompt)
             if "trouble thinking" not in summary.lower():
                 symptoms = summary
         except Exception:
@@ -927,7 +1074,8 @@ def handle_symptoms_processing(user_input, language, CallSid, metadata, response
 def handle_confirm_intent(user_input, language, CallSid, metadata, response):
     """Confirm inferred appointment intent: 1 = yes (go to after_confirm_intent), 2 = no (main_menu_after_no)."""
     voice = _voice_for_language(language)
-    inp = (user_input or "").strip()
+    raw = (user_input or "").strip()
+    inp = raw if raw in ("1", "2") else (_speech_to_yes_no_choice(raw, language) or raw)
     if inp == "1":
         next_step = metadata.get("after_confirm_intent", "collect_vehicle")
         response.redirect(f"{WEBHOOK_BASE_URL}?step={next_step}")
@@ -941,7 +1089,14 @@ def handle_confirm_intent(user_input, language, CallSid, metadata, response):
         "¿Dijo que desea programar una cita? Presione 1 para sí, 2 para no."
     )
     response.say(prompt, voice=voice)
-    gather = Gather(num_digits=1, input="dtmf", action=f"{WEBHOOK_BASE_URL}?step=confirm_intent", timeout=8)
+    gather = Gather(
+        num_digits=1,
+        input="speech dtmf",
+        action=f"{WEBHOOK_BASE_URL}?step=confirm_intent",
+        timeout=10,
+        speech_timeout=get_setting("ivr_speech_timeout", "auto"),
+        barge_in=True,
+    )
     response.append(gather)
     upsert_call_state(CallSid, "confirm_intent", language, metadata)
     return None
@@ -950,7 +1105,8 @@ def handle_confirm_intent(user_input, language, CallSid, metadata, response):
 def handle_confirm_appointment(user_input, language, CallSid, metadata, response):
     """Play back appointment summary and gather 1 to confirm or 9 to pick a different time."""
     voice = _voice_for_language(language)
-    inp = (user_input or "").strip()
+    raw = (user_input or "").strip()
+    inp = raw if raw in ("1", "9") else (_speech_to_confirm_appointment_choice(raw, language) or raw)
     if inp == "1":
         response.redirect(f"{WEBHOOK_BASE_URL}?step=confirm_booking")
         return None
@@ -970,7 +1126,14 @@ def handle_confirm_appointment(user_input, language, CallSid, metadata, response
     time_spoken = _format_slot_for_speech(chosen_slot, language)
     text = get_response("confirm_appointment_ask", language, service_name=service_name, date_spoken=date_spoken, time_spoken=time_spoken)
     response.say(text, voice=voice)
-    gather = Gather(num_digits=1, input="dtmf", action=f"{WEBHOOK_BASE_URL}?step=confirm_appointment", timeout=8)
+    gather = Gather(
+        num_digits=1,
+        input="speech dtmf",
+        action=f"{WEBHOOK_BASE_URL}?step=confirm_appointment",
+        timeout=10,
+        speech_timeout=get_setting("ivr_speech_timeout", "auto"),
+        barge_in=True,
+    )
     response.append(gather)
     upsert_call_state(CallSid, "confirm_appointment", language, metadata)
     return None
@@ -990,8 +1153,19 @@ def handle_emergency(user_input, language, CallSid, metadata, response):
     response.say(get_response("emergency_intro", language), voice=voice)
     for idx, s in enumerate(services, 1):
         response.say(f"For {s['name']}, press {idx}", voice=voice)
-    
-    gather = Gather(num_digits=1, input="dtmf", action=f"{WEBHOOK_BASE_URL}?step=confirm_emergency")
+    response.say(
+        "Or say the service name or option number." if language != "es"
+        else "O diga el nombre o el número.",
+        voice=voice,
+    )
+    gather = Gather(
+        num_digits=1,
+        input="speech dtmf",
+        action=f"{WEBHOOK_BASE_URL}?step=confirm_emergency",
+        timeout=10,
+        speech_timeout=get_setting("ivr_speech_timeout", "auto"),
+        barge_in=True,
+    )
     response.append(gather)
     return None
 
@@ -1003,11 +1177,8 @@ def handle_select_service_detail(user_input, language, CallSid, metadata, respon
         response.say(get_response("start_over", language), voice=voice)
         response.redirect(f"{WEBHOOK_BASE_URL}?step=start")
         return None
-    try:
-        idx = int(user_input or "1") - 1
-        category = categories[idx] if 0 <= idx < len(categories) else categories[0]
-    except (ValueError, TypeError):
-        category = categories[0]
+    idx = _resolve_list_choice(user_input, categories)
+    category = categories[idx] if 0 <= idx < len(categories) else categories[0]
     with DatabaseContextManager(read_only=True) as conn:
         cursor = conn.cursor()
         cursor.execute(fmt_query("SELECT id, name, duration FROM services WHERE category = ? ORDER BY name"), (category,))
@@ -1019,7 +1190,19 @@ def handle_select_service_detail(user_input, language, CallSid, metadata, respon
     response.say(get_response("service_detail_intro", language, category=category.replace("_", " ")), voice=voice)
     for i, s in enumerate(services, 1):
         response.say(f"For {s['name']}, press {i}", voice=voice)
-    gather = Gather(num_digits=1, input="dtmf", action=f"{WEBHOOK_BASE_URL}?step=save_service_selection")
+    response.say(
+        "Or say the service name or option number." if language != "es"
+        else "O diga el nombre del servicio o el número.",
+        voice=voice,
+    )
+    gather = Gather(
+        num_digits=1,
+        input="speech dtmf",
+        action=f"{WEBHOOK_BASE_URL}?step=save_service_selection",
+        timeout=10,
+        speech_timeout=get_setting("ivr_speech_timeout", "auto"),
+        barge_in=True,
+    )
     response.append(gather)
     return None
 
@@ -1028,11 +1211,9 @@ def handle_save_service_selection(user_input, language, CallSid, metadata, respo
     services = metadata.get("category_services", [])
     if not services:
         return "select_service_category"
-    try:
-        idx = int(user_input or "1") - 1
-        svc = services[idx] if 0 <= idx < len(services) else services[0]
-    except (ValueError, TypeError):
-        svc = services[0]
+    names = [s["name"] for s in services]
+    idx = _resolve_list_choice(user_input, names)
+    svc = services[idx] if 0 <= idx < len(services) else services[0]
     metadata["selected_service"] = {"id": svc["id"], "name": svc["name"], "duration": svc.get("duration", 60)}
     metadata.pop("category_services", None)
     upsert_call_state(CallSid, "select_time", language, metadata)
@@ -1046,11 +1227,9 @@ def handle_confirm_emergency(user_input, language, CallSid, metadata, response):
         response.say(get_response("start_over", language), voice=voice)
         response.redirect(f"{WEBHOOK_BASE_URL}?step=start")
         return None
-    try:
-        idx = int(user_input or "1") - 1
-        svc = services[idx] if 0 <= idx < len(services) else services[0]
-    except (ValueError, TypeError):
-        svc = services[0]
+    names = [s["name"] for s in services]
+    idx = _resolve_list_choice(user_input, names)
+    svc = services[idx] if 0 <= idx < len(services) else services[0]
     voice = _voice_for_language(language)
     response.say(get_response("emergency_selected", language, service_name=svc["name"]), voice=voice)
     response.hangup()
@@ -1110,6 +1289,10 @@ def twilio_webhook(
             upsert_call_state(CallSid, step, language, metadata)
         
         input_data = Digits if Digits else SpeechResult
+        _gather_trans_key = Digits or SpeechResult or "default"
+        if input_data and step == "confirm_details" and SpeechResult and not Digits:
+            _cdr = _speech_to_confirm_details_choice(SpeechResult, language)
+            _gather_trans_key = _cdr if _cdr else (SpeechResult or "default")
         if input_data:
             log_ivr_interaction(CallSid, step, input_data)
         intent = None
@@ -1370,7 +1553,7 @@ def twilio_webhook(
                         )
                     next_s = step
                 else:
-                    next_s = node.get("transitions", {}).get(Digits or SpeechResult or "default", node.get("default", step))
+                    next_s = node.get("transitions", {}).get(_gather_trans_key, node.get("default", step))
                 # Check for handler if it's a gather node with logic
                 handler_name = node.get("handler")
                 if input_data:
@@ -1387,7 +1570,7 @@ def twilio_webhook(
                             response.redirect(f"{WEBHOOK_BASE_URL}?step={ns}")
                             return Response(content=str(response), media_type="application/xml")
 
-                next_s = node.get("transitions", {}).get(Digits or SpeechResult or "default", node.get("default", step))
+                next_s = node.get("transitions", {}).get(_gather_trans_key, node.get("default", step))
                 _ivr_pause(response)
                 gather_kw = dict(
                     num_digits=gc.get("num_digits", 1),

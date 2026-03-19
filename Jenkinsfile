@@ -3,6 +3,14 @@ pipeline {
     
 
 
+    parameters {
+        booleanParam(
+            name: 'RUN_ANSIBLE_BOOTSTRAP',
+            defaultValue: false,
+            description: 'Run Ansible bootstrap on the target server before deploying manifests (security + K3s).'
+        )
+    }
+
     environment {
         // Docker Registry (using GitHub Container Registry)
         REGISTRY = 'ghcr.io'
@@ -146,6 +154,36 @@ pipeline {
                         docker push ${FRONTEND_IMAGE}:${BUILD_TAG}
                         docker push ${FRONTEND_IMAGE}:latest
                     """
+                }
+            }
+        }
+
+        stage('Ansible Bootstrap (optional)') {
+            when {
+                expression { return params.RUN_ANSIBLE_BOOTSTRAP }
+            }
+            steps {
+                echo '🧰 Running Ansible bootstrap (security baseline + K3s install) ...'
+                script {
+                    sshagent(credentials: ['lb-server-ssh']) {
+                        sh '''
+                            set -e
+                            if ! command -v ansible-playbook >/dev/null 2>&1; then
+                              echo "ansible-playbook not found; attempting to install ansible..."
+                              if command -v apt-get >/dev/null 2>&1; then
+                                sudo apt-get update
+                                sudo apt-get install -y ansible
+                              elif command -v pip >/dev/null 2>&1; then
+                                pip install ansible
+                              else
+                                echo "No apt-get or pip available to install Ansible."
+                                exit 1
+                              fi
+                            fi
+
+                            ansible-playbook deployment/ansible/bootstrap_security_plus_k3s.yml -i deployment/ansible/inventory.ini
+                        '''
+                    }
                 }
             }
         }
