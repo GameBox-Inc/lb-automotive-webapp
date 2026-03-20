@@ -2,6 +2,7 @@ import json
 import logging
 import asyncio
 import functools
+import os
 from typing import Dict, Any, Optional
 from services.llm import classify_intent
 from security import redis_client
@@ -9,6 +10,11 @@ from utils.ivr_helper import get_redis_result_key
 from observability.tracing import restore_trace_context, update_phase, PHASE_LLM_STARTED, PHASE_LLM_COMPLETE
 
 logger = logging.getLogger(__name__)
+
+# Limit concurrent LLM classification work per backend process.
+# This prevents bursts of Twilio calls from overwhelming CPU threadpool and/or Anthropic rate limits.
+_LLM_CONCURRENCY_LIMIT = max(1, int(os.getenv("IVR_LLM_CONCURRENCY_LIMIT", "4")))
+_llm_classify_semaphore = asyncio.Semaphore(_LLM_CONCURRENCY_LIMIT)
 
 
 async def process_ivr_intent_async(
@@ -29,9 +35,11 @@ async def process_ivr_intent_async(
     try:
         logger.info(f"Async processing intent for {call_sid}: {speech_text}", extra={"conversation_context": conversation_context})
         loop = asyncio.get_event_loop()
-        llm_result = await loop.run_in_executor(
-            None, functools.partial(classify_intent, speech_text, conversation_context)
-        )
+        # Bound expensive LLM classification concurrency per process.
+        async with _llm_classify_semaphore:
+            llm_result = await loop.run_in_executor(
+                None, functools.partial(classify_intent, speech_text, conversation_context)
+            )
         
         # Store result in Redis (valid for 2 minutes)
         if redis_client:

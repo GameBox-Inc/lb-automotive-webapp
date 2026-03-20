@@ -9,6 +9,7 @@
     "lint": "npm run lint --prefix frontend",
     "typecheck": "npm run typecheck --prefix frontend",
     "debug:webhook": "node scripts/debug-webhook.js",
+    "debug:webhook:stress": "node scripts/stress-webhook.js",
     "debug:twiml": "node scripts/validate-twiml.js",
     "debug:audio": "node scripts/check-audio-assets.js",
     "debug:k8s": "bash scripts/k8s-debug-summary.sh",
