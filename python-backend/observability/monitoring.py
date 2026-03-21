@@ -2,6 +2,7 @@
 Prometheus monitoring and metrics
 """
 import functools
+import re
 from contextlib import contextmanager
 from prometheus_client import Counter, Histogram, Gauge, generate_latest, CONTENT_TYPE_LATEST
 from fastapi import Request, Response
@@ -11,6 +12,41 @@ import logging
 from pythonjsonlogger import jsonlogger
 
 logger = logging.getLogger(__name__)
+
+# Normalize dynamic path segments so http_requests_total does not explode in cardinality.
+_UUID_SEGMENT = re.compile(
+    r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+    re.I,
+)
+
+
+def normalize_http_endpoint_label(request: Request) -> str:
+    """
+    Prefer the FastAPI/Starlette route template (e.g. /api/appointments/{id}).
+    Otherwise collapse UUID and numeric path segments to {id}.
+    """
+    route = request.scope.get("route")
+    if route is not None:
+        path = getattr(route, "path", None)
+        if path:
+            return path
+    path = request.url.path or "/"
+    if path in ("/", ""):
+        return "/"
+    parts = path.split("/")
+    out = []
+    for seg in parts:
+        if seg == "":
+            out.append("")
+            continue
+        if _UUID_SEGMENT.match(seg):
+            out.append("{id}")
+        elif seg.isdigit():
+            out.append("{id}")
+        else:
+            out.append(seg)
+    return "/".join(out) if out else "/"
+
 
 # HTTP Metrics
 http_requests_total = Counter(
@@ -117,7 +153,7 @@ async def track_request(request: Request, call_next):
     
     # Track metrics
     duration = time() - start_time
-    endpoint = request.url.path
+    endpoint = normalize_http_endpoint_label(request)
     method = request.method
     status = response.status_code
     

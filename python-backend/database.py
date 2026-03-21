@@ -1,5 +1,6 @@
 import os
 import json
+import threading
 from datetime import datetime
 from typing import Optional, Dict, Any, List
 from contextvars import ContextVar
@@ -115,21 +116,127 @@ def _set_rls_session_vars(conn):
         cur.close()
 
 
+_pool_lock = threading.Lock()
+# One pool per distinct DSN (app primary, app read replica, admin primary, admin read).
+_pools: Dict[str, Any] = {}
+
+
+def _db_pool_enabled() -> bool:
+    """Use psycopg2 ThreadedConnectionPool for PostgreSQL (disable via DB_POOL_ENABLED=false)."""
+    return os.getenv("DB_POOL_ENABLED", "true").lower() in ("1", "true", "yes")
+
+
+def _db_pool_bounds() -> tuple:
+    mn = max(1, int(os.getenv("DB_POOL_MIN", "1")))
+    mx = max(mn, int(os.getenv("DB_POOL_MAX", "20")))
+    return mn, mx
+
+
+def _resolve_connection_dsn(read_only: bool, use_app_role: bool) -> str:
+    if use_app_role:
+        return DB_READ_PATH if (read_only and DB_READ_PATH) else DB_PATH
+    return (DATABASE_READ_URL or DATABASE_URL) if read_only else DATABASE_URL
+
+
+class _PooledConnection:
+    """
+    Returned from get_db_connection when pooling is on. Delegates to the real psycopg2 connection;
+    close() returns the connection to the pool (rollback first so session is clean).
+    """
+
+    __slots__ = ("_conn", "_pool", "_closed")
+
+    def __init__(self, conn, pool):
+        self._conn = conn
+        self._pool = pool
+        self._closed = False
+
+    def close(self):
+        if self._closed:
+            return
+        self._closed = True
+        try:
+            self._conn.rollback()
+        except Exception:
+            pass
+        try:
+            self._pool.putconn(self._conn)
+        except Exception:
+            try:
+                self._conn.close()
+            except Exception:
+                pass
+
+    def __getattr__(self, name):
+        return getattr(self._conn, name)
+
+
+def _get_threaded_pool(dsn: str):
+    """Lazily create a ThreadedConnectionPool for this DSN."""
+    import psycopg2.pool
+    from psycopg2.extras import RealDictCursor
+
+    with _pool_lock:
+        if dsn not in _pools:
+            mn, mx = _db_pool_bounds()
+            _pools[dsn] = psycopg2.pool.ThreadedConnectionPool(
+                mn,
+                mx,
+                dsn,
+                cursor_factory=RealDictCursor,
+            )
+        return _pools[dsn]
+
+
+def close_all_db_pools():
+    """Close all pools (tests / graceful shutdown). New get_db_connection calls recreate pools."""
+    global _pools
+    with _pool_lock:
+        to_close = list(_pools.values())
+        _pools.clear()
+        for p in to_close:
+            try:
+                p.closeall()
+            except Exception:
+                pass
+
+
 def get_db_connection(read_only: bool = False, use_app_role: bool = True):
     """
     Get a PostgreSQL/Supabase database connection.
     If read_only is True and a read replica URL is set, use it.
     When use_app_role=True (default), uses APP_DATABASE_URL or DATABASE_URL and sets RLS session vars.
     When use_app_role=False (e.g. init_db/migrations), uses DATABASE_URL only and does not set RLS vars.
+
+    When DB_POOL_ENABLED is true (default), connections come from a per-DSN ThreadedConnectionPool.
+    RLS session variables are applied on every checkout for use_app_role=True so pooled connections
+    never leak identity between requests.
     """
     _validate_db_url()
     import psycopg2
     from psycopg2.extras import RealDictCursor
 
-    if use_app_role:
-        target_url = DB_READ_PATH if (read_only and DB_READ_PATH) else DB_PATH
-    else:
-        target_url = (DATABASE_READ_URL or DATABASE_URL) if read_only else DATABASE_URL
+    target_url = _resolve_connection_dsn(read_only, use_app_role)
+    if not target_url or not str(target_url).startswith("postgres"):
+        raise ValueError("Valid PostgreSQL connection string required for get_db_connection.")
+
+    if _db_pool_enabled():
+        pool = _get_threaded_pool(target_url)
+        conn = pool.getconn()
+        try:
+            if use_app_role:
+                _set_rls_session_vars(conn)
+            return _PooledConnection(conn, pool)
+        except Exception:
+            try:
+                pool.putconn(conn)
+            except Exception:
+                try:
+                    conn.close()
+                except Exception:
+                    pass
+            raise
+
     conn = psycopg2.connect(target_url, cursor_factory=RealDictCursor)
     if use_app_role:
         _set_rls_session_vars(conn)

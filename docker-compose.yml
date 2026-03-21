@@ -10,6 +10,8 @@ services:
     deploy:
       replicas: 2
     environment:
+      # Enables Swagger in dev and runs seed_data() on startup (see main.py lifespan).
+      - ENVIRONMENT=${ENVIRONMENT:-development}
       - DATABASE_URL=${DATABASE_URL:-sqlite:////app/data/lb_automotive.db}
       - SECRET_KEY=${SECRET_KEY}
       - ALGORITHM=${ALGORITHM:-HS256}

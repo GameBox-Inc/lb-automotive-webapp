@@ -7,7 +7,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.exceptions import RequestValidationError
 from fastapi.staticfiles import StaticFiles
-from database import init_db, seed_data, DatabaseContextManager
+from database import init_db, seed_data, DatabaseContextManager, close_all_db_pools
 from security import rate_limit_middleware, security_headers_middleware
 from observability import setup_logging
 from auth import get_current_admin_user
@@ -21,16 +21,37 @@ setup_logging()
 logger = logging.getLogger(__name__)
 
 
+def _should_run_seed_on_startup() -> bool:
+    """
+    Heavy seed_data() is off by default in production so pods become Ready faster.
+    Explicit RUN_SEED_ON_STARTUP=true|false overrides; if unset, seed runs only when
+    ENVIRONMENT is development or test.
+    """
+    flag = os.getenv("RUN_SEED_ON_STARTUP", "").strip().lower()
+    if flag in ("0", "false", "no"):
+        return False
+    if flag in ("1", "true", "yes"):
+        return True
+    return os.getenv("ENVIRONMENT", "production").lower() in ("development", "test")
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Lifespan event handler for startup and shutdown."""
     # Startup
     print("Initializing database...")
     init_db()
-    seed_data()
+    if _should_run_seed_on_startup():
+        seed_data()
+    else:
+        logger.info(
+            "Skipping seed_data() on startup (production default). "
+            "Set RUN_SEED_ON_STARTUP=true or ENVIRONMENT=development to run seed. "
+            "Rely on Supabase migrations (Jenkins pipeline) for schema and required rows such as business_hours."
+        )
     print("Application started successfully!")
     yield
-    # Shutdown (if needed)
+    close_all_db_pools()
 
 
 

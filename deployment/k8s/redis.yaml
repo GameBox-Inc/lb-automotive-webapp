@@ -26,7 +26,10 @@ spec:
           image: redis:7-alpine
           ports:
             - containerPort: 6379
-          # Optimized for low-memory server (2GB total)
+          # Optimized for low-memory server (2GB total).
+          # IVR uses call-scoped keys + TTL; under burst load watch: redis-cli INFO memory,
+          # evicted_keys. If LLM result keys disappear early, raise --maxmemory / limits together.
+          # Tune IVR_LLM_CONCURRENCY_LIMIT on the backend to reduce Anthropic + Redis pressure.
           command:
             - redis-server
             - --maxmemory

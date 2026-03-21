@@ -13,6 +13,12 @@ Python-based FastAPI server with SQLite database for LB Automotive shop manageme
 - ⚙️ **Admin Settings** - Configurable business hours and IVR messages
 - 🔒 **Security Hardened** - XSS prevention, SQL injection protection, rate limiting
 
+## Performance (pooling, metrics, startup)
+
+- **PostgreSQL connection pool:** `DB_POOL_ENABLED` (default `true`), `DB_POOL_MIN`, `DB_POOL_MAX`. RLS session variables are set on every checkout when using the app role.
+- **Startup:** `seed_data()` runs on boot only if `RUN_SEED_ON_STARTUP=true` or `ENVIRONMENT` is `development` / `test`. Production should rely on **Supabase migrations** (Jenkins) for schema and seeds.
+- **Verification checklist:** [docs/runbooks/app-efficiency-verification.md](../docs/runbooks/app-efficiency-verification.md)
+
 ## Quick Start
 
 ### 1. Create Virtual Environment
