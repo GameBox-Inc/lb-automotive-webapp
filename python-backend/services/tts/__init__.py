@@ -1,8 +1,12 @@
 """
-TTS (Text-to-Speech) service.
+TTS routing for IVR: Twilio Polly (<Say>) vs ElevenLabs MP3 (<Play>) with fallbacks.
 
-Twilio provides TTS via <Say> in TwiML. We build VoiceResponse with
-Say(voice="Polly.Matthew"|"Polly.Miguel"). Male only: Matthew (en), Miguel (es). No separate TTS service.
+See services/tts/router.py (speak_or_play), elevenlabs.py (API client), storage.py (Redis cache).
 """
-# Placeholder for future TTS providers
-# Current: Twilio built-in TTS (Polly voices)
+from services.tts.router import gather_speak_or_play, get_public_tts_base_url, speak_or_play
+
+__all__ = [
+    "speak_or_play",
+    "gather_speak_or_play",
+    "get_public_tts_base_url",
+]

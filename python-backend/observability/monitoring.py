@@ -1,6 +1,8 @@
 """
 Prometheus monitoring and metrics
 """
+import functools
+from contextlib import contextmanager
 from prometheus_client import Counter, Histogram, Gauge, generate_latest, CONTENT_TYPE_LATEST
 from fastapi import Request, Response
 from time import time
@@ -47,6 +49,51 @@ ivr_calls_total = Counter(
     'ivr_calls_total',
     'Total IVR calls',
     ['step', 'language']
+)
+
+# Concurrent Twilio IVR webhook requests in this process (for scaling on call load).
+ivr_webhook_in_flight = Gauge(
+    'ivr_webhook_in_flight',
+    'Number of Twilio IVR webhook requests currently being handled in this worker process',
+)
+
+
+def track_ivr_webhook_inflight(func):
+    """Decorator: increment ivr_webhook_in_flight for the duration of the webhook handler."""
+
+    @functools.wraps(func)
+    def wrapper(*args, **kwargs):
+        ivr_webhook_in_flight.inc()
+        try:
+            return func(*args, **kwargs)
+        finally:
+            ivr_webhook_in_flight.dec()
+
+    return wrapper
+
+
+@contextmanager
+def ivr_webhook_inflight_cm():
+    """Context manager variant for nested or non-decorator use."""
+    ivr_webhook_in_flight.inc()
+    try:
+        yield
+    finally:
+        ivr_webhook_in_flight.dec()
+
+
+# IVR TTS (Twilio Polly vs ElevenLabs + Play)
+ivr_tts_requests_total = Counter(
+    'ivr_tts_requests_total',
+    'IVR TTS routing attempts',
+    ['provider', 'result'],
+)
+
+ivr_tts_duration_seconds = Histogram(
+    'ivr_tts_duration_seconds',
+    'ElevenLabs TTS synthesis duration (seconds)',
+    ['result'],
+    buckets=(0.05, 0.1, 0.25, 0.5, 1.0, 2.0, 5.0, 10.0, 30.0),
 )
 
 active_users = Gauge(

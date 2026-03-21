@@ -1,0 +1,21 @@
+# PodMonitor: scrape FastAPI /metrics from backend pods (Prometheus Operator).
+# Requires CRD monitoring.coreos.com/v1 PodMonitor.
+# Adjust metadata.labels so your Prometheus stack picks up this PodMonitor.
+apiVersion: monitoring.coreos.com/v1
+kind: PodMonitor
+metadata:
+  name: lb-automotive-backend
+  namespace: lb-automotive
+  labels:
+    release: kube-prometheus-stack
+spec:
+  namespaceSelector:
+    matchNames:
+      - lb-automotive
+  selector:
+    matchLabels:
+      app: backend
+  podMetricsEndpoints:
+    - port: http
+      path: /metrics
+      interval: 15s

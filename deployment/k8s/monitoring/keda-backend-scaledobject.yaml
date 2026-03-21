@@ -1,0 +1,44 @@
+# KEDA ScaledObject: scale backend on IVR webhook in-flight (Prometheus) + CPU.
+#
+# BEFORE APPLYING:
+# 1. Install KEDA (https://keda.sh/docs/deploy/).
+# 2. Install Prometheus and scrape backend /metrics (see backend-podmonitor.yaml).
+# 3. Remove the static HPA from backend.yaml (or delete the HPA resource):
+#    kubectl delete hpa backend -n lb-automotive --ignore-not-found
+# 4. Edit serverAddress below to match your in-cluster Prometheus Service, e.g.:
+#    http://kube-prometheus-stack-prometheus.monitoring.svc.cluster.local:9090
+#
+apiVersion: keda.sh/v1alpha1
+kind: ScaledObject
+metadata:
+  name: backend-ivr
+  namespace: lb-automotive
+spec:
+  scaleTargetRef:
+    name: backend
+    kind: Deployment
+    apiVersion: apps/v1
+  pollingInterval: 15
+  cooldownPeriod: 60
+  minReplicaCount: 2
+  maxReplicaCount: 5
+  advanced:
+    horizontalPodAutoscalerConfig:
+      behavior:
+        scaleDown:
+          stabilizationWindowSeconds: 300
+        scaleUp:
+          stabilizationWindowSeconds: 0
+  triggers:
+    # Sum of concurrent IVR webhook handlers across all backend pods (see ivr_webhook_in_flight in app metrics).
+    - type: prometheus
+      metadata:
+        serverAddress: http://kube-prometheus-stack-prometheus.monitoring.svc.cluster.local:9090
+        metricName: ivr_webhook_in_flight_sum
+        # Adjust label selector to match how Prometheus discovers your backend pods.
+        query: sum(ivr_webhook_in_flight{namespace="lb-automotive"})
+        threshold: "4"
+    - type: cpu
+      metadata:
+        type: Utilization
+        value: "60"

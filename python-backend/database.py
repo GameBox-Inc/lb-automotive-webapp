@@ -591,6 +591,15 @@ def seed_data():
         ('ivr_language_prompt_enabled', 'false', 'Play language selection at start (true/false)'),
         ('ivr_recording_disclaimer_en', 'This call may be recorded for quality purposes.', 'Recording disclaimer (English)'),
         ('ivr_recording_disclaimer_es', 'Esta llamada puede ser grabada para fines de calidad.', 'Recording disclaimer (Spanish)'),
+        # IVR TTS: Twilio Polly (default) vs ElevenLabs + <Play> — see docs/architecture/voice-flow.md
+        ('ivr_tts_provider', 'twilio', 'twilio | elevenlabs — default twilio (Polly) until validated'),
+        ('ivr_tts_canary_prompts', 'welcome', 'Comma-separated prompt keys for ElevenLabs (e.g. welcome); use * for all'),
+        ('elevenlabs_voice_id_en', '', 'ElevenLabs voice ID for English (required for elevenlabs on EN prompts)'),
+        ('elevenlabs_voice_id_es', '', 'ElevenLabs voice ID for Spanish'),
+        ('elevenlabs_model_id', 'eleven_multilingual_v2', 'ElevenLabs model_id for TTS'),
+        ('ivr_tts_audio_ttl_seconds', '600', 'TTL seconds for MP3 at /api/twilio/tts-audio/{id} (Twilio fetch window)'),
+        ('ivr_tts_static_url_welcome_en', '', 'Optional HTTPS URL to pre-generated welcome MP3 (skips API; English)'),
+        ('ivr_tts_static_url_welcome_es', '', 'Optional HTTPS URL to pre-generated welcome MP3 (Spanish)'),
     ]
 
     for key, value, desc in default_settings:

@@ -84,10 +84,14 @@ find /var/log/pods/ -name "*.log.*" -mtime +7 -delete
 # Clean up old compressed logs
 find /var/log/ -name "*.gz" -mtime +14 -delete
 
+# Build cache is NOT removed by docker system prune; it can grow to many GB and
+# keeps DiskPressure/taints recurring (see docs/runbooks/disk-pressure-docker-cleanup.md).
+docker builder prune -f --filter "until=168h" 2>/dev/null || true
+
 # Clean up Docker/containerd unused data
 docker system prune -af --filter "until=168h" 2>/dev/null || true
 
-# Clean up k3s cached images (keep only 2 versions)
+# Clean up k3s cached images
 k3s crictl rmi --prune 2>/dev/null || true
 
 # Log disk usage

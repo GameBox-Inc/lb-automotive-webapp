@@ -1,5 +1,5 @@
 # Backend deployment — secrets from K8s Secrets (no Vault dependency).
-# Create app-secrets, twilio-secrets, anthropic-secrets via:
+# Create app-secrets, twilio-secrets, anthropic-secrets, optional elevenlabs-secrets via:
 #   deployment/k8s/create-secrets.sh  (interactive)
 #   or Jenkins "Ensure App Secrets" stage (from credentials)
 apiVersion: apps/v1
@@ -34,7 +34,8 @@ spec:
           image: ghcr.io/gamebox-inc/lb-automotive-backend:latest
           imagePullPolicy: IfNotPresent
           ports:
-            - containerPort: 8000
+            - name: http
+              containerPort: 8000
 
           envFrom:
             - secretRef:
@@ -44,6 +45,9 @@ spec:
                 optional: true
             - secretRef:
                 name: anthropic-secrets
+                optional: true
+            - secretRef:
+                name: elevenlabs-secrets
                 optional: true
 
           env:

@@ -21,7 +21,7 @@ Twilio (Voice) → Cloudflare Tunnel → Traefik → backend:8000
                      ↓
               URLRewrite: /lb-automotive/api/twilio → /api/twilio
                      ↓
-              python-backend/routes/twilio_webhook.py
+              python-backend/routes/twilio/webhook.py
 ```
 
 ---
@@ -87,7 +87,7 @@ When speech is detected, the system uses an LLM to classify intent. If the user 
 
 | Component | Location | Purpose |
 |-----------|----------|---------|
-| Webhook handler | `twilio_webhook.py` | Entry point, validation, routing |
+| Webhook handler | `routes/twilio/webhook.py` | Entry point, validation, routing |
 | Decision tree | `DECISION_TREE` dict | Node definitions and transitions |
 | Smart Jump | `smart_jump_helper.py` | LLM intent → skip to time selection |
 | LLM service | `llm_service` | `classify_intent`, `generate_response` |
@@ -104,11 +104,36 @@ When speech is detected, the system uses an LLM to classify intent. If the user 
 
 ---
 
+## ElevenLabs TTS (optional)
+
+**Mode (plan):** Phase 1 ships **on-demand ElevenLabs** → MP3 bytes cached in **Redis** (content-hash + short-lived audio id) → Twilio `<Play url="https://…/api/twilio/tts-audio/{uuid}">`. **Pre-generated static MP3s** are supported via settings `ivr_tts_static_url_{prompt}_{lang}` (HTTPS only) to skip API calls. Default remains **Twilio `<Say>` (Polly)** — no behavior change until configured.
+
+| Setting / env | Purpose |
+|----------------|--------|
+| `ivr_tts_provider` | `twilio` (default) or `elevenlabs` |
+| `ivr_tts_canary_prompts` | Comma-separated logical keys (e.g. `welcome`); use `*` only after validation |
+| `elevenlabs_voice_id_en` / `elevenlabs_voice_id_es` | ElevenLabs voice IDs |
+| `elevenlabs_model_id` | e.g. `eleven_multilingual_v2` |
+| `ELEVENLABS_API_KEY` | K8s Secret only — never commit |
+| `IVR_TTS_PUBLIC_BASE_URL` | Public HTTPS base Twilio can `GET` (e.g. `https://twilio.kozytherocket.space/lb-automotive`); else derived from `TWILIO_WEBHOOK_BASE_URL` |
+| `ivr_tts_audio_ttl_seconds` | Redis TTL for audio blobs (default 600s) |
+
+**Stability:** HTTP timeouts on synthesis, **circuit breaker** (env `IVR_TTS_CB_*`), automatic **fallback to Polly** on any failure. **Metrics:** `ivr_tts_requests_total`, `ivr_tts_duration_seconds` (Prometheus).
+
+**Public audio URL:** `GET /api/twilio/tts-audio/{uuid}` — unauthenticated; security by unguessable id + TTL (same pattern as signed URLs in spirit). Twilio must reach this URL over **HTTPS** from the public internet (not VPN-only).
+
+**Rollout:** Deploy with `ivr_tts_provider=twilio` → set API key + voice IDs → switch to `elevenlabs` and keep canary to `welcome` → expand `ivr_tts_canary_prompts` as needed. **Disable:** set `ivr_tts_provider=twilio` in Admin settings (no redeploy required if settings are read per request).
+
+See **`docs/runbooks/ivr-elevenlabs.md`** for operations and verification.
+
+---
+
 ## Conversational UX
 
 - **Barge-in:** Speech `<Gather>` nodes use `bargeIn="true"` so callers can interrupt prompts.
 - **Turn detection:** `speechTimeout` from node `gather_config` or `ivr_speech_timeout` (e.g. `auto`) controls when Twilio treats the caller as done speaking.
-- **Latency masking:** After caller speech, the app returns immediately with a short acknowledgement (`ivr_filler_mode`: voice_only, sound_only, or hybrid with thinking sound); LLM runs async and the next request uses the result.
+- **Latency masking:** After caller speech, the app returns immediately with a short acknowledgement (`ivr_filler_mode`: voice_only, sound_only, or hybrid with thinking sound); LLM runs async and the next request uses the result. **Processing audio:** If `ivr_thinking_sound_url` is set, it is played during the `processing` wait even when `ivr_filler_mode` is `voice_only` (combined with the spoken filler, same as hybrid).
+- **No-input repeat:** On Gather timeout, callers hear `no_input_repeat` (“I didn’t hear a response…”) before the step prompt is replayed (tree gathers and language / confirm-intent / confirm-appointment handlers where applicable).
 - **Repair:** On timeout/no input, the IVR says "Sorry, I didn't catch that. Let's try again." and re-gathers; after `ivr_repair_max_retries` it offers transfer.
 - **Context:** `last_intent` is stored and passed to the classifier so follow-ups like "yes" or "that one" can be resolved.
 
@@ -120,4 +145,5 @@ See [IVR Conversational Upgrade](ivr-conversational-upgrade.md) for design and i
 
 - [Twilio Webhooks Contract](../contracts/twilio-webhooks.md)
 - [Twilio Debugging Runbook](../runbooks/twilio-debugging.md)
+- [IVR ElevenLabs Runbook](../runbooks/ivr-elevenlabs.md)
 - [IVR Customer Journey](../../IVR_CUSTOMER_JOURNEY_REFINED.md)

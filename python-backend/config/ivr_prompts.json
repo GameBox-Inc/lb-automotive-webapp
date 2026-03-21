@@ -71,6 +71,10 @@
       "en": "That's not a valid option. For English press 1. Para español press 2.",
       "es": "That's not a valid option. For English press 1. Para español press 2."
     },
+    "no_input_repeat": {
+      "en": "I didn't hear a response. Let me repeat that for you.",
+      "es": "No escuché una respuesta. Se lo repito."
+    },
     "no_slots": {
       "en": "We're sorry we don't have any openings in the next few days. We'd love to help—please try booking online, or call back another time. Goodbye.",
       "es": "Lamentamos no tener disponibilidad en los próximos días. Por favor reserve en línea. Gracias y hasta pronto."

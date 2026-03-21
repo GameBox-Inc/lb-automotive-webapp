@@ -141,13 +141,14 @@ from routes import (
     deployment_routes,
     reminders,
 )
-from routes.twilio import webhook_router, stream_router, analytics_router, sms_router
+from routes.twilio import webhook_router, stream_router, analytics_router, sms_router, tts_audio_router
 
 # Include Routers
 app.include_router(auth_routes.router)
 app.include_router(appointments.router)
 app.include_router(services.router)
 app.include_router(settings.router)
+app.include_router(tts_audio_router)
 app.include_router(webhook_router)
 app.include_router(sms_router)
 app.include_router(cases.router)

@@ -29,6 +29,8 @@ from security import redis_client
 from routes.twilio.smart_jump import process_smart_jump
 from observability.tracing import set_twilio_context, update_phase, get_trace_context
 from observability.tracing import PHASE_WEBHOOK_RECEIVED, PHASE_STT_STARTED, PHASE_LLM_STARTED, PHASE_LLM_COMPLETE, PHASE_TTS_READY
+from observability.monitoring import track_ivr_webhook_inflight, ivr_calls_total
+from services.tts import speak_or_play
 
 
 # Security Configuration
@@ -225,6 +227,25 @@ def smooth_hangup(response: VoiceResponse, voice: str, language: str, message: O
         # Even if pause fails, we still want to hang up cleanly
         pass
     response.hangup()
+
+
+def _apply_processing_latency_mask(response: VoiceResponse, voice: str) -> None:
+    """
+    While waiting for async LLM (Redis), play filler + optional thinking audio.
+    If ivr_thinking_sound_url is set but ivr_filler_mode is voice_only, upgrade to hybrid
+    so callers always hear the thinking clip during processing when configured.
+    """
+    filler_mode = get_setting("ivr_filler_mode", "voice_only").lower()
+    thinking_url = (get_setting("ivr_thinking_sound_url", "") or "").strip() or None
+    if thinking_url and filler_mode == "voice_only":
+        filler_mode = "hybrid"
+    phrases = parse_filler_phrases_setting(get_setting("ivr_filler_phrases", ""))
+    filler_phrase = get_random_filler(phrases) if phrases else get_random_filler()
+    try:
+        play_loop = min(9, max(1, int(get_setting("ivr_processing_play_loop", "5") or 5)))
+    except (TypeError, ValueError):
+        play_loop = 5
+    apply_latency_mask(response, voice, filler_mode, thinking_url, filler_phrase, play_loop=play_loop)
 
 
 def _ivr_pause(response: VoiceResponse, seconds: Optional[float] = None) -> None:
@@ -739,6 +760,8 @@ def handle_language_choice(user_input, language, CallSid, metadata, response):
             barge_in=True,
         )
         response.append(gather)
+        metadata["language_choice_prompted"] = True
+        upsert_call_state(CallSid, "language_choice", language, metadata)
         return None
     # No input: repair/retry then transfer after max
     repair_count = (metadata.get("step_repair_count") or {}).get("language_choice", 0)
@@ -747,15 +770,21 @@ def handle_language_choice(user_input, language, CallSid, metadata, response):
         response.say(get_response("language_choice_transfer", "en"), voice=voice)
         response.redirect(f"{WEBHOOK_BASE_URL}?step=transfer_representative")
         return None
+    # First webhook hit to language_choice has no input (not a timeout); skip repeat until we've shown once.
+    if metadata.get("language_choice_prompted"):
+        response.say(get_response("no_input_repeat", "en"), voice=voice)
+        _ivr_pause(response)
     if repair_count > 0:
         response.say(get_response("language_choice_reprompt", "en"), voice=voice)
+        _ivr_pause(response)
     step_repair = metadata.get("step_repair_count") or {}
     step_repair["language_choice"] = repair_count + 1
     metadata["step_repair_count"] = step_repair
     upsert_call_state(CallSid, "language_choice", language, metadata)
     _ivr_pause(response)
     # 1) Welcome (short), 2) Language selection, 3) then redirect to start = "how can we help" gather
-    response.say(get_response("welcome", "en"), voice=voice)
+    # Canary: optional ElevenLabs + <Play> for welcome only (see settings ivr_tts_provider, ivr_tts_canary_prompts).
+    speak_or_play(response, get_response("welcome", "en"), voice, "en", prompt_key="welcome")
     _ivr_pause(response)
     response.say(get_response("language_choice", "en"), voice=voice)
     _ivr_pause(response)
@@ -768,6 +797,8 @@ def handle_language_choice(user_input, language, CallSid, metadata, response):
         barge_in=True,
     )
     response.append(gather)
+    metadata["language_choice_prompted"] = True
+    upsert_call_state(CallSid, "language_choice", language, metadata)
     return None
 
 
@@ -1083,6 +1114,9 @@ def handle_confirm_intent(user_input, language, CallSid, metadata, response):
     if inp == "2":
         response.redirect(f"{WEBHOOK_BASE_URL}?step=main_menu_after_no_{language}")
         return None
+    if not raw and metadata.get("confirm_intent_gather_shown"):
+        response.say(get_response("no_input_repeat", language), voice=voice)
+        _ivr_pause(response)
     prompt = get_step_prompt("confirm_intent", language) or (
         "Did you say you want to schedule an appointment? Press 1 for yes, 2 for no."
         if language != "es" else
@@ -1098,6 +1132,7 @@ def handle_confirm_intent(user_input, language, CallSid, metadata, response):
         barge_in=True,
     )
     response.append(gather)
+    metadata["confirm_intent_gather_shown"] = True
     upsert_call_state(CallSid, "confirm_intent", language, metadata)
     return None
 
@@ -1113,6 +1148,9 @@ def handle_confirm_appointment(user_input, language, CallSid, metadata, response
     if inp == "9":
         response.redirect(f"{WEBHOOK_BASE_URL}?step=select_time")
         return None
+    if not raw and metadata.get("confirm_appt_gather_shown"):
+        response.say(get_response("no_input_repeat", language), voice=voice)
+        _ivr_pause(response)
     # First time: say summary and gather
     service_name = (metadata.get("selected_service") or {}).get("name", "General Service")
     chosen_slot = metadata.get("chosen_slot", "")
@@ -1135,6 +1173,7 @@ def handle_confirm_appointment(user_input, language, CallSid, metadata, response
         barge_in=True,
     )
     response.append(gather)
+    metadata["confirm_appt_gather_shown"] = True
     upsert_call_state(CallSid, "confirm_appointment", language, metadata)
     return None
 
@@ -1242,6 +1281,7 @@ def get_tree_node(step: str) -> Optional[dict]:
 # --- Webhook Handler ---
 
 @router.post("/webhook", dependencies=[Depends(validate_twilio_request), Depends(ivr_service_context)])
+@track_ivr_webhook_inflight
 def twilio_webhook(
     request: Request,
     background_tasks: BackgroundTasks,
@@ -1259,6 +1299,8 @@ def twilio_webhook(
     response = VoiceResponse()
     try:
         existing_state = get_call_state(CallSid)
+        _ivr_lang_metric = (existing_state or {}).get("language") or "en"
+        ivr_calls_total.labels(step=step or "start", language=_ivr_lang_metric).inc()
         if step == "start" and existing_state is None:
             response.redirect(f"{WEBHOOK_BASE_URL}?step=language_choice")
             return Response(content=str(response), media_type="application/xml")
@@ -1398,15 +1440,7 @@ def twilio_webhook(
                     trace_ctx = get_trace_context()
                     conv_ctx = f"Last intent: {metadata.get('last_intent', 'none')}, step: {step}"
                     background_tasks.add_task(process_ivr_intent_async, CallSid, SpeechResult, trace_ctx, conv_ctx)
-                    filler_mode = get_setting("ivr_filler_mode", "voice_only").lower()
-                    thinking_url = get_setting("ivr_thinking_sound_url", "") if filler_mode in ("sound_only", "hybrid") else None
-                    phrases = parse_filler_phrases_setting(get_setting("ivr_filler_phrases", ""))
-                    filler_phrase = get_random_filler(phrases) if phrases else get_random_filler()
-                    try:
-                        play_loop = min(9, max(1, int(get_setting("ivr_processing_play_loop", "5") or 5)))
-                    except (TypeError, ValueError):
-                        play_loop = 5
-                    apply_latency_mask(response, voice, filler_mode, thinking_url or None, filler_phrase, play_loop=play_loop)
+                    _apply_processing_latency_mask(response, voice)
                     update_phase(PHASE_TTS_READY)
                     response.redirect(f"{WEBHOOK_BASE_URL}?step=processing")
                     logger.info("IVR response", extra={**get_trace_context(), "step": step, "intent": "masking_redirect"})
@@ -1438,15 +1472,7 @@ def twilio_webhook(
                     metadata["wait_count"] = wait_count + 1
                     upsert_call_state(CallSid, "processing", language, metadata)
                     update_phase(PHASE_TTS_READY)
-                    filler_mode = get_setting("ivr_filler_mode", "voice_only").lower()
-                    thinking_url = get_setting("ivr_thinking_sound_url", "") if filler_mode in ("sound_only", "hybrid") else None
-                    phrases = parse_filler_phrases_setting(get_setting("ivr_filler_phrases", ""))
-                    filler_phrase = get_random_filler(phrases) if phrases else get_random_filler()
-                    try:
-                        play_loop = min(9, max(1, int(get_setting("ivr_processing_play_loop", "5") or 5)))
-                    except (TypeError, ValueError):
-                        play_loop = 5
-                    apply_latency_mask(response, voice, filler_mode, thinking_url or None, filler_phrase, play_loop=play_loop)
+                    _apply_processing_latency_mask(response, voice)
                     response.redirect(f"{WEBHOOK_BASE_URL}?step=processing")
                     logger.info("IVR response", extra={**get_trace_context(), "step": step, "intent": "processing_poll"})
                     return Response(content=str(response), media_type="application/xml")
@@ -1479,6 +1505,9 @@ def twilio_webhook(
             node_type = node.get("type")
             if node_type == "gather":
                 gc = node.get("gather_config", {})
+                # Snapshot before mutating metadata (for "repeat" cue on timeout)
+                snap_start_gather_played = bool(metadata.get("start_gather_played"))
+                announce_no_input_repeat = False
                 # Timeout / no input: repair or transfer after max retries
                 if not input_data:
                     first_gather_played_steps = metadata.get("first_gather_played_steps") or []
@@ -1498,13 +1527,14 @@ def twilio_webhook(
                                 "reason": "first_gather",
                             },
                         )
-                    # First arrival at this step (e.g. after redirect): do not play repair; play prompt only.
+                    # First timeout at this step: repeat the prompt with a short "didn't hear you" cue (no repair count yet).
                     elif step not in first_gather_played_steps:
                         first_gather_played_steps = list(first_gather_played_steps)
                         first_gather_played_steps.append(step)
                         metadata["first_gather_played_steps"] = first_gather_played_steps
                         upsert_call_state(CallSid, step, language, metadata)
                         next_s = step
+                        announce_no_input_repeat = not (step == "start" and not snap_start_gather_played)
                         logger.info(
                             "IVR response",
                             extra={
@@ -1586,6 +1616,9 @@ def twilio_webhook(
                     gather_kw["speech_timeout"] = gc.get("speech_timeout") or get_setting("ivr_speech_timeout", "auto")
                 gather = Gather(**gather_kw)
                 prompt_text = get_step_prompt(step, language) or node.get(f"prompt_{language}", node.get("prompt_en")) or "Please continue."
+                if not input_data and announce_no_input_repeat:
+                    response.say(get_response("no_input_repeat", language), voice=voice)
+                    _ivr_pause(response)
                 gather.say(prompt_text, voice=voice)
                 response.append(gather)
             elif node_type == "function":

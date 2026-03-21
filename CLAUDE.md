@@ -32,7 +32,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - **Cache/Queue:** Redis (64MB limit, LRU eviction)
 - **Reverse Proxy:** Frontend Nginx → Backend (replaces K3s Ingress)
 - **Ingress Routing:** Traefik v3 via Kubernetes Gateway API (Cloudflare Tunnel → Traefik → services)
-- **Secrets Management:** K8s Secrets for lb-automotive backend (app-secrets, twilio-secrets, anthropic-secrets). No Vault dependency for the app.
+- **Secrets Management:** K8s Secrets for lb-automotive backend (app-secrets, twilio-secrets, anthropic-secrets, optional elevenlabs-secrets). No Vault dependency for the app.
 - **Deployment:** Kubernetes (K3s) on Hetzner server (178.156.223.196)
 - **Domain:** kozytherocket.space
 - **CI/CD:** Jenkins (Dockerized, self-hosted) — replaced GitHub Actions. **Supabase/Postgres migrations are applied on each pipeline deployment** (see `Run Supabase Migrations` stage and `deployment/scripts/run_supabase_migrations.sh`).
@@ -101,7 +101,7 @@ lb-automotive-dashboard/
 │   │   ├── services.py
 │   │   ├── settings.py
 │   │   ├── staff.py
-│   │   └── twilio_webhook.py   # IVR webhook handler
+│   │   └── twilio/webhook.py   # IVR webhook handler
 │   ├── scheduler.py            # Appointment slot generation
 │   └── requirements.txt
 │
@@ -214,6 +214,18 @@ TWILIO_AUTH_TOKEN=<auth_token>
 TWILIO_PHONE_NUMBER=<phone_number>
 ```
 
+**Optional — ElevenLabs TTS (IVR `<Play>` with Polly `<Say>` fallback):**
+```bash
+ELEVENLABS_API_KEY=<api_key>                    # K8s: elevenlabs-secrets (optional) or app-secrets
+IVR_TTS_PUBLIC_BASE_URL=https://twilio.kozytherocket.space/lb-automotive  # HTTPS base Twilio can reach; else derived from TWILIO_WEBHOOK_BASE_URL
+ELEVENLABS_TIMEOUT_SECONDS=12                   # HTTP read timeout for synthesis
+IVR_TTS_CB_FAILURE_THRESHOLD=5                  # Circuit breaker: failures before pausing ElevenLabs
+IVR_TTS_CB_WINDOW_SECONDS=60
+IVR_TTS_CB_OPEN_SECONDS=120
+```
+- **DB settings:** `ivr_tts_provider` (`twilio` default | `elevenlabs`), `ivr_tts_canary_prompts` (e.g. `welcome`), `elevenlabs_voice_id_en` / `elevenlabs_voice_id_es`, `elevenlabs_model_id`.
+- **Docs:** `docs/architecture/voice-flow.md`, `docs/runbooks/ivr-elevenlabs.md`.
+
 **LLM Configuration:**
 ```bash
 LLM_PROVIDER=ollama                          # or "anthropic"
@@ -241,7 +253,7 @@ CSP_POLICY=strict  # or "development"
   - `python-backend/database.py` - `business_hours` table
   - `python-backend/routes/business_hours.py` - Per-day hours API
   - `python-backend/scheduler.py` - Dynamic slot generation
-  - `python-backend/routes/twilio_webhook.py` - No call blocking
+  - `python-backend/routes/twilio/webhook.py` - No call blocking
   - `frontend/src/pages/AdminIVR.tsx` - Per-day hours UI
 - **Key:** Business hours defined per day (Mon-Sun), IVR accepts calls 24/7, appointments scheduled for future days even if currently closed
 
@@ -273,8 +285,8 @@ CSP_POLICY=strict  # or "development"
 
 ### Secrets Management (K8s Secrets)
 - **Status:** Backend reads from K8s Secrets (no Vault dependency). Create via `deployment/k8s/create-secrets.sh` or Jenkins "Ensure App Secrets" stage.
-- **Secrets:** `app-secrets` (SECRET_KEY, ALLOWED_ORIGINS, DATABASE_URL, REDIS_URL, LLM_PROVIDER, CSP_POLICY), `twilio-secrets`, `anthropic-secrets` (optional).
-- **Jenkins:** Add secret-text credentials `secret-key` and `allowed-origins`; pipeline creates/updates `app-secrets`. For Twilio/Anthropic run `create-secrets.sh` on the server once.
+- **Secrets:** `app-secrets` (SECRET_KEY, ALLOWED_ORIGINS, DATABASE_URL, REDIS_URL, LLM_PROVIDER, CSP_POLICY), `twilio-secrets`, `anthropic-secrets` (optional), `elevenlabs-secrets` (optional, `ELEVENLABS_API_KEY`).
+- **Jenkins:** Add secret-text credentials `secret-key` and `allowed-origins`; pipeline creates/updates `app-secrets`. For Twilio/Anthropic/ElevenLabs run `create-secrets.sh` on the server once (or add `elevenlabs-secrets` manually).
 
 ### Routing Architecture
 - **VPN users:** `10.100.0.1:30080` → frontend Nginx → `proxy_pass http://backend:8000` for `/api/*`
@@ -661,7 +673,7 @@ When working on this project:
 
 12. **`security_config.json`** - Required by `security.py` at startup. Contains SQL/XSS regex patterns. Must be in the Docker image or mounted via ConfigMap.
 
-13. **App secrets** - Backend uses K8s Secrets (`app-secrets`, `twilio-secrets`, `anthropic-secrets`). Create via `deployment/k8s/create-secrets.sh` or Jenkins: `Ensure App Secrets` uses `secret-key`, `allowed-origins`, `supabase-db-url`; `Ensure Twilio Secrets` uses `twilio-auth-token` (Twilio Auth Token for webhook signature validation).
+13. **App secrets** - Backend uses K8s Secrets (`app-secrets`, `twilio-secrets`, `anthropic-secrets`, optional `elevenlabs-secrets`). Create via `deployment/k8s/create-secrets.sh` or Jenkins: `Ensure App Secrets` uses `secret-key`, `allowed-origins`, `supabase-db-url`; `Ensure Twilio Secrets` uses `twilio-auth-token` (Twilio Auth Token for webhook signature validation).
 
 14. **Frontend Nginx proxy** - The production Nginx config is at `deployment/docker/nginx.conf`, NOT `frontend/nginx.conf`. It proxies `/api/*` to `http://backend:8000`.
 

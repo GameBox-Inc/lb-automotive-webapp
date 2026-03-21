@@ -103,6 +103,17 @@ if [ "$LLM_PROVIDER" = "anthropic" ] && [ -n "$ANTHROPIC_API_KEY" ]; then
     echo "   ✅ Anthropic secrets created"
 fi
 
+# Optional: ElevenLabs TTS for IVR (ELEVENLABS_API_KEY)
+read -sp "   Enter ELEVENLABS_API_KEY (optional, for IVR TTS): " ELEVENLABS_API_KEY
+echo ""
+if [ -n "$ELEVENLABS_API_KEY" ]; then
+    sudo k3s kubectl create secret generic elevenlabs-secrets \
+      --from-literal=ELEVENLABS_API_KEY="$ELEVENLABS_API_KEY" \
+      --namespace=lb-automotive \
+      --dry-run=client -o yaml | sudo k3s kubectl apply -f -
+    echo "   ✅ ElevenLabs secrets created"
+fi
+
 echo ""
 echo "=========================================="
 echo "Secrets Created Successfully"
