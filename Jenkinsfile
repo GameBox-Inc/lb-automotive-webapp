@@ -326,6 +326,15 @@ echo "▶ Pruning Docker build cache (often why 'system prune' reclaims 0B)..."
 sudo docker builder prune -a -f 2>/dev/null || true
 echo "▶ Pruning old Docker images (not used in 7 days)..."
 sudo docker system prune -a -f --filter "until=168h" 2>/dev/null || true
+echo "▶ Pruning Jenkins Docker-in-Docker (jenkins-docker)..."
+# Pipeline builds use DinD; build cache and tagged images live ONLY inside this daemon.
+# Host-level docker builder prune does not reclaim that space (was ~16GB+ before DiskPressure).
+if sudo docker exec jenkins-docker docker version >/dev/null 2>&1; then
+  sudo docker exec jenkins-docker docker builder prune -a -f 2>/dev/null || true
+  sudo docker exec jenkins-docker docker image prune -a -f --filter "until=168h" 2>/dev/null || true
+else
+  echo "   (jenkins-docker not running — skip DinD prune)"
+fi
 echo "▶ Deleting evicted/failed pods..."
 sudo k3s kubectl delete pods --all-namespaces --field-selector=status.phase=Failed --ignore-not-found 2>/dev/null || true
 FREE_KB=$(df / | awk "NR==2 {print \\$4}")
