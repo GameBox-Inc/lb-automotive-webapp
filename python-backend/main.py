@@ -1,13 +1,16 @@
 import os
+import asyncio
 import logging
 from contextlib import asynccontextmanager
 from pathlib import Path
+from typing import Optional
 from fastapi import FastAPI, Request, status, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.exceptions import RequestValidationError
 from fastapi.staticfiles import StaticFiles
 from database import init_db, seed_data, DatabaseContextManager, close_all_db_pools
+from agent_debug import agent_debug_log
 from security import rate_limit_middleware, security_headers_middleware
 from observability import setup_logging
 from auth import get_current_admin_user
@@ -19,6 +22,9 @@ import json
 # Initialize Logging
 setup_logging()
 logger = logging.getLogger(__name__)
+
+# Strong ref so the init watcher task is not garbage-collected before completion
+_init_watcher_task: Optional[asyncio.Task] = None
 
 
 def _should_run_seed_on_startup() -> bool:
@@ -35,13 +41,46 @@ def _should_run_seed_on_startup() -> bool:
     return os.getenv("ENVIRONMENT", "production").lower() in ("development", "test")
 
 
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    """Lifespan event handler for startup and shutdown."""
-    # Startup
-    print("Initializing database...")
-    init_db()
-    if _should_run_seed_on_startup():
+def _blocking_startup_sync():
+    """
+    Runs init_db / optional seed in a worker thread so the ASGI server can bind and
+    serve /ready while Postgres DDL runs (fixes K8s rollouts stuck on slow init_db).
+    """
+    # region agent log
+    agent_debug_log(
+        "H3",
+        "main._blocking_startup_sync",
+        "worker_begin",
+        {
+            "ENVIRONMENT": os.getenv("ENVIRONMENT", ""),
+            "DB_POOL_ENABLED": os.getenv("DB_POOL_ENABLED", "true"),
+        },
+    )
+    # endregion
+    print("Initializing database (background worker)...")
+    try:
+        # region agent log
+        agent_debug_log("H1", "main._blocking_startup_sync", "before_init_db", {})
+        # endregion
+        init_db()
+        # region agent log
+        agent_debug_log("H1", "main._blocking_startup_sync", "after_init_db", {})
+        # endregion
+    except Exception as e:
+        # region agent log
+        agent_debug_log(
+            "H2",
+            "main._blocking_startup_sync",
+            "init_db_exception",
+            {"exc_type": type(e).__name__, "exc_msg": str(e)[:300]},
+        )
+        # endregion
+        raise
+    # region agent log
+    _seed = _should_run_seed_on_startup()
+    agent_debug_log("H4", "main._blocking_startup_sync", "seed_branch", {"will_run_seed": _seed})
+    # endregion
+    if _seed:
         seed_data()
     else:
         logger.info(
@@ -49,8 +88,46 @@ async def lifespan(app: FastAPI):
             "Set RUN_SEED_ON_STARTUP=true or ENVIRONMENT=development to run seed. "
             "Rely on Supabase migrations (Jenkins pipeline) for schema and required rows such as business_hours."
         )
-    print("Application started successfully!")
+    print("Application started successfully (background worker)!")
+    # region agent log
+    agent_debug_log("H3", "main._blocking_startup_sync", "worker_complete", {})
+    # endregion
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Lifespan: yield quickly so /ready works; DB init runs in a thread pool."""
+    # region agent log
+    agent_debug_log(
+        "H3",
+        "main.lifespan",
+        "startup_begin_schedule_worker",
+        {
+            "ENVIRONMENT": os.getenv("ENVIRONMENT", ""),
+            "DB_POOL_ENABLED": os.getenv("DB_POOL_ENABLED", "true"),
+        },
+    )
+    # endregion
+    loop = asyncio.get_running_loop()
+    init_future = loop.run_in_executor(None, _blocking_startup_sync)
+
+    async def _exit_if_init_failed():
+        try:
+            await init_future
+        except Exception:
+            logger.exception("Background DB startup failed; exiting process")
+            os._exit(1)
+
+    global _init_watcher_task
+    _init_watcher_task = asyncio.create_task(_exit_if_init_failed())
+    # region agent log
+    agent_debug_log("H3", "main.lifespan", "lifespan_yield_listening", {})
+    # endregion
     yield
+    try:
+        await init_future
+    except Exception:
+        pass
     close_all_db_pools()
 
 
@@ -234,9 +311,18 @@ async def root():
     }
 
 
+_ready_debug_logged = False
+
+
 @app.get("/ready")
 async def ready_check():
     """Lightweight readiness: 200 when the process is up. Use for K8s readinessProbe so rollout can complete even if DB is temporarily unreachable."""
+    # region agent log
+    global _ready_debug_logged
+    if not _ready_debug_logged:
+        _ready_debug_logged = True
+        agent_debug_log("H3", "main.ready_check", "first_ready_request", {})
+    # endregion
     return {"status": "ready"}
 
 

@@ -175,16 +175,28 @@ def _get_threaded_pool(dsn: str):
     """Lazily create a ThreadedConnectionPool for this DSN."""
     import psycopg2.pool
     from psycopg2.extras import RealDictCursor
+    from agent_debug import agent_debug_log
 
     with _pool_lock:
         if dsn not in _pools:
             mn, mx = _db_pool_bounds()
+            # region agent log
+            agent_debug_log(
+                "H5",
+                "database._get_threaded_pool",
+                "creating_pool",
+                {"minconn": mn, "maxconn": mx, "dsn_host": dsn.split("@")[-1][:80] if dsn and "@" in dsn else "masked"},
+            )
+            # endregion
             _pools[dsn] = psycopg2.pool.ThreadedConnectionPool(
                 mn,
                 mx,
                 dsn,
                 cursor_factory=RealDictCursor,
             )
+            # region agent log
+            agent_debug_log("H5", "database._get_threaded_pool", "pool_created_ok", {})
+            # endregion
         return _pools[dsn]
 
 
@@ -221,8 +233,18 @@ def get_db_connection(read_only: bool = False, use_app_role: bool = True):
         raise ValueError("Valid PostgreSQL connection string required for get_db_connection.")
 
     if _db_pool_enabled():
+        from agent_debug import agent_debug_log
+
         pool = _get_threaded_pool(target_url)
+        # region agent log
+        if not use_app_role:
+            agent_debug_log("H5", "database.get_db_connection", "before_getconn_admin", {"read_only": read_only})
+        # endregion
         conn = pool.getconn()
+        # region agent log
+        if not use_app_role:
+            agent_debug_log("H5", "database.get_db_connection", "after_getconn_admin", {})
+        # endregion
         try:
             if use_app_role:
                 _set_rls_session_vars(conn)
@@ -276,7 +298,15 @@ class DatabaseContextManager:
 
 def init_db():
     """Initialize the database with schema (uses postgres/DATABASE_URL, not app RLS role)."""
+    from agent_debug import agent_debug_log
+
+    # region agent log
+    agent_debug_log("H1", "database.init_db", "start", {})
+    # endregion
     conn = get_db_connection(use_app_role=False)
+    # region agent log
+    agent_debug_log("H1", "database.init_db", "connection_acquired", {"pool_enabled": _db_pool_enabled()})
+    # endregion
     cursor = conn.cursor()
 
     # Create staff table first (for foreign keys)
@@ -524,6 +554,11 @@ def init_db():
     conn.commit()
 
     conn.commit()
+    # region agent log
+    from agent_debug import agent_debug_log as _agent_log_init
+
+    _agent_log_init("H1", "database.init_db", "ddl_finished_before_close", {})
+    # endregion
     conn.close()
     print("Database initialized successfully!")
 
