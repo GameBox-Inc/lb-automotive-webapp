@@ -90,6 +90,30 @@ def test_webhook_language_choice_2_redirects_to_start():
     assert "step=start" in r.text or "step=language_choice" in r.text
 
 
+def test_webhook_language_choice_non_numeric_repair_setting_no_generic_error():
+    """
+    Non-numeric ivr_repair_max_retries in settings must not raise (would hit global handler → generic_error TwiML).
+    Example misconfiguration: value 'auto' (copied from speech_timeout).
+    """
+    def bad_repair_setting(key, default=None):
+        if key == "ivr_repair_max_retries":
+            return "auto"
+        return _mock_get_setting(key, default)
+
+    with patch("routes.twilio.webhook.get_call_state", return_value=None):
+        with patch("routes.twilio.webhook.get_setting", side_effect=bad_repair_setting):
+            # speak_or_play reads TTS provider via services.call_state.get_setting (not webhook module).
+            with patch("services.tts.router.get_setting", side_effect=bad_repair_setting):
+                with patch("routes.twilio.webhook.upsert_call_state", MagicMock()):
+                    with patch("routes.twilio.webhook.update_decision_path", MagicMock()):
+                        with patch("routes.twilio.webhook.track_decision", MagicMock()):
+                            with patch("routes.twilio.webhook.log_ivr_interaction", MagicMock()):
+                                r = _post_webhook(step="language_choice")
+    assert r.status_code == 200
+    assert "An error occurred" not in r.text
+    assert "<Gather" in r.text
+
+
 def test_webhook_start_digits_1_redirects_to_collect_vehicle():
     """At start, Digits 1 redirects to collect_vehicle."""
     with patch("routes.twilio.webhook.get_call_state", return_value=_call_state()):

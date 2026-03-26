@@ -262,6 +262,15 @@ def _apply_processing_latency_mask(
     apply_latency_mask(response, voice, filler_mode, thinking_url, filler_phrase, play_loop=play_loop)
 
 
+def _safe_int_setting(key: str, default: int) -> int:
+    """Parse a non-negative int from DB settings; bad or non-numeric values return default (never raises)."""
+    raw = get_setting(key, str(default))
+    try:
+        return int(str(raw).strip())
+    except (TypeError, ValueError):
+        return default
+
+
 def _ivr_pause(response: VoiceResponse, seconds: Optional[float] = None) -> None:
     """Append a short pause when ivr_pause_seconds > 0. Use for natural pacing before/after prompts."""
     try:
@@ -782,7 +791,7 @@ def handle_language_choice(user_input, language, CallSid, metadata, response):
         return None
     # No input: repair/retry then transfer after max
     repair_count = (metadata.get("step_repair_count") or {}).get("language_choice", 0)
-    max_repairs = int(get_setting("ivr_repair_max_retries", "3"))
+    max_repairs = _safe_int_setting("ivr_repair_max_retries", 3)
     if repair_count >= max_repairs:
         response.say(get_response("language_choice_transfer", "en"), voice=voice)
         response.redirect(f"{WEBHOOK_BASE_URL}?step=transfer_representative")
@@ -1485,7 +1494,7 @@ def twilio_webhook(
                 upsert_call_state(CallSid, "processing", language, metadata)
             else:
                 wait_count = int(metadata.get("wait_count", 0))
-                if wait_count * 2 < int(get_setting("ivr_processing_timeout", "10")):
+                if wait_count * 2 < _safe_int_setting("ivr_processing_timeout", 10):
                     metadata["wait_count"] = wait_count + 1
                     upsert_call_state(CallSid, "processing", language, metadata)
                     update_phase(PHASE_TTS_READY)
@@ -1571,7 +1580,7 @@ def twilio_webhook(
                         step_repair[step] = repair_count
                         metadata["step_repair_count"] = step_repair
                         upsert_call_state(CallSid, step, language, metadata)
-                        max_repairs = int(get_setting("ivr_repair_max_retries", "3"))
+                        max_repairs = _safe_int_setting("ivr_repair_max_retries", 3)
                         # Always allow at least two prompt repeats before transferring/hanging up.
                         max_repairs = max(2, max_repairs)
                         if repair_count >= max_repairs:
