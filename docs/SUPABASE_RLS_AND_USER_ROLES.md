@@ -23,7 +23,8 @@ When the backend connects with the **lb_app** role (via `APP_DATABASE_URL`), Row
 
 ### Tables with RLS (Phase 1)
 
-- **appointments** — RLS enabled with lb_app policies above. Other tables are not yet restricted by RLS for lb_app; the app still enforces access in code.
+- **appointments** — RLS enabled with lb_app policies above (session variables).
+- **services** — Supabase migrations added RLS policies for the **`authenticated`** role only. When the backend uses **`lb_app`** (`APP_DATABASE_URL`), those policies do not apply, so **no rows were visible** until migration `20260324153000_rls_lb_app_services.sql` added `lb_app` SELECT/INSERT/UPDATE/DELETE policies. The app still restricts service management to admins in route code.
 
 ---
 
@@ -54,6 +55,9 @@ The `users` table defines roles used by the app and by RLS session variables:
 ---
 
 ## RLS troubleshooting
+
+**Symptom: Services page / kiosk / IVR shows no services, or `GET /api/services` returns `[]`, while DB has rows.**  
+If `APP_DATABASE_URL` is set, the API uses role `lb_app`. RLS on `services` must include policies **TO lb_app** (see migration `20260324153000_rls_lb_app_services.sql`). Apply pending Supabase migrations on the deploy pipeline or run `deployment/scripts/run_supabase_migrations.sh` with `DATABASE_URL` set.
 
 If the app or IVR cannot access appointments when using `APP_DATABASE_URL`:
 

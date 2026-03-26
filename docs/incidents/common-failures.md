@@ -108,9 +108,9 @@ sudo du -sh /var/lib/docker 2>/dev/null
 ```
 
 **Prevention (before next deploy):**
-1. **Pre-deploy cleanup** — The Jenkins pipeline runs a “Ensure disk headroom” stage that prunes unused containerd and Docker images on the server *before* applying manifests and pulling new images. That keeps headroom so the deploy doesn’t tip the node over the eviction threshold.
-2. **Daily cleanup** — On the server, ensure a daily cron runs (e.g. `deployment/scripts/setup_log_rotation.sh` creates `/etc/cron.daily/disk-cleanup`). Run manually if needed: `sudo /etc/cron.daily/disk-cleanup`.
-3. **When already in trouble** — Scale app deployments to 0 to stop the create/evict loop, free disk (prune containerd/Docker, clean logs), then confirm `DiskPressure: False` before scaling back to 1.
+1. **Pre-deploy cleanup** — The Jenkins pipeline runs a “Ensure disk headroom” stage that prunes unused containerd, **host** Docker (including build cache), and **Jenkins DinD** (`docker exec jenkins-docker …`) before applying manifests. Inner DinD can hold **10–20GB+** of pipeline build cache that host-only prune never sees (see `docs/runbooks/disk-pressure-docker-cleanup.md` §6).
+2. **Daily cleanup** — On the server, ensure a daily cron runs (e.g. `deployment/scripts/setup_log_rotation.sh` creates `/etc/cron.daily/disk-cleanup`, including DinD prune). Run manually if needed: `sudo /etc/cron.daily/disk-cleanup`.
+3. **When already in trouble** — Scale app deployments to 0 to stop the create/evict loop, free disk (prune containerd/Docker **and** `jenkins-docker` if present, clean logs), then confirm `DiskPressure: False` before scaling back to 1. If `df` is healthy but `DiskPressure` stays True, **`sudo systemctl restart k3s`** may be needed so the kubelet clears the condition.
 
 **Immediate recovery (on server):**
 ```bash

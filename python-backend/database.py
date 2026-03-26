@@ -726,6 +726,7 @@ def seed_data():
         ('ivr_filler_phrases', '["One moment...", "Let me check that for you...", "Got it, one second...", "Understood, just a moment.", "Checking our system, one second please."]', 'JSON list of filler phrases'),
         ('ivr_thinking_sound_url', 'https://twilio.kozytherocket.space/audio/thinking.mp3', 'URL for background thinking sound'),
         ('ivr_processing_timeout', '10', 'Max seconds to wait for AI response before fallback'),
+        ('ivr_processing_play_loop', '1', 'How many times to loop thinking audio during async processing masking (capped in code)'),
         ('ivr_speech_timeout', 'auto', 'Twilio speechTimeout: auto or seconds (e.g. 3)'),
         ('ivr_repair_max_retries', '2', 'Max timeouts before offering transfer'),
         ('ivr_transfer_number', '', 'E.164 number for representative transfer (Dial)'),

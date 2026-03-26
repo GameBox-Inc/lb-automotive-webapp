@@ -94,6 +94,10 @@ docker system prune -af --filter "until=168h" 2>/dev/null || true
 # Clean up k3s cached images
 k3s crictl rmi --prune 2>/dev/null || true
 
+# Jenkins DinD: inner Docker holds pipeline build cache; host prune does not touch it.
+docker exec jenkins-docker docker builder prune -f --filter "until=168h" 2>/dev/null || true
+docker exec jenkins-docker docker image prune -a -f --filter "until=168h" 2>/dev/null || true
+
 # Log disk usage
 echo "$(date): Disk usage after cleanup" >> /var/log/disk-cleanup.log
 df -h / >> /var/log/disk-cleanup.log

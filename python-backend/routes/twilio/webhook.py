@@ -229,7 +229,12 @@ def smooth_hangup(response: VoiceResponse, voice: str, language: str, message: O
     response.hangup()
 
 
-def _apply_processing_latency_mask(response: VoiceResponse, voice: str) -> None:
+def _apply_processing_latency_mask(
+    response: VoiceResponse,
+    voice: str,
+    *,
+    include_thinking_audio: bool = True,
+) -> None:
     """
     While waiting for async LLM (Redis), play filler + optional thinking audio.
     If ivr_thinking_sound_url is set but ivr_filler_mode is voice_only, upgrade to hybrid
@@ -237,14 +242,23 @@ def _apply_processing_latency_mask(response: VoiceResponse, voice: str) -> None:
     """
     filler_mode = get_setting("ivr_filler_mode", "voice_only").lower()
     thinking_url = (get_setting("ivr_thinking_sound_url", "") or "").strip() or None
+
+    if not include_thinking_audio:
+        thinking_url = None
+        # Ensure callers still hear something even when thinking audio is suppressed.
+        if filler_mode == "sound_only":
+            filler_mode = "voice_only"
+
     if thinking_url and filler_mode == "voice_only":
         filler_mode = "hybrid"
     phrases = parse_filler_phrases_setting(get_setting("ivr_filler_phrases", ""))
     filler_phrase = get_random_filler(phrases) if phrases else get_random_filler()
     try:
-        play_loop = min(9, max(1, int(get_setting("ivr_processing_play_loop", "5") or 5)))
+        # Clamp thinking-clip loops to reduce "dead noise".
+        play_loop = int(get_setting("ivr_processing_play_loop", "1") or 1)
+        play_loop = max(1, min(2, play_loop))
     except (TypeError, ValueError):
-        play_loop = 5
+        play_loop = 1
     apply_latency_mask(response, voice, filler_mode, thinking_url, filler_phrase, play_loop=play_loop)
 
 
@@ -253,6 +267,9 @@ def _ivr_pause(response: VoiceResponse, seconds: Optional[float] = None) -> None
     try:
         duration = float(seconds) if seconds is not None else float(get_setting("ivr_pause_seconds", "0.5"))
         if duration > 0:
+            # Twilio <Pause> length is integer seconds; avoid turning 0.5s into a full second of dead air.
+            if duration < 1.0:
+                return
             length = int(round(duration))
             if length <= 0:
                 length = 1
@@ -389,7 +406,7 @@ DECISION_TREE = {
         "gather_config": {
             "num_digits": 1,
             "timeout": 8,
-            "bargein": False,
+            "bargein": True,
             "speech_timeout": "auto",
             "input": "speech dtmf"
         },
@@ -1472,7 +1489,11 @@ def twilio_webhook(
                     metadata["wait_count"] = wait_count + 1
                     upsert_call_state(CallSid, "processing", language, metadata)
                     update_phase(PHASE_TTS_READY)
-                    _apply_processing_latency_mask(response, voice)
+                    _apply_processing_latency_mask(
+                        response,
+                        voice,
+                        include_thinking_audio=(wait_count == 0),
+                    )
                     response.redirect(f"{WEBHOOK_BASE_URL}?step=processing")
                     logger.info("IVR response", extra={**get_trace_context(), "step": step, "intent": "processing_poll"})
                     return Response(content=str(response), media_type="application/xml")
@@ -1551,7 +1572,9 @@ def twilio_webhook(
                         metadata["step_repair_count"] = step_repair
                         upsert_call_state(CallSid, step, language, metadata)
                         max_repairs = int(get_setting("ivr_repair_max_retries", "3"))
-                        if repair_count > max_repairs:
+                        # Always allow at least two prompt repeats before transferring/hanging up.
+                        max_repairs = max(2, max_repairs)
+                        if repair_count >= max_repairs:
                             response.say(
                             "I’m having trouble hearing you. Let me connect you to someone who can help.",
                             voice=voice,
@@ -1610,7 +1633,9 @@ def twilio_webhook(
                 )
                 if "speech" in gc.get("input", ""):
                     if step == "start":
-                        gather_kw["barge_in"] = get_setting("ivr_start_bargein", "false").lower() == "true"
+                        # Default to decision-tree behavior so `start` remains interruptible unless explicitly disabled.
+                        default_barge = "true" if gc.get("bargein", True) else "false"
+                        gather_kw["barge_in"] = get_setting("ivr_start_bargein", default_barge).lower() == "true"
                     else:
                         gather_kw["barge_in"] = gc.get("bargein", True)
                     gather_kw["speech_timeout"] = gc.get("speech_timeout") or get_setting("ivr_speech_timeout", "auto")

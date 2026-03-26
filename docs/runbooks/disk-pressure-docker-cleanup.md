@@ -102,6 +102,14 @@ sleep 30
 sudo k3s kubectl describe node <node-name> | grep -A1 "DiskPressure"
 ```
 
+If **`df -h /` shows plenty of free space** but **`DiskPressure` stays `True`** (condition heartbeat stops updating), the kubelet may be stuck. **Restart K3s** so it republishes node conditions:
+
+```bash
+sudo systemctl restart k3s
+# Brief API blip on single-node clusters; pods should reschedule.
+sudo k3s kubectl describe node <node-name> | grep -A1 "DiskPressure"
+```
+
 When **DiskPressure** is **False**:
 
 ```bash
@@ -113,10 +121,30 @@ sudo k3s kubectl get pods -n lb-automotive -o wide
 
 ---
 
-## 6. Prevent Recurrence
+## 6. Jenkins Docker-in-Docker (`jenkins-docker`)
 
-- **Jenkins pipeline:** "Ensure disk headroom" runs before deploy (prune containerd + Docker with 7-day filter). It does **not** run `docker builder prune`; add that to the pipeline or a cron on the server if build cache grows.
-- **Cron on server:** Run daily cleanup (e.g. `/etc/cron.daily/disk-cleanup` from `deployment/scripts/setup_log_rotation.sh`). Optionally add `docker builder prune -f --filter "until=168h"` to that script to clear build cache older than 7 days.
+If **`/var/lib/docker` is huge** but **`docker system df` on the host** shows modest usage, check the **inner** daemon used for pipeline builds:
+
+```bash
+sudo docker exec jenkins-docker docker system df
+sudo du -sh /var/lib/docker/volumes/* 2>/dev/null | sort -h | tail -5
+```
+
+**Fix (same order as host):** prune build cache inside DinD, then unused images:
+
+```bash
+sudo docker exec jenkins-docker docker builder prune -a -f
+sudo docker exec jenkins-docker docker image prune -a -f --filter "until=168h"
+```
+
+Host-level `docker builder prune` **does not** clean this; omitting this step allowed **~16GB+** build cache and dozens of stale `lb-automotive-backend:*` image tags on one production node (Mar 2026).
+
+---
+
+## 7. Prevent Recurrence
+
+- **Jenkins pipeline:** `Ensure disk headroom` (see `Jenkinsfile`) prunes K3s containerd, **host** Docker (builder + 7-day system prune), **`jenkins-docker` inner** builder cache and old images, then deletes Failed pods.
+- **Cron on server:** `/etc/cron.daily/disk-cleanup` from `deployment/scripts/setup_log_rotation.sh` includes host builder prune, Docker/K3s prune, and **DinD** builder/image prune (`until=168h`). Re-run the setup script on the server if your live cron predates that block.
 - **Eviction threshold:** If the node uses a very strict threshold (e.g. 20% free), consider relaxing it when reinstalling K3s (see `deployment/k8s/install-k3s-minimal.sh`) or free more space before deploy.
 
 ---

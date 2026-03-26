@@ -28,6 +28,13 @@ def _mock_get_setting(key, default=None):
         "ivr_speech_timeout": "auto",
         "ivr_transfer_number": "",
         "ivr_transfer_timeout": "30",
+        # Processing latency masking defaults
+        "ivr_thinking_sound_url": "https://example.com/thinking.mp3",
+        "ivr_filler_mode": "hybrid",
+        "ivr_filler_phrases": '["One moment..."]',
+        "ivr_processing_play_loop": "5",
+        "ivr_processing_timeout": "10",
+        "ivr_start_bargein": "true",
     }
     return defaults.get(key, default)
 
@@ -44,12 +51,14 @@ def _call_state(language="en", current_step="start", metadata=None):
 
 
 def _post_webhook(step="start", digits=None, speech_result=None, call_sid="CAtest123", from_phone="+15551234567"):
-    data = {"CallSid": call_sid, "From": from_phone, "step": step}
+    # `step` is a query parameter in the FastAPI handler (not a Form field).
+    data = {"CallSid": call_sid, "From": from_phone}
+    params = {"step": step}
     if digits is not None:
         data["Digits"] = digits
     if speech_result is not None:
         data["SpeechResult"] = speech_result
-    return client.post("/api/twilio/webhook", data=data)
+    return client.post("/api/twilio/webhook", params=params, data=data)
 
 
 def test_webhook_language_choice_1_redirects_to_start():
@@ -137,7 +146,7 @@ def test_webhook_transfer_with_number_includes_dial():
                             r = _post_webhook(step="transfer_representative")
     assert r.status_code == 200
     # When step=transfer_representative is received: Dial or unable message; if step defaults to start, we get Gather
-    assert "<Dial>" in r.text or "unable" in r.text.lower() or "error" in r.text.lower() or ("<Gather" in r.text and "step=start" in r.text)
+    assert "<Dial" in r.text or "unable" in r.text.lower() or "error" in r.text.lower() or ("<Gather" in r.text and "step=start" in r.text)
 
 
 def test_webhook_transfer_no_answer_returns_say_and_hangup():
@@ -159,6 +168,69 @@ def test_webhook_start_no_input_first_time_re_gathers():
                 r = _post_webhook(step="start")  # no Digits, no SpeechResult
     assert r.status_code == 200
     assert "step=start" in r.text or "<Gather" in r.text
+
+
+def test_webhook_start_bargein_enabled_in_gather():
+    """Start gather should be interruptible (bargeIn=true) for voice + DTMF input."""
+    with patch("routes.twilio.webhook.get_call_state", return_value=_call_state()):
+        with patch("routes.twilio.webhook.get_setting", side_effect=_mock_get_setting):
+            with patch("routes.twilio.webhook.upsert_call_state", MagicMock()):
+                r = _post_webhook(step="start")
+    assert r.status_code == 200
+    assert "bargeIn=\"true\"" in r.text
+    assert "speech dtmf" in r.text
+
+
+def test_webhook_no_input_repeats_then_redirects_to_transfer():
+    """No-input on gather should repeat before attempting transfer (2 repeats -> redirect on third timeout)."""
+    # Force the repeat/transfer threshold by lowering max retries.
+    def _mock_setting(key, default=None):
+        if key == "ivr_repair_max_retries":
+            return "2"
+        return _mock_get_setting(key, default)
+
+    # Simulate we are already past the "first visits" and about to hit the transfer condition.
+    state = _call_state(
+        metadata={
+            "from_phone": "+15551234567",
+            "start_gather_played": True,
+            "first_gather_played_steps": ["start"],
+            "step_repair_count": {"start": 1},  # next repair_count becomes 2
+        }
+    )
+    with patch("routes.twilio.webhook.get_call_state", return_value=state):
+        with patch("routes.twilio.webhook.get_setting", side_effect=_mock_setting):
+            with patch("routes.twilio.webhook.upsert_call_state", MagicMock()):
+                with patch("routes.twilio.webhook.update_decision_path", MagicMock()):
+                    r = _post_webhook(step="start")
+    assert r.status_code == 200
+    assert "transfer_representative" in r.text
+
+
+def test_webhook_processing_thinking_play_only_on_first_poll():
+    """During async processing polling, thinking clip should be suppressed after the first poll."""
+    state_wait0 = _call_state(current_step="processing", metadata={"from_phone": "+15551234567", "wait_count": 0})
+    with patch("routes.twilio.webhook.get_call_state", return_value=state_wait0):
+        with patch("routes.twilio.webhook.get_setting", side_effect=_mock_get_setting):
+            with patch("routes.twilio.webhook.upsert_call_state", MagicMock()):
+                with patch("routes.twilio.webhook.redis_client") as m_redis:
+                    m_redis.get.return_value = None
+                    m_redis.delete = MagicMock()
+                    r0 = _post_webhook(step="processing")
+    assert r0.status_code == 200
+    assert "<Play" in r0.text  # thinking audio on first poll
+
+    state_wait1 = _call_state(current_step="processing", metadata={"from_phone": "+15551234567", "wait_count": 1})
+    with patch("routes.twilio.webhook.get_call_state", return_value=state_wait1):
+        with patch("routes.twilio.webhook.get_setting", side_effect=_mock_get_setting):
+            with patch("routes.twilio.webhook.upsert_call_state", MagicMock()):
+                with patch("routes.twilio.webhook.redis_client") as m_redis:
+                    m_redis.get.return_value = None
+                    m_redis.delete = MagicMock()
+                    r1 = _post_webhook(step="processing")
+    assert r1.status_code == 200
+    assert "<Say" in r1.text
+    assert "<Play" not in r1.text
 
 
 def test_webhook_processing_with_redis_result_redirects():
