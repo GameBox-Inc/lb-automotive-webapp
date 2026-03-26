@@ -2,6 +2,7 @@
 import os
 import uuid
 import json
+import logging
 from datetime import datetime
 from typing import List, Optional, Dict, Any
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -10,6 +11,17 @@ from auth import get_current_active_user
 from database import DatabaseContextManager, get_db_connection, fmt_query
 
 router = APIRouter(prefix="/api/cases", tags=["cases"])
+logger = logging.getLogger(__name__)
+
+
+def _next_case_number(max_num: Any) -> int:
+    """Postgres MAX() may return Decimal; case_number must be a plain int for INTEGER columns."""
+    if max_num is None:
+        return 1001
+    try:
+        return int(max_num) + 1
+    except (TypeError, ValueError):
+        return 1001
 
 
 def _case_metadata_from_db(raw: Any) -> Dict[str, Any]:
@@ -64,44 +76,71 @@ def create_case(
     current_user: Dict[str, Any] = Depends(get_current_active_user)
 ):
     """Create a new repair case from an appointment."""
-    with DatabaseContextManager() as conn:
-        cursor = conn.cursor()
-        cursor.execute(fmt_query("SELECT * FROM appointments WHERE id = ?"), (case_data.appointment_id,))
-        appointment = cursor.fetchone()
-        if not appointment:
-            raise HTTPException(status_code=404, detail="Appointment not found")
-        cursor.execute(fmt_query("SELECT * FROM cases WHERE appointment_id = ?"), (case_data.appointment_id,))
-        existing_case = cursor.fetchone()
-        if existing_case:
-            raise HTTPException(status_code=400, detail="Case already exists for this appointment")
-        case_id = str(uuid.uuid4())
-        cursor.execute(fmt_query("SELECT MAX(case_number) AS max_num FROM cases"))
-        row = cursor.fetchone()
-        max_num = row.get("max_num") if row else None
-        case_number = (max_num or 1000) + 1
-        metadata_json = json.dumps(case_data.metadata or {})
-        cursor.execute(fmt_query("""
-            INSERT INTO cases (id, case_number, appointment_id, status, metadata)
-            VALUES (?, ?, ?, 'open', ?)
-        """), (case_id, case_number, case_data.appointment_id, metadata_json))
-        staff_id = _get_staff_id_for_audit(current_user, conn)
-        hist_id = str(uuid.uuid4())
-        cursor.execute(fmt_query("""
-            INSERT INTO case_status_history (id, case_id, old_status, new_status, changed_by)
-            VALUES (?, ?, NULL, 'open', ?)
-        """), (hist_id, case_id, staff_id))
-        cursor.execute(fmt_query("SELECT * FROM cases WHERE id = ?"), (case_id,))
-        row = cursor.fetchone()
-    return Case(
-        id=_str_id(row["id"]),
-        case_number=row["case_number"],
-        appointment_id=_str_id(row["appointment_id"]),
-        status=row["status"],
-        customer_signature=row.get("customer_signature"),
-        metadata=_case_metadata_from_db(row.get("metadata")),
-        created_at=row["created_at"],
-        closed_at=row["closed_at"]
-    )
+    try:
+        with DatabaseContextManager() as conn:
+            cursor = conn.cursor()
+            cursor.execute(fmt_query("SELECT * FROM appointments WHERE id = ?"), (case_data.appointment_id,))
+            appointment = cursor.fetchone()
+            if not appointment:
+                raise HTTPException(status_code=404, detail="Appointment not found")
+            cursor.execute(fmt_query("SELECT * FROM cases WHERE appointment_id = ?"), (case_data.appointment_id,))
+            existing_case = cursor.fetchone()
+            if existing_case:
+                raise HTTPException(status_code=400, detail="Case already exists for this appointment")
+            case_id = str(uuid.uuid4())
+            cursor.execute(fmt_query("SELECT MAX(case_number) AS max_num FROM cases"))
+            row = cursor.fetchone()
+            max_num = row.get("max_num") if row else None
+            case_number = _next_case_number(max_num)
+            metadata_json = json.dumps(case_data.metadata or {})
+            cursor.execute(fmt_query("""
+                INSERT INTO cases (id, case_number, appointment_id, status, metadata)
+                VALUES (?, ?, ?, 'open', ?)
+            """), (case_id, case_number, case_data.appointment_id, metadata_json))
+            staff_id = _get_staff_id_for_audit(current_user, conn)
+            hist_id = str(uuid.uuid4())
+            cursor.execute(fmt_query("""
+                INSERT INTO case_status_history (id, case_id, old_status, new_status, changed_by)
+                VALUES (?, ?, NULL, 'open', ?)
+            """), (hist_id, case_id, staff_id))
+            cursor.execute(fmt_query("SELECT * FROM cases WHERE id = ?"), (case_id,))
+            row = cursor.fetchone()
+        return Case(
+            id=_str_id(row["id"]),
+            case_number=row["case_number"],
+            appointment_id=_str_id(row["appointment_id"]),
+            status=row["status"],
+            customer_signature=row.get("customer_signature"),
+            metadata=_case_metadata_from_db(row.get("metadata")),
+            created_at=row["created_at"],
+            closed_at=row["closed_at"]
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception("create_case failed")
+        err = str(e).lower()
+        if "row-level security" in err or "insufficient_privilege" in err or "permission denied for table" in err:
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail=(
+                    "Database denied case creation (row-level security). "
+                    "Apply migration 20260327140000_cases_schema_and_rls_lb_app.sql on Postgres, "
+                    "or confirm APP_DATABASE_URL uses role lb_app with policies deployed."
+                ),
+            ) from None
+        if "undefinedtable" in err.replace(" ", "") or "does not exist" in err:
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail=(
+                    "Cases tables are missing on the database. "
+                    "Run Supabase migrations (cases schema) or restart backend so init_db creates them."
+                ),
+            ) from None
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Case creation failed. Check server logs.",
+        ) from None
 
 @router.get("", response_model=List[Case])
 def list_cases(

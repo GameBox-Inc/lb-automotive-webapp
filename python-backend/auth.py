@@ -1,7 +1,7 @@
 import os
 import uuid
 from datetime import datetime, timedelta
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, Union
 from jose import JWTError, jwt
 from passlib.context import CryptContext
 from fastapi import Depends, HTTPException, status
@@ -25,6 +25,19 @@ ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "30")
 # but all new/changed passwords will be hashed with argon2.
 pwd_context = CryptContext(schemes=["argon2", "sha256_crypt"], deprecated=["sha256_crypt"])
 security = HTTPBearer()
+
+
+def _coerce_admin_flag(v: Union[bool, int, str, None]) -> bool:
+    """Normalize is_admin from SQLite/Postgres (bool, 0/1, or legacy strings)."""
+    if v is None:
+        return False
+    if isinstance(v, bool):
+        return v
+    if isinstance(v, (int, float)):
+        return int(v) != 0
+    if isinstance(v, str):
+        return v.strip().lower() in ("1", "true", "t", "yes")
+    return bool(v)
 
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
@@ -65,7 +78,7 @@ def get_user_by_username(username: str) -> Optional[Dict[str, Any]]:
             "username": row["username"],
             "email": row["email"],
             "hashed_password": row["hashed_password"],
-            "is_admin": bool(row["is_admin"]),
+            "is_admin": _coerce_admin_flag(row["is_admin"]),
             "staff_id": row["staff_id"],
             "created_at": row["created_at"]
         }
@@ -87,7 +100,7 @@ def get_user_by_id(user_id: str) -> Optional[Dict[str, Any]]:
             "id": row["id"],
             "username": row["username"],
             "email": row["email"],
-            "is_admin": bool(row["is_admin"]),
+            "is_admin": _coerce_admin_flag(row["is_admin"]),
             "staff_id": row["staff_id"],
             "created_at": row["created_at"]
         }
