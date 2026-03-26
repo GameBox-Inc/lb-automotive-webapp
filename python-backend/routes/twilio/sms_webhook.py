@@ -6,7 +6,7 @@ from fastapi.responses import Response
 from twilio.twiml.messaging_response import MessagingResponse
 
 from database import DatabaseContextManager, fmt_query
-from routes.twilio.webhook import validate_twilio_request
+from routes.twilio.webhook import validate_twilio_request, ivr_service_context
 from security import PHONE_PATTERN, redis_client
 from phone_normalization import phone_digit_variants
 
@@ -70,7 +70,7 @@ def _update_appointment_status(appointment_id: str, status: str) -> None:
 
 @router.post(
     "/sms-webhook",
-    dependencies=[Depends(validate_twilio_request)],
+    dependencies=[Depends(validate_twilio_request), Depends(ivr_service_context)],
 )
 async def twilio_sms_webhook(
     request: Request,

@@ -25,6 +25,7 @@ When the backend connects with the **lb_app** role (via `APP_DATABASE_URL`), Row
 
 - **appointments** — RLS enabled with lb_app policies above (session variables).
 - **services** — Supabase migrations added RLS policies for the **`authenticated`** role only. When the backend uses **`lb_app`** (`APP_DATABASE_URL`), those policies do not apply, so **no rows were visible** until migration `20260324153000_rls_lb_app_services.sql` added `lb_app` SELECT/INSERT/UPDATE/DELETE policies. The app still restricts service management to admins in route code.
+- **call_states** / **ivr_logs** — Original policies were **`TO authenticated` only**. With `lb_app` and RLS enabled, the IVR could not read or write conversation state or logs (generic “error” prompt). Migration `20260327120000_rls_lb_app_call_states_ivr_logs.sql` adds **`TO lb_app`** `FOR ALL` policies.
 
 ---
 
@@ -58,6 +59,9 @@ The `users` table defines roles used by the app and by RLS session variables:
 
 **Symptom: Services page / kiosk / IVR shows no services, or `GET /api/services` returns `[]`, while DB has rows.**  
 If `APP_DATABASE_URL` is set, the API uses role `lb_app`. RLS on `services` must include policies **TO lb_app** (see migration `20260324153000_rls_lb_app_services.sql`). Apply pending Supabase migrations on the deploy pipeline or run `deployment/scripts/run_supabase_migrations.sh` with `DATABASE_URL` set.
+
+**Symptom: IVR says an error occurred (generic handler), or logs show RLS errors on `call_states` / `ivr_logs`.**  
+Apply migration `20260327120000_rls_lb_app_call_states_ivr_logs.sql`. The SMS webhook also uses `ivr_service_context` so appointment lookups/updates run with `app.service_request = 'true'` when using `lb_app`.
 
 If the app or IVR cannot access appointments when using `APP_DATABASE_URL`:
 
