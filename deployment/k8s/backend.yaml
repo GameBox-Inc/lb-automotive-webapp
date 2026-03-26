@@ -11,6 +11,13 @@ metadata:
     app: backend
 spec:
   replicas: 3
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      # Avoid temporarily creating an extra pod during rollout (maxSurge=0).
+      # This prevents FailedScheduling when CPU is tight on the single-node cluster.
+      maxSurge: 0
+      maxUnavailable: 1
   revisionHistoryLimit: 3
   progressDeadlineSeconds: 600
   selector:
