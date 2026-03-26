@@ -125,21 +125,21 @@ export function Services() {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-gray-100 p-6">
+      <div className="min-h-screen bg-gray-100 dark:bg-gray-900 p-6">
         <LoadingSpinner size="lg" className="mx-auto" />
       </div>
     )
   }
 
   return (
-    <div className="min-h-screen bg-gray-100 p-6">
+    <div className="min-h-screen bg-gray-100 dark:bg-gray-900 p-6">
       <div className="mb-6 flex justify-between items-center">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">Services Catalog</h1>
-          <p className="text-gray-500 text-sm mt-1">
+          <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Services Catalog</h1>
+          <p className="text-gray-500 dark:text-gray-300 text-sm mt-1">
             {isAdmin ? 'Manage and view available services' : 'View available services'}
           </p>
-          <p className="text-gray-400 text-xs mt-0.5">
+          <p className="text-gray-400 dark:text-gray-400 text-xs mt-0.5">
             Used in Appointments, IVR, and Kiosk.
           </p>
         </div>
@@ -160,7 +160,7 @@ export function Services() {
 
         return (
           <div key={category} className="mb-8">
-            <h2 className="text-xl font-semibold text-gray-800 mb-4 capitalize flex items-center gap-2">
+            <h2 className="text-xl font-semibold text-gray-800 dark:text-gray-100 mb-4 capitalize flex items-center gap-2">
               <span className="w-2 h-8 bg-red-600 rounded-full inline-block"></span>
               {category} Services
             </h2>
@@ -168,10 +168,10 @@ export function Services() {
               {categoryServices.map(service => (
                 <div
                   key={service.id}
-                  className="bg-white rounded-xl shadow-md p-6 hover:shadow-lg transition-all duration-200 border border-gray-100 relative group"
+                  className="bg-white dark:bg-gray-800 rounded-xl shadow-md p-6 hover:shadow-lg transition-all duration-200 border border-gray-100 dark:border-gray-700 relative group"
                 >
                   <div className="flex items-start justify-between mb-4">
-                    <h3 className="text-lg font-bold text-gray-900 pr-8">{service.name}</h3>
+                    <h3 className="text-lg font-bold text-gray-900 dark:text-white pr-8">{service.name}</h3>
                     {service.is_emergency && (
                       <span className="px-2 py-1 bg-red-100 text-red-800 text-xs font-bold rounded-full flex items-center gap-1 absolute top-6 right-6">
                         <AlertCircle className="h-3 w-3" />
@@ -179,23 +179,23 @@ export function Services() {
                       </span>
                     )}
                   </div>
-                  <p className="text-gray-600 mb-6 text-sm leading-relaxed min-h-[40px]">{service.description}</p>
+                  <p className="text-gray-600 dark:text-gray-300 mb-6 text-sm leading-relaxed min-h-[40px]">{service.description}</p>
 
                   {(service as Service & { updated_at?: string }).updated_at && (
-                    <p className="text-gray-400 text-xs mb-2">
+                    <p className="text-gray-400 dark:text-gray-400 text-xs mb-2">
                       Updated {format(new Date((service as Service & { updated_at?: string }).updated_at!), 'MMM d, yyyy')}
                     </p>
                   )}
 
-                  <div className="flex items-center justify-between pt-4 border-t border-gray-50">
-                    <div className="flex items-center gap-4 text-sm text-gray-500">
-                      <div className="flex items-center gap-1.5 bg-gray-50 px-2 py-1 rounded">
-                        <Clock className="h-4 w-4 text-gray-400" />
+                  <div className="flex items-center justify-between pt-4 border-t border-gray-50 dark:border-gray-700/60">
+                    <div className="flex items-center gap-4 text-sm text-gray-500 dark:text-gray-200">
+                      <div className="flex items-center gap-1.5 bg-gray-50 dark:bg-gray-900/40 px-2 py-1 rounded">
+                        <Clock className="h-4 w-4 text-gray-400 dark:text-gray-300" />
                         <span className="font-medium">{service.duration}m</span>
                       </div>
-                      <div className="flex items-center gap-1.5 bg-gray-50 px-2 py-1 rounded">
-                        <DollarSign className="h-4 w-4 text-green-600" />
-                        <span className="font-bold text-gray-900 dark:text-white">{formatCurrency(service.price)}</span>
+                      <div className="flex items-center gap-1.5 bg-gray-50 dark:bg-gray-900/40 px-2 py-1 rounded">
+                        <DollarSign className="h-4 w-4 text-green-600 dark:text-green-400" />
+                        <span className="font-bold text-gray-900 dark:text-gray-100">{formatCurrency(service.price)}</span>
                       </div>
                     </div>
 
