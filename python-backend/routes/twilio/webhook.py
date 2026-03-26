@@ -31,6 +31,7 @@ from observability.tracing import set_twilio_context, update_phase, get_trace_co
 from observability.tracing import PHASE_WEBHOOK_RECEIVED, PHASE_STT_STARTED, PHASE_LLM_STARTED, PHASE_LLM_COMPLETE, PHASE_TTS_READY
 from observability.monitoring import track_ivr_webhook_inflight, ivr_calls_total
 from services.tts import speak_or_play
+from phone_normalization import phone_digit_variants, normalize_phone_for_storage
 
 
 # Security Configuration
@@ -176,9 +177,22 @@ def check_rate_limit(phone_number: str) -> bool:
     Returns True if allowed, False if blocked.
     """
     try:
+        variants = phone_digit_variants(phone_number)
+        if not variants:
+            return True
+        placeholders = ", ".join(["?"] * len(variants))
         with DatabaseContextManager(read_only=True) as conn:
             cursor = conn.cursor()
-            cursor.execute(fmt_query("SELECT COUNT(*) as count FROM appointments WHERE phone_number = ? AND status = 'pending'"), (phone_number,))
+            cursor.execute(
+                fmt_query(
+                    f"""
+                    SELECT COUNT(*) as count FROM appointments
+                    WHERE regexp_replace(coalesce(phone_number, ''), '[^0-9]', '', 'g') IN ({placeholders})
+                    AND status = 'pending'
+                    """
+                ),
+                tuple(variants),
+            )
             row = cursor.fetchone()
         
         if row and row['count'] >= MAX_PENDING_APPOINTMENTS:
@@ -187,6 +201,39 @@ def check_rate_limit(phone_number: str) -> bool:
     except Exception as e:
         logger.error(f"Rate limit check failed: {e}")
         return True # Fail open on DB error to avoid service denial
+
+
+def _try_prefill_customer_name_from_caller(metadata: dict) -> None:
+    """If CRM has this caller's phone, set metadata customer_name for booking (Twilio E.164 vs digit storage)."""
+    if metadata.get("caller_customer_lookup_done"):
+        return
+    metadata["caller_customer_lookup_done"] = True
+    if metadata.get("customer_name"):
+        return
+    from_phone = (metadata.get("from_phone") or "").strip()
+    variants = phone_digit_variants(from_phone)
+    if not variants:
+        return
+    try:
+        placeholders = ", ".join(["?"] * len(variants))
+        with DatabaseContextManager(read_only=True) as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                fmt_query(
+                    f"""
+                    SELECT name FROM customers
+                    WHERE regexp_replace(coalesce(phone, ''), '[^0-9]', '', 'g') IN ({placeholders})
+                    ORDER BY created_at DESC
+                    LIMIT 1
+                    """
+                ),
+                tuple(variants),
+            )
+            row = cursor.fetchone()
+        if row and row.get("name"):
+            metadata["customer_name"] = row["name"]
+    except Exception as e:
+        logger.warning("IVR caller customer lookup failed: %s", e)
 
 
 
@@ -706,21 +753,29 @@ def handle_check_status(user_input, language, CallSid, metadata, response):
     try:
         with DatabaseContextManager(read_only=True) as conn:
             cursor = conn.cursor()
-            # Upcoming: appointment_time >= today, status pending/confirmed; match phone with/without +1
+            # Match stored phone regardless of +1 / formatting (digit-normalized IN)
             today = datetime.now().strftime("%Y-%m-%d")
             today_ts = datetime.now().strftime("%Y-%m-%dT%H:%M:%S")
-            alt_phone = from_phone.lstrip("+1") if from_phone.startswith("+1") else ("+1" + from_phone if len(from_phone) == 10 else from_phone)
-            digits_only = from_phone.replace(" ", "").replace("-", "").lstrip("+")
-            cursor.execute(fmt_query("""
+            variants = phone_digit_variants(from_phone)
+            if not variants:
+                row = None
+            else:
+                ph = ", ".join(["?"] * len(variants))
+                cursor.execute(
+                    fmt_query(
+                        f"""
                 SELECT id, appointment_time, status, service_type, start_time
                 FROM appointments
-                WHERE (phone_number = ? OR phone_number = ? OR REPLACE(REPLACE(REPLACE(phone_number, ' ', ''), '-', ''), '+', '') = ?)
+                WHERE regexp_replace(coalesce(phone_number, ''), '[^0-9]', '', 'g') IN ({ph})
                 AND status IN ('pending', 'confirmed')
                 AND (appointment_time >= ? OR start_time >= ?)
                 ORDER BY COALESCE(start_time, appointment_time) ASC
                 LIMIT 1
-            """), (from_phone, alt_phone, digits_only, today, today_ts))
-            row = cursor.fetchone()
+                """
+                    ),
+                    tuple(variants) + (today, today_ts),
+                )
+                row = cursor.fetchone()
         if row:
             appt_time = row.get("appointment_time") or row.get("start_time") or ""
             status = (row.get("status") or "pending").lower()
@@ -1045,7 +1100,7 @@ def handle_booking(user_input, language, CallSid, metadata, response):
                 cursor.execute(fmt_query("""
                     INSERT INTO appointments (id, customer_name, phone_number, appointment_time, service_type, status, notes, start_time, end_time, service_id, source)
                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """), (aid, metadata.get("customer_name", "Voice Customer"), metadata.get("from_phone"), appt_time, svc.get("name", "General Service"), "pending", final_notes, start_ts, end_ts, service_id_val, "ivr"))
+                """), (aid, metadata.get("customer_name", "Voice Customer"), normalize_phone_for_storage(metadata.get("from_phone")), appt_time, svc.get("name", "General Service"), "pending", final_notes, start_ts, end_ts, service_id_val, "ivr"))
                 conn.commit()
 
             upsert_call_state(CallSid, "completed", language, metadata, aid)
@@ -1336,6 +1391,7 @@ def twilio_webhook(
         voice = _voice_for_language(language)  # Male only: Matthew (en), Miguel (es)
         metadata = call_state.get("metadata", {})
         metadata["from_phone"] = From
+        _try_prefill_customer_name_from_caller(metadata)
 
         # Dial no-answer: when transfer times out or is not answered, Twilio requests this step.
         if step == "transfer_no_answer":
