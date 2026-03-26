@@ -213,13 +213,13 @@ export default function CheckIn() {
     // Full-page spinner only for steps that do a single blocking action (e.g. phone lookup); not for time step
     const showFullPageSpinner = loading && step !== 'time'
     if (showFullPageSpinner) return (
-        <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="min-h-screen bg-gray-50 dark:bg-gray-900 flex items-center justify-center">
             <LoadingSpinner size="lg" />
         </div>
     )
 
     return (
-        <div className="min-h-screen bg-gray-50 flex flex-col items-center justify-center p-4 relative">
+        <div className="min-h-screen bg-gray-50 dark:bg-gray-900 flex flex-col items-center justify-center p-4 relative">
             {/* Exit Prompt Modal */}
             <Transition show={showExitPrompt}>
                 <Dialog open={showExitPrompt} onClose={() => setShowExitPrompt(false)} className="relative z-50">
@@ -228,14 +228,14 @@ export default function CheckIn() {
                     </TransitionChild>
                     <div className="fixed inset-0 flex items-center justify-center p-4">
                         <TransitionChild enter="ease-out duration-200" enterFrom="opacity-0 scale-95" enterTo="opacity-100 scale-100" leave="ease-in duration-150" leaveFrom="opacity-100 scale-100" leaveTo="opacity-0 scale-95">
-                            <DialogPanel className="bg-white rounded-lg p-8 max-w-md shadow-xl">
-                                <DialogTitle className="text-xl font-bold text-gray-900 mb-4">Exit Kiosk Mode?</DialogTitle>
-                                <p className="text-gray-600 mb-6">This will return to the admin dashboard.</p>
+                            <DialogPanel className="bg-white dark:bg-gray-800 rounded-lg p-8 max-w-md shadow-xl">
+                                <DialogTitle className="text-xl font-bold text-gray-900 dark:text-white mb-4">Exit Kiosk Mode?</DialogTitle>
+                                <p className="text-gray-600 dark:text-gray-300 mb-6">This will return to the admin dashboard.</p>
                                 <div className="flex gap-4">
                                     <button
                                         type="button"
                                         onClick={() => setShowExitPrompt(false)}
-                                        className="flex-1 px-4 py-2 border border-gray-300 rounded-md text-gray-700 hover:bg-gray-50"
+                                        className="flex-1 px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-md text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700"
                                     >
                                         Cancel
                                     </button>
@@ -253,7 +253,7 @@ export default function CheckIn() {
                 </Dialog>
             </Transition>
 
-            <div className="w-full max-w-lg bg-white rounded-2xl shadow-xl overflow-hidden">
+            <div className="w-full max-w-lg bg-white dark:bg-gray-800 rounded-2xl shadow-xl overflow-hidden">
                 <div
                     className="bg-lb-red-primary p-6 text-white text-center cursor-pointer select-none"
                     onClick={handleLogoClick}
@@ -266,8 +266,8 @@ export default function CheckIn() {
                     {step === 'phone' && (
                         <div className="space-y-6">
                             <div className="text-center">
-                                <h2 className="text-2xl font-semibold text-gray-900">Welcome!</h2>
-                                <p className="text-gray-500 mt-2">Please enter your phone number to begin</p>
+                                <h2 className="text-2xl font-semibold text-gray-900 dark:text-white">Welcome!</h2>
+                                <p className="text-gray-500 dark:text-gray-300 mt-2">Please enter your phone number to begin</p>
                             </div>
 
                             <form onSubmit={handlePhoneSubmit} className="space-y-6">
@@ -281,7 +281,7 @@ export default function CheckIn() {
                                             type="tel"
                                             id={`${baseId}-phone`}
                                             required
-                                            className="block w-full pl-12 pr-4 py-4 text-2xl border-gray-300 rounded-lg focus:ring-red-500 focus:border-red-500 text-center tracking-widest text-gray-900 placeholder:text-gray-500"
+                                            className="block w-full pl-12 pr-4 py-4 text-2xl border-gray-300 dark:border-gray-600 rounded-lg focus:ring-red-500 focus:border-red-500 text-center tracking-widest text-gray-900 dark:text-white placeholder:text-gray-500 dark:placeholder:text-gray-400 bg-white dark:bg-gray-900/40"
                                             placeholder="(555) 555-5555"
                                             value={phoneNumber}
                                             onChange={(e) => setPhoneNumber(e.target.value)}
@@ -303,23 +303,23 @@ export default function CheckIn() {
                     {step === 'confirm' && (
                         <div className="space-y-6">
                             <div className="text-center">
-                                <h2 className="text-2xl font-semibold text-gray-900">
+                                <h2 className="text-2xl font-semibold text-gray-900 dark:text-white">
                                     {customer ? `Welcome back, ${customer.name}!` : "Let's get your details"}
                                 </h2>
-                                <p className="text-gray-500 mt-2">
+                                <p className="text-gray-500 dark:text-gray-300 mt-2">
                                     {customer ? 'Is this you?' : 'Please enter your name'}
                                 </p>
                             </div>
 
                             {!customer && (
                                 <div>
-                                    <label htmlFor={`${baseId}-name`} className="block text-sm font-medium text-gray-700">Full Name</label>
+                                    <label htmlFor={`${baseId}-name`} className="block text-sm font-medium text-gray-700 dark:text-gray-200">Full Name</label>
                                     <div className="mt-1">
                                         <input
                                             id={`${baseId}-name`}
                                             type="text"
                                             required
-                                            className="block w-full border-gray-300 rounded-md shadow-sm focus:ring-red-500 focus:border-red-500 sm:text-lg p-3 text-gray-900 placeholder:text-gray-500"
+                                            className="block w-full border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:ring-red-500 focus:border-red-500 sm:text-lg p-3 text-gray-900 dark:text-white placeholder:text-gray-500 dark:placeholder:text-gray-400 bg-white dark:bg-gray-900/40"
                                             value={customerName}
                                             onChange={(e) => setCustomerName(e.target.value)}
                                         />
@@ -339,7 +339,7 @@ export default function CheckIn() {
                                     setCustomer(null)
                                     setStep('phone')
                                 }}
-                                className="w-full py-3 text-gray-500 hover:text-gray-700"
+                                className="w-full py-3 text-gray-500 dark:text-gray-300 hover:text-gray-700 dark:hover:text-gray-200"
                             >
                                 Back
                             </button>
@@ -349,8 +349,8 @@ export default function CheckIn() {
                     {step === 'services' && (
                         <div className="space-y-6">
                             <div className="text-center">
-                                <h2 className="text-2xl font-semibold text-gray-900">Select Service</h2>
-                                <p className="text-gray-500 mt-2">What brings you in today?</p>
+                                <h2 className="text-2xl font-semibold text-gray-900 dark:text-white">Select Service</h2>
+                                <p className="text-gray-500 dark:text-gray-300 mt-2">What brings you in today?</p>
                             </div>
 
                             <div className="grid grid-cols-1 gap-4 max-h-[400px] overflow-y-auto">
@@ -358,17 +358,17 @@ export default function CheckIn() {
                                     <button
                                         key={service.id}
                                         onClick={() => handleServiceSelect(service)}
-                                        className="flex flex-col items-start p-4 border-2 border-gray-200 rounded-xl hover:border-red-500 hover:bg-red-50 transition-all text-left"
+                                        className="flex flex-col items-start p-4 border-2 border-gray-200 dark:border-gray-700 rounded-xl hover:border-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 transition-all text-left bg-white dark:bg-gray-900/40"
                                     >
-                                        <span className="text-lg font-medium text-gray-900">{service.name}</span>
-                                        <span className="text-gray-500">{service.duration} mins • {formatCurrency(service.price)}</span>
+                                        <span className="text-lg font-medium text-gray-900 dark:text-white">{service.name}</span>
+                                        <span className="text-gray-500 dark:text-gray-300">{service.duration} mins • {formatCurrency(service.price)}</span>
                                     </button>
                                 ))}
                             </div>
 
                             <button
                                 onClick={() => setStep('confirm')}
-                                className="w-full py-3 text-gray-500 hover:text-gray-700"
+                                className="w-full py-3 text-gray-500 dark:text-gray-300 hover:text-gray-700 dark:hover:text-gray-200"
                             >
                                 Back
                             </button>
@@ -378,13 +378,13 @@ export default function CheckIn() {
                     {step === 'time' && selectedService && (
                         <div className="space-y-6">
                             <div className="text-center">
-                                <h2 className="text-2xl font-semibold text-gray-900">Choose a Time</h2>
-                                <p className="text-gray-500 mt-2">Select a date and an available time for your visit.</p>
+                                <h2 className="text-2xl font-semibold text-gray-900 dark:text-white">Choose a Time</h2>
+                                <p className="text-gray-500 dark:text-gray-300 mt-2">Select a date and an available time for your visit.</p>
                             </div>
 
                             <div className="space-y-4">
                                 <div>
-                                    <label htmlFor={`${baseId}-date`} className="block text-sm font-medium text-gray-700 mb-1">
+                                    <label htmlFor={`${baseId}-date`} className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-1">
                                         Date
                                     </label>
                                     <input
@@ -395,16 +395,16 @@ export default function CheckIn() {
                                             setSelectedDate(e.target.value)
                                             setSelectedTime(null)
                                         }}
-                                        className="mt-1 block w-full rounded-md border border-gray-300 shadow-sm focus:border-red-500 focus:ring-red-500 text-gray-900"
+                                        className="mt-1 block w-full rounded-md border border-gray-300 dark:border-gray-600 shadow-sm focus:border-red-500 focus:ring-red-500 text-gray-900 dark:text-white bg-white dark:bg-gray-900/40"
                                     />
                                 </div>
 
                                 <div>
-                                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-2">
                                         Available times
                                     </label>
                                     {slotsLoading ? (
-                                        <div className="flex items-center gap-2 py-4 text-gray-500">
+                                        <div className="flex items-center gap-2 py-4 text-gray-500 dark:text-gray-300">
                                             <LoadingSpinner size="sm" />
                                             <span>Loading available times…</span>
                                         </div>
@@ -421,7 +421,7 @@ export default function CheckIn() {
                                                     onClick={() => setSelectedTime(time)}
                                                     className={`px-3 py-2.5 rounded-lg text-sm font-medium border transition-colors ${selectedTime === time
                                                         ? 'bg-red-600 text-white border-red-600'
-                                                        : 'bg-white text-gray-800 border-gray-300 hover:bg-red-50 hover:border-red-200'
+                                                        : 'bg-white dark:bg-gray-900/40 text-gray-800 dark:text-gray-100 border-gray-300 dark:border-gray-700 hover:bg-red-50 dark:hover:bg-red-900/20 hover:border-red-200 dark:hover:border-red-800'
                                                         }`}
                                                 >
                                                     {format(parseISO(`${selectedDate}T${time}`), 'h:mm a')}
@@ -435,7 +435,7 @@ export default function CheckIn() {
                             {/* Optional vehicle make/model selection */}
                             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                                 <div>
-                                    <label htmlFor={`${baseId}-make`} className="block text-sm font-medium text-gray-700 mb-1">
+                                    <label htmlFor={`${baseId}-make`} className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-1">
                                         Vehicle Make (optional)
                                     </label>
                                     <select
@@ -445,7 +445,7 @@ export default function CheckIn() {
                                             setVehicleMake(e.target.value)
                                             setVehicleModel('')
                                         }}
-                                        className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-red-500 focus:ring-red-500 text-gray-900"
+                                        className="mt-1 block w-full rounded-md border-gray-300 dark:border-gray-600 shadow-sm focus:border-red-500 focus:ring-red-500 text-gray-900 dark:text-white bg-white dark:bg-gray-900/40"
                                     >
                                         <option value="">Select make</option>
                                         {VEHICLE_MAKE_MODEL_OPTIONS.map(option => (
@@ -456,14 +456,14 @@ export default function CheckIn() {
                                     </select>
                                 </div>
                                 <div>
-                                    <label htmlFor={`${baseId}-model`} className="block text-sm font-medium text-gray-700 mb-1">
+                                    <label htmlFor={`${baseId}-model`} className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-1">
                                         Vehicle Model (optional)
                                     </label>
                                     <select
                                         id={`${baseId}-model`}
                                         value={vehicleModel}
                                         onChange={(e) => setVehicleModel(e.target.value)}
-                                        className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-red-500 focus:ring-red-500 text-gray-900"
+                                        className="mt-1 block w-full rounded-md border-gray-300 dark:border-gray-600 shadow-sm focus:border-red-500 focus:ring-red-500 text-gray-900 dark:text-white bg-white dark:bg-gray-900/40"
                                         disabled={!vehicleMake}
                                     >
                                         <option value="">Select model</option>
@@ -492,7 +492,7 @@ export default function CheckIn() {
                                     setAvailableSlots([])
                                     setStep('services')
                                 }}
-                                className="w-full py-3 text-gray-500 hover:text-gray-700"
+                                className="w-full py-3 text-gray-500 dark:text-gray-300 hover:text-gray-700 dark:hover:text-gray-200"
                             >
                                 Back
                             </button>
@@ -505,9 +505,9 @@ export default function CheckIn() {
                                 <CheckCircle className="h-12 w-12 text-green-600" />
                             </div>
                             <div>
-                                <h2 className="text-3xl font-bold text-gray-900">You're Checked In!</h2>
+                                <h2 className="text-3xl font-bold text-gray-900 dark:text-white">You're Checked In!</h2>
                                 {selectedTime ? (
-                                    <p className="text-gray-500 mt-2">
+                                    <p className="text-gray-500 dark:text-gray-300 mt-2">
                                         Your appointment is scheduled for{' '}
                                         <span className="font-semibold">
                                             {format(parseISO(`${selectedDate}T${selectedTime}`), 'h:mm a')}
@@ -515,12 +515,12 @@ export default function CheckIn() {
                                         . Please take a seat, we'll be with you shortly.
                                     </p>
                                 ) : (
-                                    <p className="text-gray-500 mt-2">
+                                    <p className="text-gray-500 dark:text-gray-300 mt-2">
                                         Please take a seat, we'll be with you shortly.
                                     </p>
                                 )}
                             </div>
-                            <p className="text-sm text-gray-400">Resetting in a few seconds...</p>
+                            <p className="text-sm text-gray-400 dark:text-gray-400">Resetting in a few seconds...</p>
                         </div>
                     )}
                 </div>

@@ -165,13 +165,13 @@ export function VoicePrompt({ onAppointmentCreated }: VoicePromptProps) {
       </button>
 
       {isRecording && (
-        <div className="absolute bottom-16 right-0 bg-white rounded-lg shadow-lg p-4 w-64">
-          <div className="text-sm font-medium text-gray-700 mb-2">
+        <div className="absolute bottom-16 right-0 bg-white dark:bg-gray-800 rounded-lg shadow-lg p-4 w-64">
+          <div className="text-sm font-medium text-gray-700 dark:text-gray-200 mb-2">
             {currentStep === 'name' && 'Listening for customer name...'}
             {currentStep === 'service' && 'Listening for service type...'}
             {currentStep === 'time' && 'Listening for appointment time...'}
           </div>
-          <div className="text-xs text-gray-500">{transcript}</div>
+          <div className="text-xs text-gray-500 dark:text-gray-400">{transcript}</div>
         </div>
       )}
     </div>
