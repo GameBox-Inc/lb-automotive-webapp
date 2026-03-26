@@ -12,6 +12,26 @@ from database import DatabaseContextManager, get_db_connection, fmt_query
 router = APIRouter(prefix="/api/cases", tags=["cases"])
 
 
+def _case_metadata_from_db(raw: Any) -> Dict[str, Any]:
+    """Postgres may return JSON/JSONB as dict; legacy rows may be TEXT JSON."""
+    if raw is None:
+        return {}
+    if isinstance(raw, dict):
+        return raw
+    if isinstance(raw, str):
+        try:
+            return json.loads(raw) if raw.strip() else {}
+        except json.JSONDecodeError:
+            return {}
+    return {}
+
+
+def _str_id(val: Any) -> str:
+    if val is None:
+        return ""
+    return str(val)
+
+
 def _get_staff_id_for_audit(current_user: Dict[str, Any], conn=None) -> Optional[str]:
     """Resolve staff_id for audit trail (current user or System Admin if admin without staff)."""
     staff_id = current_user.get("staff_id")
@@ -73,12 +93,12 @@ def create_case(
         cursor.execute(fmt_query("SELECT * FROM cases WHERE id = ?"), (case_id,))
         row = cursor.fetchone()
     return Case(
-        id=row["id"],
+        id=_str_id(row["id"]),
         case_number=row["case_number"],
-        appointment_id=row["appointment_id"],
+        appointment_id=_str_id(row["appointment_id"]),
         status=row["status"],
         customer_signature=row.get("customer_signature"),
-        metadata=json.loads(row["metadata"] or "{}"),
+        metadata=_case_metadata_from_db(row.get("metadata")),
         created_at=row["created_at"],
         closed_at=row["closed_at"]
     )
@@ -121,12 +141,12 @@ def list_cases(
     cases = []
     for row in rows:
         cases.append(Case(
-            id=row["id"],
+            id=_str_id(row["id"]),
             case_number=row["case_number"],
-            appointment_id=row["appointment_id"],
+            appointment_id=_str_id(row["appointment_id"]),
             status=row["status"],
             customer_signature=row["customer_signature"],
-            metadata=json.loads(row["metadata"] or '{}'),
+            metadata=_case_metadata_from_db(row.get("metadata")),
             created_at=row["created_at"],
             closed_at=row["closed_at"]
         ))
@@ -161,12 +181,12 @@ def get_case(
             ) for r in part_rows
         ]
     return Case(
-        id=case_row["id"],
+        id=_str_id(case_row["id"]),
         case_number=case_row["case_number"],
-        appointment_id=case_row["appointment_id"],
+        appointment_id=_str_id(case_row["appointment_id"]),
         status=case_row["status"],
         customer_signature=case_row["customer_signature"],
-        metadata=json.loads(case_row["metadata"] or '{}'),
+        metadata=_case_metadata_from_db(case_row.get("metadata")),
         created_at=case_row["created_at"],
         closed_at=case_row["closed_at"],
         notes=notes,
@@ -402,12 +422,12 @@ def sign_and_close_case(
         cursor.execute(fmt_query("SELECT * FROM cases WHERE id = ?"), (case_id,))
         row = cursor.fetchone()
     return Case(
-        id=row["id"],
+        id=_str_id(row["id"]),
         case_number=row["case_number"],
-        appointment_id=row["appointment_id"],
+        appointment_id=_str_id(row["appointment_id"]),
         status=row["status"],
         customer_signature=row["customer_signature"],
-        metadata=json.loads(row["metadata"] or '{}'),
+        metadata=_case_metadata_from_db(row.get("metadata")),
         created_at=row["created_at"],
         closed_at=row["closed_at"]
     )
